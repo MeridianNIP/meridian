@@ -93,7 +93,14 @@ cd meridian
 
 # Wait ~10 minutes for Debian to install + reboot.
 
-# 4. From a Linux/WSL shell, push source + run install.sh:
+# 4. From a Linux/WSL shell, prepare your local answers file then push.
+#    The repo ships answers.example.env as a template; copy it once
+#    and edit to match your environment (PORTAL_DOMAIN, STATIC_IP,
+#    ADMIN_CIDR, etc.):
+cp answers.example.env answers.local.env
+$EDITOR answers.local.env
+
+# Push source + run install.sh:
 rsync -az ./ admin@<vm-ip>:~/meridian/
 ssh admin@<vm-ip> 'sudo rm -rf /opt/meridian && \
     sudo mv ~/meridian /opt/meridian && \
