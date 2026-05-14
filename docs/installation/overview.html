@@ -81,15 +81,14 @@
 <li>4 vCPU / 4 GB RAM / 60 GB disk (reference sizing for 1-4 operators)</li>
 <li>Root access</li>
 <li>A FQDN that resolves to this host (for TLS)</li>
-<li>Outbound HTTPS for Debian apt and (optionally) Let's Encrypt; no vendor phone-home is required in FSL mode. Use <code>--airgapped</code> if you have zero outbound.</li>
+<li>Outbound HTTPS for Debian apt and (optionally) Let's Encrypt. There is no vendor phone-home — Meridian is Apache 2.0 and makes no outbound calls to MeridianNIP. Use <code>--airgapped</code> if you have zero outbound at all.</li>
 <li>Ports 80 + 443 free</li>
 </ul>
 
 <h2>What the installer does</h2>
 <ol>
 <li><strong>Pre-flight.</strong> OS + arch check, disk + RAM floors, apt sources probe, port conflicts, existing install detection.</li>
-<li><strong>License entry (optional).</strong> If your organization has purchased a commercial-use license (see <a href="../legal/terms.html">Terms of use</a>), paste the key here. Leave blank otherwise — Meridian runs in full under the FSL grant with no key required.</li>
-<li><strong>Interactive config.</strong> Portal name, FQDN, first admin, DB name/role, timezone, TLS method, scope (internal/external/both), SSH port, optional LUKS encryption. Every prompt has a multi-paragraph explanation before the input.</li>
+<li><strong>Interactive config.</strong> Portal name, FQDN, first admin, DB name/role, timezone, TLS method, scope (internal/external/both), SSH port, optional LUKS encryption. Every prompt has a multi-paragraph explanation before the input. (License entry was removed when Meridian moved to Apache 2.0 — see <a href="../legal/terms.html">License + trademark</a>.)</li>
 <li><strong>System prep.</strong> Creates <code>meridian</code> service user, <code>ddi-ssh</code> group, directory tree under <code>/opt/meridian</code>, <code>/etc/meridian</code>, <code>/var/lib/meridian</code>, <code>/var/log/meridian</code>.</li>
 <li><strong>Package install.</strong> Installs the OS-matched package set. Versions resolve to distro defaults; exact versions are recorded into the <code>version_manifest</code> table for drift detection.</li>
 <li><strong>Master key generation.</strong> Creates two 32-byte keys at <code>/etc/meridian/secrets/</code> (<code>0400</code> owned by <code>meridian</code>): the AES-GCM master for the vault and the HMAC-SHA-256 key for the tamper-evidence hash chain.</li>
@@ -103,7 +102,6 @@
 <li><strong>SSH hardening.</strong> Custom port, <code>AllowGroups ddi-ssh</code>, modern KEX/ciphers/MACs only, legal MOTD banner — all via a <code>sshd_config.d/10-meridian.conf</code> drop-in.</li>
 <li><strong>fail2ban.</strong> sshd, nginx-bad-request, nginx-req-limit, and a Meridian-login jail that reads the audit log.</li>
 <li><strong>First admin seed.</strong> Creates the super-admin account with an auto-generated temp password.</li>
-<li><strong>License activation.</strong> If a commercial-use key was provided, validates the Ed25519 signature offline and records the activation in the audit log. If no key was provided, this step is skipped.</li>
 <li><strong>Start services and smoke-test.</strong> Hits <code>/healthz</code>.</li>
 <li><strong>Summary.</strong> Prints every credential on-screen and to <code>/root/meridian-install.log</code> with an offer to <code>shred -u</code> once you've saved them.</li>
 </ol>
@@ -117,7 +115,7 @@
 <tr><td>Meridian itself (app, schema, configs, docs, scripts)</td><td>Bundled + GPG-signed release tarball</td><td>Single verified artifact.</td></tr>
 </table>
 <p>The <code>scripts/build-release.sh</code> script (vendor-side) produces the signed tarball. Inside it you'll find a <code>wheels/</code> directory — the installer consumes it via <code>pip install --no-index --find-links</code>, never touching PyPI.</p>
-<div class="callout ok"><span class="lbl">AIRGAPPED</span><div>Because Python deps are bundled, the only network calls <code>install.sh</code> makes are to apt + optionally to Let's Encrypt / the license server. With <code>--airgapped</code>, even those are skipped (apt can be pointed at a local mirror, license installed manually).</div></div>
+<div class="callout ok"><span class="lbl">AIRGAPPED</span><div>Because Python deps are bundled, the only network calls <code>install.sh</code> makes are to apt + optionally to Let's Encrypt. With <code>--airgapped</code>, even those are skipped (apt can be pointed at a local mirror). There is no license server, no phone-home, no telemetry to worry about — Apache 2.0.</div></div>
 
 <h2>Running the installer</h2>
 <pre><code># From the extracted tarball directory:
@@ -130,7 +128,7 @@ sudo ./install.sh --upgrade
 sudo ./install.sh --dry-run
 
 # No internet access available:
-sudo ./install.sh --airgapped   # no outbound calls; commercial key verified entirely offline if present</code></pre>
+sudo ./install.sh --airgapped   # no outbound calls; apt pointed at a local mirror</code></pre>
 
 <h2>After install</h2>
 <ol>

@@ -70,7 +70,7 @@
 <ul>
 <li><strong>Services</strong> — live systemd status of postgresql, nginx, bind9/named, valkey/redis, meridian-app/celery/beat, fail2ban. Only services present on this host are shown.</li>
 <li><strong>Scheduled jobs</strong> — cron-style list from the <code>jobs</code> table with last-run status + next-run time.</li>
-<li><strong>License</strong> — current tier + expiry. Unlicensed banner appears here and in the top bar.</li>
+<li><strong>Integrity</strong> — last HMAC-row-chain scan result (mismatches surface here as a CRITICAL banner). Daily by default via the scheduled <code>integrity-scan</code> job.</li>
 <li><strong>Recent audit</strong> — last 50 audit events across every user.</li>
 </ul>
 

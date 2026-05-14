@@ -65,7 +65,7 @@
 <main class="content">
 <div class="page-meta">ADMIN · DATABASE SECURITY</div>
 <h1>Database security</h1>
-<div class="page-sub">Four overlapping layers so licenses, audit logs, user data, and secrets cannot be modified offline — even by someone with direct DB access.</div>
+<div class="page-sub">Four overlapping layers so audit logs, user data, and secrets cannot be modified offline — even by someone with direct DB access.</div>
 
 <h2>The four layers</h2>
 <table>
@@ -103,14 +103,13 @@
 
 <h3>How tampering is detected</h3>
 <ul>
-<li><strong>Live path.</strong> Whenever the app reads the license or an audit record, it re-computes the HMAC and compares. Mismatch raises a CRITICAL alert immediately.</li>
+<li><strong>Live path.</strong> Whenever the app reads an audit record, it re-computes the HMAC and compares. Mismatch raises a CRITICAL alert immediately.</li>
 <li><strong>Scheduled path.</strong> The <code>db-integrity-scan</code> job runs daily at 05:00 UTC, walks every tamper-evident table, and emails all admins + SIEM on any mismatch.</li>
 <li><strong>Ad-hoc.</strong> <code>sudo meridian-nip integrity scan</code> runs it on demand.</li>
 </ul>
 
 <h3>What it catches</h3>
 <ul>
-<li>A malicious admin extending a license's <code>expires_at</code> via direct SQL</li>
 <li>Someone deleting their own audit events</li>
 <li>An attacker granting themselves a permission without a matching audit trail</li>
 <li>A silently-altered certificate record</li>

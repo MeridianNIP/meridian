@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Terms of use · Meridian Docs</title>
+<title>License + trademark · Meridian Docs</title>
 <link rel="stylesheet" href="../css/docs.css">
 </head>
 <body>
@@ -28,122 +28,120 @@
   <a href="../user/network-tools.html">Network Tools</a>
   <a href="../user/monitors.html">Monitors</a>
   <a href="../user/wizards.html">Wizards</a>
-  <a href="../user/certificates.html">Certificates</a>
   <a href="../user/runbooks.html">Runbooks</a>
-  <a href="../user/dhcp.html">DHCP</a>
-  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/certificates.html">Certificates</a>
   <a href="../user/directory.html">Directory</a>
   <a href="../user/files.html">File Repo</a>
   <a href="../user/messages.html">Messages</a>
   <a href="../user/approvals.html">Approvals</a>
-  <a href="../user/settings.html">User Settings</a>
+  <a href="../user/settings.html">Settings</a>
+  <a href="../user/api.html">REST API</a>
 
   <h3>Admin</h3>
   <a href="../admin/overview.html">Admin overview</a>
-  <a href="../admin/users.html">Users</a>
-  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/users.html">Users + RBAC</a>
+  <a href="../admin/scope.html">Scope manager</a>
   <a href="../admin/integrations.html">Integrations</a>
-  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/devices.html">Network devices</a>
   <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
-  <a href="../admin/health.html">System Health</a>
-  <a href="../admin/updates.html">Updates</a>
-  <a href="../admin/webhooks.html">Webhooks</a>
-  <a href="../admin/branding.html">Branding &amp; identity</a>
-  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/health.html">System health</a>
   <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/security.html">Security model</a>
   <a href="../admin/backup-restore.html">Backup &amp; restore</a>
 
   <h3>Reference</h3>
-  <a href="../reference/cli.html">meridian-nip CLI</a>
+  <a href="../reference/cli.html">CLI</a>
 
   <h3>Legal</h3>
-  <a href="terms.html">Terms of use</a>
+  <a href="terms.html">License + trademark</a>
   <a href="aup-template.html">AUP template</a>
   <a href="oss.html">Open-source licenses</a>
 </aside>
 
 <main class="content">
-<div class="page-meta">LEGAL · TERMS OF USE</div>
-<h1>Terms of use</h1>
-<div class="page-sub">How Meridian is licensed, what you're allowed to do with it, and when a paid commercial-use license is required.</div>
+<div class="page-meta">LEGAL · LICENSE + TRADEMARK</div>
+<h1>License + trademark</h1>
+<div class="page-sub">Plain-English explainer for the Apache 2.0 license + the trademark carve-out. The full legal text is in the <code>LICENSE</code> and <code>NOTICE</code> files at the root of the source tree.</div>
 
 <div class="callout info"><span class="lbl">AT A GLANCE</span><div>
-Meridian is distributed under the <strong>Functional Source License 1.1 (FSL-1.1-Apache-2.0)</strong>. That means: <em>free to install, modify, and operate for your own organization</em> — including production. A separate <strong>commercial-use license</strong> is offered for companies whose procurement or compliance teams need a formal paid agreement, indemnification, or an SLA. The two are independent: the FSL grant applies to everyone; the commercial license is optional on top.
+Meridian is licensed under the <strong>Apache License 2.0</strong>. That means: <em>free to install, modify, distribute, and use commercially</em>, with two real constraints — preserve the LICENSE + attribution notices, and don't use the <strong>"MeridianNIP"</strong> name or logo on your own fork (trademark, separate from license). There are no paid tiers, no license keys, no commercial agreements required, no telemetry, no expiry. Everyone gets full feature parity.
 </div></div>
 
-<h2>1. The FSL grant (default &mdash; free)</h2>
-<p>Under FSL-1.1, any company or individual may do the following, at no cost, without contacting the vendor:</p>
+<h2>1. The Apache 2.0 grant</h2>
+<p>Under Apache 2.0, you may, at no cost, without contacting anyone:</p>
 <ul>
-  <li>Install and run Meridian on any number of hosts within your own organization.</li>
-  <li>Modify the source and redeploy internally.</li>
-  <li>Audit, fork, and contribute back.</li>
-  <li>Use it in production for any purpose that is <strong>not a competing commercial offering</strong>.</li>
+  <li>Install and run Meridian on any number of hosts for any purpose — personal lab, home network, corporate intranet, paid consulting work, customer deployments, anything.</li>
+  <li>Modify the source for your own needs.</li>
+  <li>Distribute modified versions, including commercially.</li>
+  <li>Receive a perpetual <strong>patent license</strong> from every contributor for patent claims their contributions necessarily use. This is the main reason Apache 2.0 is enterprise-friendly: corp legal teams know they can't be patent-trolled later by the same people who contributed code.</li>
 </ul>
-<p>The sole FSL restriction: during the "FSL period" (first two years after a release), you may not host Meridian as a service that competes with the vendor's own hosted / managed offering. Two years after each release the grant converts to plain <strong>Apache-2.0</strong> for that release, removing the restriction permanently.</p>
-<p>Full license text: <a href="oss.html">Open-source licenses</a> page, and in the file <code>LICENSE</code> at the root of the source tree.</p>
-
-<h2>2. The commercial-use license (optional &mdash; paid)</h2>
-<p>Some customers &mdash; especially enterprises, regulated industries, and government &mdash; cannot deploy open-source software internally without a signed paid agreement. For those cases the vendor offers a <strong>commercial-use license</strong> that provides:</p>
+<p>Conditions when you redistribute (your own use is unconditional):</p>
 <ul>
-  <li>A formal written license agreement with a named contracting entity.</li>
-  <li>Indemnification against third-party IP claims arising from the software.</li>
-  <li>A defined support channel with a response-time SLA.</li>
-  <li>Optional priority bug-fix / feature routing.</li>
-  <li>An installable <strong>license key</strong> that the portal can display to auditors as proof of commercial coverage.</li>
+  <li>Include the <code>LICENSE</code> in the distribution.</li>
+  <li>Note any changes you made to files (Apache 2.0 calls this "carry prominent notices stating that You changed the files").</li>
+  <li>Preserve copyright + attribution notices (see <code>NOTICE</code>).</li>
+  <li>If you ship a derivative under your own name, use a name and logo that aren't "MeridianNIP" (see trademark section below).</li>
 </ul>
-<p>Pricing and tier details are published on the vendor website and in your purchase agreement. The commercial-use license is <em>not</em> required to use Meridian &mdash; the FSL grant above is sufficient for most use cases. It exists purely to satisfy compliance / procurement needs.</p>
 
-<div class="callout info"><span class="lbl">SEPARATE PROCESS</span><div>
-The commercial-use license is purchased through a <strong>separate vendor portal</strong>, not from inside this portal. On successful payment the vendor either (a) generates a signed license key that you download and install into <em>Admin → Branding → License security</em>, or (b) emails you the key file for installs that don't have outbound access. The key generation, payment flow, and renewal process are handled entirely by the commercial portal &mdash; Meridian only verifies the signature and records the activation.
+<h2 id="trademark">2. Trademark — "MeridianNIP"</h2>
+<p>Apache 2.0 grants a copyright + patent license. It explicitly <strong>does not</strong> grant rights to use the licensor's trademarks (LICENSE Section 6). For Meridian, that matters in one specific way:</p>
+<ul>
+  <li>The product name <strong>MeridianNIP</strong> is a trademark.</li>
+  <li>The MeridianNIP logo (the green-on-dark "M" badge) is a trademark.</li>
+  <li>If you fork this codebase and ship your own distribution, your distribution <strong>must use a different name and a different logo</strong>. Pick one — there are plenty of good ones available.</li>
+  <li>You can absolutely run the original MeridianNIP build internally and tell people you use MeridianNIP. That's nominative fair use, not branding your derivative.</li>
+  <li>You can also strip the "Powered by Meridian" footer on your own deployment via <em>Admin → Branding</em>. That's allowed because it's <em>your</em> deployment, not a re-branded distribution.</li>
+</ul>
+
+<div class="callout info"><span class="lbl">WHY THE CARVE-OUT</span><div>
+Permissive OSS licenses without trademark protection lead to a pattern where some vendor takes the code, makes minimal changes, charges money under the original name, and degrades the brand for everyone who recognises it. Apache 2.0 Section 6 + a trademark are the standard pair of tools to prevent that without restricting actual code reuse. See: PostgreSQL, Kubernetes, Apache Cassandra — same pattern.
 </div></div>
 
-<h2>3. What the installed key actually does</h2>
-<p>When a commercial-use key is installed, the portal:</p>
+<h2>3. No license key, no activation, no expiry</h2>
+<p>Earlier releases of Meridian shipped with an Ed25519-signed license-key subsystem (commercial tier, demo tier, trial keys, etc.). <strong>That entire subsystem was removed.</strong> Migration <code>0014</code> drops the legacy license tables (<code>license</code>, <code>license_activations</code>, <code>license_verifications</code>, <code>license_revocations</code>, <code>license_warning_dismissals</code>). There is no longer any:</p>
 <ul>
-  <li>Displays it on the <em>Admin → Branding → License security</em> panel with expiry countdown.</li>
-  <li>Adds a "commercial coverage" badge that auditors can screenshot.</li>
-  <li>Logs activation / expiry / renewal events to the audit chain.</li>
+  <li>License key entry at install time (<code>install.sh</code> has no <code>license_entry</code> stage).</li>
+  <li><em>Admin → Branding → License</em> panel (removed; the page now only carries the trademark + white-label notes).</li>
+  <li>Demo / trial / paid tier distinction — every install gets every feature.</li>
+  <li><code>meridian-nip license …</code> CLI subcommands.</li>
+  <li>Phone-home / verification job (<code>license-verify</code> job removed from <code>jobs</code> table).</li>
 </ul>
-<p>The key does <strong>not</strong> gate any functionality &mdash; every feature is available under the FSL grant with or without it. The key is evidence of the commercial contract, nothing more.</p>
+<p>If you upgraded from a pre-Apache release and still see leftover license UI, your DB is behind. Run <code>sudo /opt/meridian/scripts/migrate.sh</code>.</p>
 
 <h2>4. Restrictions that apply to everyone</h2>
 <ul>
-  <li>You may not remove or alter copyright, trademark, or license notices in the software or its documentation.</li>
-  <li>You may not re-distribute the commercial license key, or transfer it to a different legal entity without written vendor consent.</li>
-  <li>You may not reverse-engineer the commercial-license signature-verification subsystem to produce forged keys &mdash; that's a breach and will trigger revocation.</li>
-  <li>Open-source components listed in <a href="oss.html">Open-source licenses</a> are governed by their own upstream licenses and are <strong>not</strong> restricted by anything on this page.</li>
+  <li>You may not remove or alter copyright, trademark, or license notices in the software or its documentation. Apache 2.0 Section 4(c).</li>
+  <li>You may not use the "MeridianNIP" name or logo on your fork or derivative (Section 6 / trademark).</li>
+  <li>You may not sue MeridianNIP or other contributors over patents in this code and keep using it — that automatically terminates your patent license (Section 3).</li>
 </ul>
 
 <h2>5. Data, privacy, telemetry</h2>
-<p>Meridian runs on your own infrastructure. Operational data (scan results, monitor history, audit log, configuration) stays on-box. Outbound traffic from the core portal is limited to:</p>
+<p>Meridian runs entirely on your own infrastructure. Operational data (scan results, monitor history, audit log, configuration, secrets) stays on-box. <strong>The portal makes no outbound calls to MeridianNIP or anyone else by default.</strong> The only outbound traffic the core portal performs is what you explicitly configure:</p>
 <ul>
-  <li>Commercial-license verification and renewal checks, <em>only if</em> you have installed a commercial key and are not running in <code>--airgapped</code> mode.</li>
-  <li>Optional vendor repository access for OS package mirroring.</li>
-  <li>Anonymous error reports, <em>only if</em> an admin explicitly opts in.</li>
+  <li>External threat-intel API calls when an operator clicks a tool button (Censys, Shodan, VirusTotal, etc.) — all rate-limited per the safety caps in <code>app/safety/limits.py</code>.</li>
+  <li>Optional vendor repository access for OS package mirroring (Debian apt).</li>
+  <li>Let's Encrypt ACME calls if you chose that SSL method.</li>
 </ul>
-<p>Installs configured with <code>--airgapped</code> perform none of the above; if you hold a commercial key it is verified entirely offline.</p>
+<p>Installs configured with <code>install.sh --airgapped</code> skip even the apt / Let's Encrypt paths.</p>
 
 <h2>6. Warranty disclaimer</h2>
-<p>Meridian is provided "AS IS" without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement. The licensee is responsible for validating that the software meets their operational and compliance needs before deploying it on production networks. Commercial-use license holders may have additional warranty terms in their purchase agreement &mdash; those terms, where present, override this section.</p>
+<p>Meridian is provided <strong>"AS IS"</strong> without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement. The licensee is responsible for validating that the software meets their operational and compliance needs before deploying it on production networks. See LICENSE Section 7.</p>
 
 <h2>7. Limitation of liability</h2>
-<p>To the maximum extent permitted by applicable law, in no event will the vendor be liable for any indirect, incidental, special, consequential, or punitive damages arising out of or relating to the use or inability to use the software, even if advised of the possibility of such damages. Where a commercial-use license is in effect, the vendor's total cumulative liability is limited to the license fees paid in the twelve months preceding the claim. In the absence of a commercial-use license, liability is limited to the FSL grant's stated terms (generally: none).</p>
+<p>To the maximum extent permitted by applicable law, in no event will any contributor be liable for any indirect, incidental, special, consequential, or punitive damages arising out of or relating to the use or inability to use the software, even if advised of the possibility of such damages. See LICENSE Section 8.</p>
 
-<h2>8. Termination</h2>
-<p>The FSL grant continues indefinitely subject to its own terms. A commercial-use license terminates on expiry of the key, on non-payment, on revocation for breach, or on written notice of material breach. On termination of a commercial-use license you revert to the FSL grant &mdash; you are not required to uninstall Meridian, but any contractual support / SLA / indemnity rights cease.</p>
-
-<h2>9. Governing law</h2>
-<p>Unless superseded by a signed commercial-use agreement, these terms are governed by the laws of the vendor's primary business jurisdiction. Disputes are subject to the exclusive jurisdiction of the courts in that location.</p>
-
-<h2>10. Updates to these terms</h2>
-<p>The vendor may revise these terms for future releases. The version of this file shipped with your installed Meridian build governs your current use until you upgrade. Upgrades that materially alter your rights will surface a notice in the installer before applying.</p>
+<h2>8. Contributing</h2>
+<p>Contributions are accepted under the same Apache 2.0 terms (Section 5: any contribution submitted is automatically under the license unless you explicitly state otherwise). Project standards live in <code>CONTRIBUTING.md</code> in the source repo at <a href="https://github.com/MeridianNIP/meridian" target="_blank">github.com/MeridianNIP/meridian</a>.</p>
 
 <h2>Contact</h2>
-<p>General / open-source questions: see <a href="oss.html">Open-source licenses</a>. Commercial-use license questions, pricing, renewals, or indemnification requests: see the contact listed on your purchase agreement, or &mdash; for new purchases &mdash; the commercial-license portal linked from <em>Admin → Branding → License security</em> inside the portal.</p>
+<p>Bug reports, feature requests, and code questions go on <a href="https://github.com/MeridianNIP/meridian/issues" target="_blank">GitHub Issues</a>. The project is community-supported — no paid SLA exists.</p>
 
 <div class="foot">
-  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
-  <div>Local terms · on-box copy</div>
+  <div>MERIDIAN · DOCUMENTATION</div>
+  <div>Apache 2.0 · © 2026 MeridianNIP</div>
 </div>
 </main>
 </div>

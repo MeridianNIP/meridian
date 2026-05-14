@@ -1,10 +1,15 @@
-# Meridian NIP — Network Intelligence Platform
+<p align="center">
+  <img src="brand/meridian-wordmark-teal.svg" alt="Meridian NIP" width="420">
+</p>
 
-> Self-hosted DDI + network-ops portal for internal lab and corporate use.
->
-> **Apache 2.0 licensed.** Free for any use — personal, commercial, or
-> derivative. See [LICENSE](LICENSE) and [NOTICE](NOTICE) at the repo
-> root.
+<p align="center">
+  <strong>Self-hosted DDI + network-ops portal · Apache 2.0</strong><br>
+  Free for any use — personal, commercial, or derivative.<br>
+  <a href="LICENSE">LICENSE</a> · <a href="NOTICE">NOTICE</a> ·
+  <a href="https://meridiannip.com">meridiannip.com</a>
+</p>
+
+---
 
 Copyright © 2026 MeridianNIP. The **"MeridianNIP"** name and logo are
 trademarks; per LICENSE Section 6, forks and derivative works must use a

@@ -67,21 +67,16 @@
 <h1>Installer prompts</h1>
 <div class="page-sub">Every prompt <code>install.sh</code> shows you, with the explanation, a reasonable default, and why it matters.</div>
 
-<h2>License key (optional)</h2>
-<p>The first prompt. You can leave it blank — Meridian runs fully under the FSL grant without a key. If your organization has purchased a <a href="../legal/terms.html">commercial-use license</a>, paste the key here so it's recorded at install time; otherwise just press Enter.</p>
-<table>
-<tr><th>Input</th><th>Meaning</th></tr>
-<tr><td>(blank)</td><td><strong>FSL mode</strong> — full functionality, no key required, no time limit. Suitable for internal use by any company or individual per the Functional Source License 1.1 terms.</td></tr>
-<tr><td><code>MRD-…</code></td><td><strong>Commercial-use license</strong>. Ed25519-signed; bound to the contracting entity and (optionally) to this domain + hardware fingerprint; expires on the date inside the signed payload. Provides a formal agreement, indemnity, and SLA — same functionality as FSL mode.</td></tr>
-</table>
-<div class="callout info"><span class="lbl">AIRGAPPED</span><div>FSL mode works fully airgapped with no outbound calls. If you have a commercial-use key, it's verified entirely offline — no phone-home.</div></div>
+<div class="callout info"><span class="lbl">NO LICENSE PROMPT</span><div>
+Earlier releases asked for an Ed25519-signed license key as the first prompt. Meridian is now Apache 2.0 (see <a href="../legal/terms.html">License + trademark</a>) — there is no license entry. The installer goes straight to the configuration prompts below. Existing answers files that still set <code>LICENSE_KEY=</code> are silently ignored.
+</div></div>
 
 <h2>Portal display name</h2>
 <p>Shown in the top bar, email signatures, and PDF report headers. Changeable later in Admin → Branding.</p>
 <p><strong>Default:</strong> <code>Meridian NIP</code></p>
 
 <h2>Primary domain (FQDN)</h2>
-<p>The hostname users will browse to. Must resolve to this host's public IP for Let's Encrypt TLS to succeed. Also baked into the license binding — moving to a different domain later requires vendor-issued reactivation.</p>
+<p>The hostname users will browse to. Must resolve to this host's IP for Let's Encrypt TLS to succeed (self-signed works on any hostname). Used as the TLS cert SAN, the nginx <code>server_name</code>, and the default email "from" identity if you don't override it later.</p>
 <p><strong>Format:</strong> <code>portal.yourcompany.com</code>. No scheme, no trailing slash.</p>
 
 <h2>Admin username &amp; email</h2>

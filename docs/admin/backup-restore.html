@@ -82,7 +82,7 @@
 <div class="callout warn"><span class="lbl">TRADE-OFF</span><div>
 <strong>Without keys:</strong> smaller, safer bundle. Can only be restored onto a host that already has the same master keys (i.e., the same box after a config rollback).<br>
 <strong>With keys:</strong> full DR bundle. Can be restored onto any fresh host. But the bundle now contains the crown jewels — store it with the same care as the source.</div></div>
-<p>Policy recommendation: take routine backups <em>without</em> keys for operational rollback, and take one <em>with</em>-keys backup per significant-change event (license install, master-key rotation, major upgrade). Keep the with-keys bundles offline in secured storage.</p>
+<p>Policy recommendation: take routine backups <em>without</em> keys for operational rollback, and take one <em>with</em>-keys backup per significant-change event (master-key rotation, major upgrade, integration cutover). Keep the with-keys bundles offline in secured storage.</p>
 
 <h2>Manual backup</h2>
 <pre><code># Routine (no keys):
@@ -124,12 +124,11 @@ sudo /opt/meridian/scripts/backup.sh --output /mnt/offsite/</code></pre>
 <p>You need a <code>--include-keys</code> bundle for this. Workflow:</p>
 <ol>
 <li>Stand up a new Debian 13 (or 12) host.</li>
-<li>Run <code>install.sh</code>. Use the same portal domain as the source host if you hold a domain-bound commercial-use key. Leave the license prompt blank (FSL mode) or paste a throwaway key — it'll be overwritten when you restore the DB.</li>
+<li>Run <code>install.sh</code> with the same portal domain as the source host (so the TLS cert SAN matches).</li>
 <li>Copy the bundle onto the host.</li>
 <li><code>sudo /opt/meridian/scripts/restore.sh /path/to/bundle.tar.zst</code></li>
-<li>Log in. The old license, users, audit history, and branding are all back.</li>
+<li>Log in. Users, audit history, integrations, and branding are all back.</li>
 </ol>
-<div class="callout info"><span class="lbl">LICENSE BINDING</span><div>If the new host has a different hardware fingerprint, the license will refuse to activate after restore. Use the vendor portal to request reactivation with the new fingerprint, or (for airgapped installs) contact support to re-issue the signed license against the new fingerprint.</div></div>
 
 <h2>Point-in-time recovery (PITR)</h2>
 <p>The <code>db-wal-ship</code> job archives WAL segments every 15 minutes. To recover to a specific point:</p>

@@ -65,7 +65,7 @@
     <main class="content">
     <div class="page-meta">ADMIN · BRANDING</div>
     <h1>Branding &amp; identity</h1>
-    <div class="page-sub">Customer-level personalization applied site-wide. Logos, favicon, theme, legal text, outbound sender identity, license.</div>
+    <div class="page-sub">Customer-level personalization applied site-wide. Logos, favicon, theme, legal text, outbound sender identity, white-label toggle.</div>
     <h2>Assets</h2>
 <ul>
 <li>Logo, favicon, login background, PDF report header. Each is magic-byte-sniffed and SVGs are stripped of scripts.</li>
@@ -78,8 +78,12 @@
 <h2>Outbound communications</h2>
 <p>Sender <em>identity</em> only — email from-name + from-address, email signature, Slack/Teams sender name, SMS sender identity, PDF report footer. Transport configuration (SMTP host, Slack webhook, etc.) lives in <a href="integrations.html">Integrations &rarr; Notifications</a>.</p>
 
-<h2>License</h2>
-<p>Paste-in box for <code>MRD-...</code> / <code>TRIAL-...</code> tokens. Validates offline (Ed25519) using the baked-in vendor public key. See <a href="licensing.html">Licensing</a> for how tokens are issued.</p>
+<h2>White-label</h2>
+<p>Hide the "Powered by Meridian" footer attribution on your own deployment. Meridian is Apache 2.0, so anyone can hide it (no license tier required). The "MeridianNIP" name and logo remain trademarks — forks that redistribute under a different brand must also use a different name and logo. See <a href="../legal/terms.html#trademark">License + trademark</a>.</p>
+
+<div class="callout info"><span class="lbl">NO LICENSE KEY ANYMORE</span><div>
+Earlier releases of this page had an Ed25519-signed license-key entry box. That whole subsystem was removed when Meridian moved to Apache 2.0 — every install gets every feature, with no key, no expiry, no tier.
+</div></div>
     </main>
     </div>
     </body>
