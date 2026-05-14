@@ -275,7 +275,6 @@ venv manually.
 meridian-nip doctor                  # same health checks as the portal's status page
 meridian-nip users list --role admin
 meridian-nip users create --username jane --email jane@example.com --role admin --temp-password ...
-# (license subcommands removed 2026-05-13 — Meridian is Apache 2.0)
 ```
 
 ---
