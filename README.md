@@ -68,27 +68,41 @@ external sources.
 
 Three supported install paths. Pick whichever matches what you have.
 
+### Quick start
+
+Releases ship a prebuilt **preseed-injected Debian 13 ISO** as a GitHub
+Release asset. Most users want to grab it directly:
+
+- **Latest release**: https://github.com/MeridianNIP/meridian/releases/latest
+- **Direct ISO download**: https://github.com/MeridianNIP/meridian/releases/latest/download/debian-13.4.0-amd64-meridian-unattended.iso
+- **Verify**: download `SHA256SUMS` from the same release and run `sha256sum -c SHA256SUMS`
+
+Rebuilding the ISO yourself with `scripts/repack-preseed-iso.sh` is also
+supported — see the callouts in each path below. Useful if you want to bake
+your own SSH public key into the preseed (`MERIDIAN_AUTHORIZED_KEY_FILE=...`).
+
 ### Path 1 — Hyper-V (Windows host, hands-off)
 
 Best for Windows users running Hyper-V Manager. The bootstrap script
-downloads the Debian 13 netinst ISO, builds a Gen 2 VM, attaches the
-preseed-injected ISO, and walks away. ~10 minutes from `Start-VM` to
-SSH-able Debian.
+builds a Gen 2 VM, attaches the preseed-injected ISO, and walks away.
+~10 minutes from `Start-VM` to SSH-able Debian.
 
 **Requirements:** Windows 10/11 Pro/Enterprise with Hyper-V feature
 enabled, admin PowerShell, a Hyper-V vSwitch on your LAN (default
 `WSL-Bridge`).
 
 ```powershell
-# 1. Clone or copy the source
+# 1. Clone or copy the source (you'll need install.sh + answers.example.env)
 git clone https://github.com/MeridianNIP/meridian.git
 cd meridian
 
-# 2. Build the unattended preseed ISO (one-time)
-#    Requires xorriso on a Linux host (WSL works). On WSL:
+# 2. Get the preseed-injected ISO. Easiest: download the latest release.
+Invoke-WebRequest `
+  -Uri "https://github.com/MeridianNIP/meridian/releases/latest/download/debian-13.4.0-amd64-meridian-unattended.iso" `
+  -OutFile "C:\VMs\ISOs\debian-13.4.0-amd64-meridian-unattended.iso"
+#    Alternative: rebuild from source with WSL + xorriso:
 #      sudo apt install xorriso
-#      ./scripts/repack-preseed-iso.sh
-#    Output: C:\VMs\ISOs\debian-13.4.0-amd64-meridian-unattended.iso
+#      MERIDIAN_AUTHORIZED_KEY_FILE=~/.ssh/id_ed25519.pub ./scripts/repack-preseed-iso.sh
 
 # 3. Boot the VM (Windows admin PowerShell)
 ./scripts/hyperv-bootstrap.ps1 `
@@ -125,11 +139,12 @@ Defaults baked into the preseed ISO:
 ### Path 2 — VMware Workstation / Fusion / ESXi (or VirtualBox)
 
 The same preseed-injected ISO also boots in VMware Gen 2-equivalent
-(UEFI) VMs. The repack preserves both BIOS and UEFI El Torito boot
-records.
+(UEFI) VMs and VirtualBox with EFI enabled. One artifact covers all
+three hypervisors.
 
 ```
-1. Build the unattended ISO on a Linux/WSL host (see Path 1, step 2)
+1. Download the ISO from the latest release (see Quick start above)
+   — OR rebuild it on a Linux/WSL host with scripts/repack-preseed-iso.sh
 2. Copy the .iso to the VMware host
 3. New VM:
      - Guest OS:     Debian GNU/Linux 13 (64-bit)

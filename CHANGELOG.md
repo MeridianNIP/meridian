@@ -7,17 +7,26 @@ semantic versioning.
 ## [Unreleased]
 
 Nothing pending — next tagged release to be assigned when the first
-field-install smoke test passes.
+field bug forces a 1.0.1.
 
-## [1.0.0] — 2026-04-18
+## [1.0.0] — 2026-05-14
 
-First generally-available release. Represents the full scope of the initial
-Meridian intake plus expansions landed during the build-out.
+First public release. Tagged + published to GitHub Releases after the
+2026-05-14 rc1 validation pass on a fresh Hyper-V VM (30/32 checks
+green; the two remaining were quoting bugs in the validation harness,
+not product issues).
+
+Release page: <https://github.com/MeridianNIP/meridian/releases/tag/v1.0.0>
+— includes the preseed-injected Debian 13.4 ISO (940 MB, UEFI-bootable)
+plus `SHA256SUMS`. Source on `main` at this tag matches the asset.
+
+Licensed under **Apache License 2.0** (no commercial tier, no license-key
+gating, total feature parity for every install). "MeridianNIP" name + logo
+are common-law trademarks — forks must use a different name and logo.
 
 ### Added — core platform
 - FastAPI application + Jinja2 templates, PostgreSQL 17/15, Valkey/Redis, Celery + redbeat, BIND9, Nginx
-- `install.sh` interactive installer with Debian 12 / 13 auto-detection and `--airgapped` wheel-bundled path
-- Ed25519-signed, hardware-fingerprint-bound license tokens
+- `install.sh` interactive installer with Debian 12 / 13 auto-detection and `--airgapped` flag (skips outbound apt + Let's Encrypt; keeps install local to your machine)
 - Two-person approval workflow for `requires_two_person` permissions
 - argon2id passwords, TOTP MFA, single-session enforcement
 - HMAC-SHA256 row-hash chain on 8 sensitive tables
@@ -49,8 +58,7 @@ Meridian intake plus expansions landed during the build-out.
 - Webhooks (inbound receivers + outbound fan-out, HMAC signed, delivery log)
 - Branding (display identity + four image uploads with magic-byte + SVG sanitization)
 
-### Added — background jobs (14 Celery modules)
-- `license.verify` / `license.expiry_notify` (wired to dispatcher + webhook fanout)
+### Added — background jobs (13 Celery modules)
 - `integrity.scan` (HMAC row-hash verify)
 - `cert.expiry_check` + `cert.auto_renew` (certbot-backed for ACME, notification for manual)
 - `monitors.collector.sample_due` + `monitors.collector.retention`
@@ -65,16 +73,18 @@ Meridian intake plus expansions landed during the build-out.
 ### Added — packaging + docs
 - `pyproject.toml` with ruff + mypy + pytest config
 - `.pre-commit-config.yaml` with ruff + shellcheck + standard hygiene
-- `.github/workflows/ci.yml` with syntax check, handler-vs-task audit, admin-nav-consistency check
+- `.github/workflows/ci.yml` — lint (ruff + shellcheck + schema), celery-handler-vs-task audit, admin-tab-bar consistency, unit + smoke tests; all green at tag time
 - `db/migrations/` scaffold + `scripts/migrate.sh` (SHA-tracked, transactional runner)
-- `scripts/backup.sh`, `restore.sh`, `doctor.sh`, `health_check.sh`, `wal_archive.sh`, `setup_luks.sh`, `build-release.sh`
+- `scripts/backup.sh`, `restore.sh`, `doctor.sh`, `health_check.sh`, `wal_archive.sh`, `setup_luks.sh`, `repack-preseed-iso.sh`, `smoke-backup-restore.sh`
 - Third-party attribution in `docs/legal/oss.html`
 - AUP template in `docs/legal/aup-template.html`
+- Prometheus `/metrics` endpoint (`app/metrics.py`), gated by `admin.system.metrics`
+- Fresh-install validation pass: 30 of 32 checks green on a hands-off
+  Hyper-V VM rebuild; full feature surface walked
 
 ### Known gaps (tracked post-1.0)
-- No automated test suite yet
-- `docs/` HTML (14 pages) predates some 1.0 features and needs refresh
-- No responsive CSS (desktop-only UX)
-- No i18n (hardcoded English)
-- No Prometheus `/metrics` endpoint
-- First-run end-to-end smoke test on a fresh VM not yet exercised
+- `docs/` portal HTML predates some 1.0 features and needs refresh (this CHANGELOG entry is the start of that)
+- No responsive CSS (desktop-only UX — explicitly declined per positioning)
+- No i18n (hardcoded English — explicitly declined per positioning)
+- WebAuthn / OIDC SSO / SCIM not implemented (TOTP + password + fail2ban is the baseline)
+- VM appliance images (`.vhdx` / `.ova` / `.qcow2`) parked — current artifact is the preseed ISO only

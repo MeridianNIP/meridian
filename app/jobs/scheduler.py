@@ -7,8 +7,6 @@ from app.celery_app import celery_app
 from app.db import session_scope
 
 _HANDLER_TO_TASK = {
-    "meridian.jobs.license:verify": "meridian.jobs.license.verify",
-    "meridian.jobs.license:expiry_notify": "meridian.jobs.license.expiry_notify",
     "meridian.jobs.integrity:scan": "meridian.jobs.integrity.scan",
     "meridian.jobs.retention:audit_cleanup": "meridian.jobs.retention.audit_cleanup",
     "meridian.jobs.retention:query_cleanup": "meridian.jobs.retention.query_cleanup",
