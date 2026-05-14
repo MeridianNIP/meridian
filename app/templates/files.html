@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% set active = 'files' %}
+{% block title %}File Repo · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">File Repo</div>
+    <div class="page-sub">Personal storage for scripts, pcaps, exports, and docs · quota-enforced · pinned files skip retention</div>
+  </div>
+  {% with docs_path="user/files.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Storage usage</div>
+    <div id="quota-meta" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);"></div>
+  </div>
+  <div style="background:rgba(255,255,255,.05);border-radius:4px;height:8px;overflow:hidden;">
+    <div id="quota-bar" style="height:100%;width:0%;background:var(--accent);transition:width .25s;"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Upload a file</div></div>
+  <form id="upload-form">
+    <div class="form-row">
+      <div class="field" style="flex:2;">
+        <label>File</label>
+        <input class="input" type="file" name="file" required>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <select class="select" name="category">
+          <option value="upload">general</option>
+          <option value="script">script</option>
+          <option value="doc">doc</option>
+          <option value="pcap">pcap</option>
+          <option value="export">export</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">Upload</button>
+    <span id="upload-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+  <details style="margin-top:10px;">
+    <summary style="cursor:pointer;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">Blocked file extensions</summary>
+    <div id="blocked-ext-list" style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-dim);line-height:1.6;word-spacing:4px;">loading…</div>
+  </details>
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">Your files</div></div>
+  <div id="files-out" style="font-size:12px;color:var(--text-dim);font-style:italic;">Loading…</div>
+</div>
+
+<script>
+(function(){
+  function human(bytes) {
+    const units = ['B','KB','MB','GB','TB'];
+    let i = 0, v = bytes;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v.toFixed(v < 10 ? 2 : 1)} ${units[i]}`;
+  }
+
+  function renderQuota(q) {
+    const bar = document.getElementById('quota-bar');
+    const meta = document.getElementById('quota-meta');
+    bar.style.width = `${Math.min(100, q.hard_pct)}%`;
+    bar.style.background = q.hard_pct >= 90 ? 'var(--danger)' :
+                           q.hard_pct >= 50 ? 'var(--warn)' : 'var(--accent)';
+    meta.innerHTML = `${human(q.used_bytes)} / ${human(q.hard_cap)} used ·
+      soft cap ${human(q.soft_cap)} (${q.soft_pct}%) · hard ${q.hard_pct}%`;
+  }
+
+  function renderFiles(files) {
+    const out = document.getElementById('files-out');
+    if (!files.length) {
+      out.innerHTML = '<div style="font-style:italic;color:var(--text-dimmer);padding:6px 0;">No files yet.</div>';
+      return;
+    }
+    out.innerHTML = `<table style="width:100%;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;"></th>
+        <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Filename</th>
+        <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Type</th>
+        <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Size</th>
+        <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Uploaded</th>
+        <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Uploader</th>
+        <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">SHA-256</th>
+        <th style="text-align:right;padding:6px 8px;"></th>
+      </tr></thead>
+      <tbody>${files.map(f => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:8px;">${f.pinned ? '<span title="pinned" style="color:var(--accent);">★</span>' : ''}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text);">${f.filename}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">${f.category || '—'}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${human(f.size_bytes)}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${(f.uploaded_at || '').replace('T',' ').slice(0,16)}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">${f.uploader || '—'}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);" title="${f.sha256_hex}">${f.sha256_hex.slice(0,12)}…</td>
+          <td style="padding:8px;text-align:right;white-space:nowrap;">
+            <a class="btn btn-ghost" href="/api/v1/files/${f.id}/download" style="padding:4px 8px;font-size:10px;text-decoration:none;">Download</a>
+            <button class="btn btn-ghost" data-pin="${f.id}" style="padding:4px 8px;font-size:10px;">${f.pinned ? 'Unpin' : 'Pin'}</button>
+            <button class="btn btn-ghost" data-delete="${f.id}" style="padding:4px 8px;font-size:10px;color:var(--danger);">Delete</button>
+          </td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+
+    out.querySelectorAll('[data-pin]').forEach(b => b.addEventListener('click', async () => {
+      const r = await fetch(`/api/v1/files/${b.dataset.pin}/pin`, {method: 'POST', credentials: 'same-origin'});
+      if (r.ok) load();
+    }));
+    out.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Delete this file? This cannot be undone.')) return;
+      const r = await fetch(`/api/v1/files/${b.dataset.delete}`, {method: 'DELETE', credentials: 'same-origin'});
+      if (r.ok) load();
+    }));
+  }
+
+  async function load() {
+    const r = await fetch('/api/v1/files/', {credentials: 'same-origin'});
+    if (!r.ok) { document.getElementById('files-out').textContent = 'load failed'; return; }
+    const data = await r.json();
+    renderQuota(data.quota);
+    renderFiles(data.files);
+  }
+
+  document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const fd = new FormData(form);
+    const s = document.getElementById('upload-status');
+    s.textContent = 'uploading…'; s.style.color = 'var(--text-dim)';
+    const r = await fetch('/api/v1/files/upload', {method: 'POST', credentials: 'same-origin', body: fd});
+    let data = {}; try { data = await r.json(); } catch {}
+    if (r.ok) {
+      s.textContent = `✓ ${data.filename} · ${data.size_bytes} B`;
+      s.style.color = 'var(--accent)';
+      form.reset();
+      load();
+    } else {
+      s.textContent = `✗ ${data.error || data.detail || r.statusText}`;
+      s.style.color = 'var(--danger)';
+    }
+  });
+
+  async function loadBlockedExts() {
+    const r = await fetch('/api/v1/files/blocked-extensions', {credentials: 'same-origin'});
+    if (!r.ok) return;
+    const data = await r.json();
+    document.getElementById('blocked-ext-list').textContent =
+      data.extensions.map(e => '.' + e).join('   ');
+  }
+
+  load();
+  loadBlockedExts();
+})();
+</script>
+{% endblock %}

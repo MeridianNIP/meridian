@@ -1,0 +1,73 @@
+# --- Python build / cache ---------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+
+# --- Virtualenvs (built by install.sh at /opt/meridian/venv) ----------------
+venv/
+.venv/
+env/
+ENV/
+.tox/
+
+# --- Build artifacts --------------------------------------------------------
+build/
+dist/
+*.whl
+wheels/
+
+# --- Operator-local answers (per-deployment, contains email + LAN IP) ------
+answers.local.env
+answers.test.env
+answers.production.env
+answers.*.env
+!answers.example.env
+
+# --- Runtime / install state -----------------------------------------------
+*.log
+meridian-install.log
+meridian-install.state
+meridian-install.out*
+/etc/meridian/
+/var/lib/meridian/
+
+# --- Editor / IDE -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Claude Code local settings (per-operator permission cache) -------------
+.claude/
+
+# --- Test runner / coverage ------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Local secrets / never-commit lists ------------------------------------
+*.key
+*.pem
+*.crt
+*.csr
+*.p12
+*.pfx
+secrets/
+**/secrets/
+*.env.local
+.env
+
+# --- VM artifacts -----------------------------------------------------------
+*.vhdx
+*.vmdk
+*.qcow2
+*.ova
+*.iso

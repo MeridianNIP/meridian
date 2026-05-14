@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scheduled jobs · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">ADMIN · SCHEDULED JOBS</div>
+<h1>Scheduled jobs</h1>
+<div class="page-sub">Pre-made cleanup, backup, health, and integrity jobs that ship enabled by default. All are fully adjustable in Admin → Scheduled Jobs.</div>
+
+<h2>Pre-made catalog</h2>
+<table>
+<tr><th>Name</th><th>Description</th><th>Default schedule</th></tr>
+<tr><td><code>audit-log-cleanup</code></td><td>Delete audit events older than the retention window (default 90 days)</td><td><code>0 3 * * *</code></td></tr>
+<tr><td><code>query-history-cleanup</code></td><td>Keep last 500 results per user, 30-day max</td><td><code>0 4 * * *</code></td></tr>
+<tr><td><code>file-repo-quota</code></td><td>Enforce per-user quota (soft 500MB / hard 1GB); prune oldest non-pinned</td><td><code>0 5 * * 0</code></td></tr>
+<tr><td><code>backup-rotation</code></td><td>Keep 7 daily + 4 weekly + 3 monthly snapshots</td><td><code>0 2 * * *</code></td></tr>
+<tr><td><code>bind9-query-log-roll</code></td><td>Roll BIND9 query log to a 48-hour window</td><td><code>0 * * * *</code></td></tr>
+<tr><td><code>pg-vacuum-analyze</code></td><td>VACUUM ANALYZE; reclaims dead tuples + refreshes planner stats</td><td><code>0 1 * * *</code></td></tr>
+<tr><td><code>pg-reindex</code></td><td>REINDEX hot tables (audit_events, query_history, monitor_*)</td><td><code>0 1 * * 0</code></td></tr>
+<tr><td><code>celery-result-purge</code></td><td>Delete Celery result payloads older than 7 days</td><td><code>0 3 * * *</code></td></tr>
+<tr><td><code>stale-session-cleanup</code></td><td>Revoke user sessions idle &gt; 12 hours (API tokens unaffected)</td><td><code>0 */6 * * *</code></td></tr>
+<tr><td><code>monitor-retention</code></td><td>Rotate monitor raw/5m/1h per retention policy</td><td><code>0 2 * * *</code></td></tr>
+<tr><td><code>pcap-cleanup</code></td><td>Delete pcap files older than 14 days (pinned captures skipped)</td><td><code>0 4 * * *</code></td></tr>
+<tr><td><code>db-full-backup</code></td><td>Compressed <code>pg_dump</code> to <code>/var/lib/meridian/backups/full/</code></td><td><code>0 2 * * *</code></td></tr>
+<tr><td><code>db-wal-ship</code></td><td>Ship PG WAL to the archive for point-in-time recovery</td><td><code>*/15 * * * *</code></td></tr>
+<tr><td><code>db-integrity-scan</code></td><td>Verify the HMAC hash chain; CRITICAL alert on mismatch</td><td><code>0 5 * * *</code></td></tr>
+<tr><td><code>vuln-scan</code></td><td>OSV + NVD scan of installed OS + app deps</td><td><code>0 2 * * *</code></td></tr>
+<tr><td><code>cert-expiry-check</code></td><td>Scan every monitored cert; alert at 30/14/7 days</td><td><code>0 6 * * *</code></td></tr>
+<tr><td><code>cert-auto-renew</code></td><td>Renew auto-managed certs within their renew threshold</td><td><code>0 2 * * *</code></td></tr>
+<tr><td><code>stale-ad-report</code></td><td>Weekly report of AD accounts inactive &gt; 90 days</td><td><code>0 7 * * 1</code></td></tr>
+<tr><td><code>dhcp-utilization</code></td><td>Hourly scope-utilization snapshot for trend graphs</td><td><code>15 * * * *</code></td></tr>
+<tr><td><code>ipam-conflict-scan</code></td><td>Compare live subnet sweep against IPAM records</td><td><code>0 5 * * *</code></td></tr>
+<tr><td><code>license-expiry-notify</code></td><td>Daily expiry check; escalating warnings at 30/14/7/3/1 days</td><td><code>0 7 * * *</code></td></tr>
+<tr><td><code>license-verify</code></td><td>Hourly phone-home; CRL fetch; revocation within 24h</td><td><code>0 * * * *</code></td></tr>
+<tr><td><code>oss-component-scan</code></td><td>Refresh <code>oss_components</code>; regenerate SBOM; alert on new copyleft</td><td><code>0 4 * * *</code></td></tr>
+<tr><td><code>pre-update-snapshot</code></td><td>Fires before any auto-update; enables rollback</td><td>on-event</td></tr>
+<tr><td><code>feature-health-ping</code></td><td>Hourly ping of each enabled integration</td><td><code>30 * * * *</code></td></tr>
+</table>
+
+<h2>Editing a job</h2>
+<p>Admin → Scheduled Jobs → click any row. You can change:</p>
+<ul>
+<li>Cron expression (standard 5-field cron; Meridian validates before save)</li>
+<li>Retention values (days, count, bytes — whichever fields apply)</li>
+<li>Notification channels (which admins + channels receive the result)</li>
+<li>Enabled / disabled toggle</li>
+<li>Owner (the user whose permissions it runs under, for user-owned jobs)</li>
+</ul>
+<p>All edits are audit-logged with the before/after config.</p>
+
+<h2>Creating a custom job</h2>
+<p>Click "+ Custom job" in the Scheduled Jobs tab. You'll pick a handler from the installed set, provide a cron, fill out the job-specific config, and save. Custom jobs appear alongside the pre-made ones.</p>
+
+<h2>Change-freeze (CAB) windows</h2>
+<p>In Admin → Scheduled Jobs → Settings you can declare CAB windows (start + end + blocked action list). Jobs in the <code>respects_cab</code> set (most write-ish jobs) will refuse to fire during a CAB window and log a deferral to the job-run table. They catch up on the next scheduled tick after the window ends.</p>
+
+<h2>Running a job on demand</h2>
+<ul>
+<li>UI: "Run now" button in the Scheduled Jobs tab</li>
+<li>CLI: <code>sudo meridian-nip jobs run &lt;job-name&gt;</code></li>
+</ul>
+<p>Run-now requests bypass CAB windows only for jobs without the <code>respects_cab</code> flag; write-ish jobs still honor the freeze.</p>
+
+<h2>Job history</h2>
+<p>Each job run inserts a row into <code>job_runs</code>: started, completed, status, output, stats JSON. The Scheduled Jobs tab shows the last run's result; for full history use the CLI:</p>
+<pre><code>sudo meridian-nip jobs history &lt;job-name&gt; --limit 50</code></pre>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

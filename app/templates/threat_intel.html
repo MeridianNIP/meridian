@@ -1,0 +1,848 @@
+{% extends "base.html" %}
+{% set active = 'threat-intel' %}
+{% block title %}Threat Intel · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Threat Intel</div>
+    <div class="page-sub">Vulnerability + reputation lookups across public feeds and authenticated APIs. Keyed sources are configured under <a href="/ui/admin/integrations#threat-intel" style="color:var(--accent);">Admin → Integrations → Threat Intel</a>.</div>
+  </div>
+</div>
+
+{# The first `enabled` source is rendered as .active so the page lands on a #}
+{# visible tab no matter which ones an admin has hidden. #}
+{% set ti_order = [
+  ('cve_nvd',    'cve',        'CVE (NVD)'),
+  ('kev',        'kev',        'CISA KEV'),
+  ('epss',       'epss',       'EPSS'),
+  ('circl',      'circl',      'CIRCL'),
+  ('ip_rep',     'reputation', 'IP rep (DNSBL)'),
+  ('dshield',    'dshield',    'DShield'),
+  ('abuseipdb',  'abuseipdb',  'AbuseIPDB'),
+  ('greynoise',  'greynoise',  'GreyNoise'),
+  ('virustotal', 'virustotal', 'VirusTotal'),
+  ('urlscan',    'urlscan',    'URLScan.io'),
+  ('shodan',     'shodan',     'Shodan'),
+  ('censys',     'censys',     'Censys'),
+] %}
+{% set ti_visible = ti_order | selectattr(0, 'in', ti_sources) | list %}
+{% set ti_visible_keys = [] %}
+{% for key, panel, label in ti_order %}{% if ti_on(key) %}{% set _ = ti_visible_keys.append(panel) %}{% endif %}{% endfor %}
+
+<div class="tabs" data-tabs="ti">
+  {% for key, panel, label in ti_order %}
+    {% if ti_on(key) %}
+      <button class="tab {% if panel == ti_visible_keys[0] %}active{% endif %}" data-tab="{{ panel }}">{{ label }}</button>
+    {% endif %}
+  {% endfor %}
+  {% if not ti_visible_keys %}
+    <div style="padding:10px 14px;color:var(--text-dim);font-size:12px;">
+      Every Threat Intel source is currently disabled. Re-enable some under
+      <a href="/ui/admin/integrations#threat-intel" style="color:var(--accent);">Admin → Integrations → Threat Intel → Sources</a>.
+    </div>
+  {% endif %}
+</div>
+
+{# =================================================================== #}
+{# CVE lookup (NVD)                                                     #}
+{# =================================================================== #}
+<div data-panel="cve" data-group="ti">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="cve-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>CVE id</label>
+          <input class="input mono" name="cve" value="CVE-2021-44228" required placeholder="CVE-2021-44228">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+        Manual lookup against NVD (National Vulnerability Database). Cross-references into Exploit-DB, Mitre, CISA KEV, and vendor advisories are rendered inline.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Lookup</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Details</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#cve-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="cve-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Enter a CVE ID and run.</div>
+  </div>
+</div>
+
+{# =================================================================== #}
+{# CISA KEV — lookup AND substring search                               #}
+{# =================================================================== #}
+<div data-panel="kev" data-group="ti" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div style="padding:12px 14px;">
+      <form id="kev-form" style="margin-bottom:12px;">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.05em;text-transform:uppercase;">Lookup by CVE</label>
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-top:6px;">
+          <input class="input mono" name="cve" value="CVE-2021-44228" required placeholder="CVE-2021-44228" style="flex:2;">
+          <button class="btn btn-primary" type="submit">▸ Check KEV</button>
+        </div>
+      </form>
+      <form id="kev-search-form">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.05em;text-transform:uppercase;">Search the catalog</label>
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-top:6px;">
+          <input class="input mono" name="query" placeholder="e.g. log4j, exchange, citrix, fortinet" required style="flex:2;">
+          <button class="btn btn-secondary" type="submit">▸ Search</button>
+        </div>
+      </form>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-top:10px;">
+        CISA's Known Exploited Vulnerabilities catalog — the federal remediation mandate list. If a CVE is here, it is being actively exploited and patching is urgent. Public JSON feed, no key. Catalog cached for 6 hours.
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">KEV result</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#kev-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="kev-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Enter a CVE or search term.</div>
+  </div>
+</div>
+
+{# =================================================================== #}
+{# EPSS — FIRST.org Exploit Prediction Scoring                          #}
+{# =================================================================== #}
+<div data-panel="epss" data-group="ti" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="epss-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>CVE id</label>
+          <input class="input mono" name="cve" value="CVE-2021-44228" required placeholder="CVE-2021-44228">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+        FIRST.org's Exploit Prediction Scoring System (EPSS) assigns a 0–1 probability of exploitation in the next 30 days, plus a percentile rank. Pair with CVSS to prioritise patching. Public API, no key.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Lookup</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">EPSS score</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#epss-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="epss-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Enter a CVE ID.</div>
+  </div>
+</div>
+
+{# =================================================================== #}
+{# CIRCL CVE aggregator                                                 #}
+{# =================================================================== #}
+<div data-panel="circl" data-group="ti" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="circl-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>CVE id</label>
+          <input class="input mono" name="cve" value="CVE-2021-44228" required placeholder="CVE-2021-44228">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+        Lookup via cve.circl.lu — CIRCL's aggregator that merges NVD, vendor advisories, and additional sources. Useful when NVD is incomplete or slow to reflect upstream changes. Public API, no key.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Lookup</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">CIRCL details</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#circl-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="circl-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Enter a CVE ID.</div>
+  </div>
+</div>
+
+{# =================================================================== #}
+{# IP reputation (DNSBL)                                                #}
+{# =================================================================== #}
+<div data-panel="reputation" data-group="ti" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="rep-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>IPv4 address</label><input class="input mono" name="ip" required placeholder="e.g. 203.0.113.42"></div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+        Queries 8 public DNS-based blocklists in parallel (Spamhaus, Barracuda, SpamCop, SORBS, CBL, PSBL, DroneBL, Lashback UBL). A listed result means that provider has recent abuse data on this IP.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Check reputation</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Blocklist results</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#rep-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="rep-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No check yet.</div>
+  </div>
+</div>
+
+{# =================================================================== #}
+{# DShield                                                              #}
+{# =================================================================== #}
+<div data-panel="dshield" data-group="ti" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="dshield-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>IPv4 address</label><input class="input mono" name="ip" required placeholder="e.g. 203.0.113.42"></div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+        SANS Internet Storm Center DShield — aggregated attack / scan reports against this IP plus ASN and network context. Public API, no key.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Lookup</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">DShield summary</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#dshield-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="dshield-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No lookup yet.</div>
+  </div>
+</div>
+
+{# =================================================================== #}
+{# Key-required lookups. Each form posts to its backend; a 412 response #}
+{# means "no enabled integration" and prompts the user to configure a   #}
+{# key under Admin → Integrations → Threat Intel.                       #}
+{# =================================================================== #}
+{% macro ti_form(panel, title, input_name, input_label, input_placeholder, blurb, upstream_url, upstream_name, out_id) %}
+<div data-panel="{{ panel }}" data-group="ti" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="{{ panel }}-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>{{ input_label }}</label>
+          <input class="input mono" name="{{ input_name }}" required placeholder="{{ input_placeholder }}">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">{{ blurb }}
+        API key required — configured under <a href="/ui/admin/integrations#threat-intel" style="color:var(--accent);">Admin → Integrations → Threat Intel</a>.
+        <a href="{{ upstream_url }}" target="_blank" rel="noopener" style="color:var(--accent);margin-left:6px;">{{ upstream_name }} ↗</a>
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Lookup</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">{{ title }} results</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#{{ out_id }}">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="{{ out_id }}" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No lookup yet.</div>
+  </div>
+</div>
+{% endmacro %}
+
+{{ ti_form('abuseipdb', 'AbuseIPDB', 'ip', 'IPv4 address', 'e.g. 203.0.113.42',
+   'Crowdsourced abuse reports (brute-force, spam, DDoS, scanning) with a 0–100 confidence score.',
+   'https://www.abuseipdb.com/', 'abuseipdb.com', 'abuseipdb-out') }}
+
+{{ ti_form('greynoise', 'GreyNoise', 'ip', 'IPv4 address', 'e.g. 203.0.113.42',
+   'Classifies an IP as benign / malicious / unknown based on internet-wide scan observation. Distinguishes targeted traffic from background noise.',
+   'https://www.greynoise.io/', 'greynoise.io', 'greynoise-out') }}
+
+{{ ti_form('virustotal', 'VirusTotal', 'target', 'IP / domain / URL', 'e.g. 8.8.8.8  ·  example.com  ·  https://example.com',
+   'Lookup against 70+ antivirus engines and URL scanners. Automatically detects whether the target is an IP, domain, or URL.',
+   'https://www.virustotal.com/', 'virustotal.com', 'virustotal-out') }}
+
+{{ ti_form('urlscan', 'URLScan.io', 'query', 'Search query', 'e.g. domain:example.com  ·  page.ip:203.0.113.42',
+   'Searches public URLScan.io scans by URL, domain, IP, or any supported field. Returns the latest 20 public scans.',
+   'https://urlscan.io/docs/search/', 'urlscan.io', 'urlscan-out') }}
+
+{{ ti_form('shodan', 'Shodan', 'ip', 'IPv4 address', 'e.g. 203.0.113.42',
+   'Host fingerprint — open ports, banners, product + version, TLS certs, ASN, OS, and known CVEs. Authoritative "what is exposed on this IP?" source.',
+   'https://www.shodan.io/', 'shodan.io', 'shodan-out') }}
+
+{{ ti_form('censys', 'Censys', 'ip', 'IPv4 address', 'e.g. 203.0.113.42',
+   'Independent internet-wide scan data — pairs well with Shodan (different cadence, sometimes different coverage). Requires a Personal Access Token (Bearer).',
+   'https://search.censys.io/', 'search.censys.io', 'censys-out') }}
+
+<script>
+(function(){
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function jfetch(url, body) {
+    const r = await fetch(url, {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    let data = {};
+    try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+  function ready(out) { out.classList.remove('empty'); }
+
+  // -------- CVE (NVD) --------
+  const cveForm = document.getElementById('cve-form');
+  if (cveForm) cveForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('cve-out'); ready(out);
+    out.textContent = 'querying NVD…';
+    const {ok, data} = await jfetch('/api/v1/network/cve-lookup', {cve: new FormData(e.target).get('cve')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    if (data.error) { out.innerHTML = `<div style="padding:12px;color:var(--warn);">${esc(data.error)}</div>`; return; }
+    const sevColor = s => s && s.toLowerCase().includes('critical') ? 'var(--danger)'
+                       : s && s.toLowerCase().includes('high') ? '#eab308'
+                       : s && s.toLowerCase().includes('medium') ? 'var(--warn,#eab308)'
+                       : s && s.toLowerCase().includes('low') ? 'var(--accent)'
+                       : 'var(--text-dim)';
+    const c = data.cvss || {};
+    const refs = (data.references||[]).slice(0, 15).map(r =>
+      `<li style="margin:2px 0;"><a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;word-break:break-all;">${esc(r.url)}</a>${(r.tags||[]).length ? ` <span style="color:var(--text-dimmer);font-size:10px;">[${(r.tags||[]).map(esc).join(', ')}]</span>` : ''}</li>`
+    ).join('');
+    const lookups = Object.entries(data.refs||{}).map(([k,v]) =>
+      `<a href="${esc(v)}" target="_blank" rel="noopener" style="display:inline-block;margin:2px 6px 2px 0;padding:3px 8px;background:rgba(255,255,255,.04);border-radius:4px;color:var(--accent);font-family:var(--mono);font-size:10px;text-decoration:none;">${esc(k)} ↗</a>`
+    ).join('');
+    out.innerHTML = `
+      <div style="padding:12px;">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
+          <div style="font-family:var(--mono);font-size:14px;color:var(--text);">${esc(data.cve)}</div>
+          ${c.severity ? `<div style="font-family:var(--mono);font-size:10px;color:${sevColor(c.severity)};font-weight:600;">${esc(c.severity.toUpperCase())} · ${c.score ?? '—'} · CVSS ${c.version || ''}</div>` : ''}
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${esc(data.status || '')} · pub ${esc((data.published||'').slice(0,10))}</div>
+        </div>
+        <div style="color:var(--text-dim);line-height:1.6;margin-bottom:10px;white-space:pre-wrap;">${esc(data.description)}</div>
+        ${c.vector ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:10px;">Vector: <span style="color:var(--text);">${esc(c.vector)}</span></div>` : ''}
+        ${(data.cwes||[]).length ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:10px;">CWE: <span style="color:var(--text);">${(data.cwes||[]).map(esc).join(', ')}</span></div>` : ''}
+        <div style="margin-top:14px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:4px;">Cross-reference in:</div>
+        <div>${lookups}</div>
+        ${refs ? `<details style="margin-top:12px;"><summary style="cursor:pointer;color:var(--text-dim);font-family:var(--mono);font-size:11px;">Primary references (${(data.references||[]).length})</summary>
+          <ul style="margin-top:6px;padding-left:18px;">${refs}</ul></details>` : ''}
+      </div>`;
+  });
+
+  // -------- KEV lookup + search --------
+  const kevForm = document.getElementById('kev-form');
+  if (kevForm) kevForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('kev-out'); ready(out);
+    out.textContent = 'checking CISA KEV catalog…';
+    const {ok, data} = await jfetch('/api/v1/network/kev-lookup', {cve: new FormData(e.target).get('cve')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    if (!data.listed) {
+      out.innerHTML = `<div style="padding:12px;"><div style="color:var(--accent);font-family:var(--mono);font-weight:600;">${esc(data.cve)} — NOT in KEV</div>
+        <div style="color:var(--text-dim);font-size:11px;margin-top:4px;">Catalog ${esc(data.catalog_version||'')} · ${data.total_entries||'?'} entries · released ${esc(data.catalog_released||'')}</div></div>`;
+      return;
+    }
+    const ransom = data.known_ransomware_use === 'Known'
+      ? '<span style="color:var(--danger);font-weight:600;">Known ransomware use</span>'
+      : '<span style="color:var(--text-dim);">Not tied to known ransomware</span>';
+    out.innerHTML = `<div style="padding:12px;">
+      <div style="font-family:var(--mono);font-size:13px;color:var(--danger);font-weight:600;margin-bottom:8px;">${esc(data.cve)} — LISTED in CISA KEV</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <tr><td style="padding:4px 8px;color:var(--text-dim);width:160px;">Vendor / product</td><td style="padding:4px 8px;">${esc(data.vendor_project||'')} · ${esc(data.product||'')}</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--text-dim);">Vulnerability name</td><td style="padding:4px 8px;">${esc(data.vulnerability_name||'')}</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--text-dim);">Added</td><td style="padding:4px 8px;font-family:var(--mono);">${esc(data.date_added||'')}</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--text-dim);">Federal due date</td><td style="padding:4px 8px;font-family:var(--mono);color:var(--warn);">${esc(data.due_date||'')}</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--text-dim);">Ransomware</td><td style="padding:4px 8px;">${ransom}</td></tr>
+      </table>
+      <div style="color:var(--text-dim);line-height:1.6;margin:10px 8px;white-space:pre-wrap;">${esc(data.short_description||'')}</div>
+      ${data.required_action ? `<div style="margin:10px 8px;padding:8px 12px;border-left:2px solid var(--accent);background:rgba(32,200,150,.06);color:var(--text);white-space:pre-wrap;"><div style="color:var(--accent);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Required action</div>${esc(data.required_action)}</div>` : ''}
+      ${data.notes ? `<details style="margin:8px;"><summary style="cursor:pointer;color:var(--text-dim);font-family:var(--mono);font-size:11px;">Notes</summary><div style="margin-top:6px;color:var(--text-dim);white-space:pre-wrap;">${esc(data.notes)}</div></details>` : ''}
+    </div>`;
+  });
+  const kevSearch = document.getElementById('kev-search-form');
+  if (kevSearch) kevSearch.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('kev-out'); ready(out);
+    out.textContent = 'searching…';
+    const {ok, data} = await jfetch('/api/v1/network/kev-search', {query: new FormData(e.target).get('query')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    if (!data.total_matches) {
+      out.innerHTML = `<div style="padding:12px;color:var(--text-dim);">No KEV entries match <span class="mono" style="color:var(--text);">${esc(data.query)}</span>.</div>`;
+      return;
+    }
+    const rows = (data.rows||[]).map(r => `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+      <td style="padding:4px 8px;font-family:var(--mono);"><a href="https://nvd.nist.gov/vuln/detail/${esc(r.cve)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">${esc(r.cve)}</a></td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;">${esc(r.date_added||'')}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--warn);">${esc(r.due_date||'')}</td>
+      <td style="padding:4px 8px;">${esc(r.vendor_project||'')} · ${esc(r.product||'')}</td>
+      <td style="padding:4px 8px;color:var(--text-dim);">${esc(r.vulnerability_name||'')}</td>
+      <td style="padding:4px 8px;">${r.known_ransomware_use==='Known' ? '<span style="color:var(--danger);font-weight:600;">ransomware</span>' : ''}</td>
+    </tr>`).join('');
+    out.innerHTML = `<div style="padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+      ${data.total_matches} match${data.total_matches===1?'':'es'} for <span style="color:var(--text);">${esc(data.query)}</span>${data.total_matches>=data.limit ? ` (capped at ${data.limit})` : ''}
+    </div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;margin:0 12px 12px;">
+      <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">CVE</th><th style="padding:6px 8px;">Added</th><th style="padding:6px 8px;">Due</th>
+        <th style="padding:6px 8px;">Vendor / product</th><th style="padding:6px 8px;">Name</th><th style="padding:6px 8px;"></th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  });
+
+  // -------- EPSS --------
+  const epssForm = document.getElementById('epss-form');
+  if (epssForm) epssForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('epss-out'); ready(out);
+    out.textContent = 'querying FIRST.org EPSS…';
+    const {ok, data} = await jfetch('/api/v1/network/epss-lookup', {cve: new FormData(e.target).get('cve')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    if (!data.found) { out.innerHTML = `<div style="padding:12px;color:var(--text-dim);">No EPSS score for <span class="mono">${esc(data.cve)}</span>.</div>`; return; }
+    const pct = (data.probability * 100).toFixed(2);
+    const rank = (data.percentile * 100).toFixed(2);
+    const barColor = data.probability >= 0.5 ? 'var(--danger)'
+                    : data.probability >= 0.1 ? '#eab308'
+                    : 'var(--accent)';
+    out.innerHTML = `<div style="padding:14px 16px;">
+      <div style="font-family:var(--mono);font-size:13px;color:var(--text);margin-bottom:10px;">${esc(data.cve)}</div>
+      <div style="display:flex;gap:16px;margin-bottom:12px;">
+        <div style="flex:1;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px;">Probability (30-day exploit)</div>
+          <div style="font-family:var(--mono);font-size:22px;color:${barColor};font-weight:600;">${pct}%</div>
+          <div style="height:6px;background:rgba(255,255,255,.05);border-radius:3px;margin-top:6px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:${barColor};"></div>
+          </div>
+        </div>
+        <div style="flex:1;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px;">Percentile rank</div>
+          <div style="font-family:var(--mono);font-size:22px;color:var(--text);font-weight:600;">${rank}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:4px;">Higher than ${rank}% of all scored CVEs</div>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">
+        As of ${esc(data.date||'?')} · model ${esc(data.model_version||'?')}
+      </div>
+    </div>`;
+  });
+
+  // -------- CIRCL --------
+  const circlForm = document.getElementById('circl-form');
+  if (circlForm) circlForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('circl-out'); ready(out);
+    out.textContent = 'querying cve.circl.lu…';
+    const {ok, data} = await jfetch('/api/v1/network/circl-lookup', {cve: new FormData(e.target).get('cve')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    if (!data.found) { out.innerHTML = `<div style="padding:12px;color:var(--text-dim);">CIRCL has no record of <span class="mono">${esc(data.cve)}</span>.</div>`; return; }
+    const sevColor = s => s && s.toLowerCase().includes('critical') ? 'var(--danger)'
+                       : s && s.toLowerCase().includes('high') ? '#eab308'
+                       : s && s.toLowerCase().includes('medium') ? 'var(--warn,#eab308)'
+                       : s && s.toLowerCase().includes('low') ? 'var(--accent)'
+                       : 'var(--text-dim)';
+    const refs = (data.references||[]).slice(0,20).map(r => {
+      const u = typeof r === 'string' ? r : (r.url || '');
+      const tags = (r.tags || []);
+      return `<li style="margin:2px 0;"><a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;word-break:break-all;">${esc(u)}</a>${tags.length ? ` <span style="color:var(--text-dimmer);font-size:10px;">[${tags.map(esc).join(', ')}]</span>` : ''}</li>`;
+    }).join('');
+    const cwes = (data.cwes || []).map(esc).join(', ');
+    const affected = (data.affected || []).map(a =>
+      `<li style="margin:2px 0;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(a)}</li>`
+    ).join('');
+    out.innerHTML = `<div style="padding:12px;">
+      <div style="display:flex;gap:12px;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;">
+        <a href="https://nvd.nist.gov/vuln/detail/${esc(data.cve)}" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:14px;color:var(--accent);text-decoration:none;">${esc(data.cve)} ↗</a>
+        ${data.cvss!=null ? `<div style="font-family:var(--mono);font-size:11px;color:${sevColor(data.cvss_severity)};font-weight:600;">${esc((data.cvss_severity||'').toUpperCase())} · ${esc(String(data.cvss))} · CVSS ${esc(data.cvss_version||'')}</div>` : '<div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">no CVSS</div>'}
+        ${data.state ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${esc(data.state)}</div>` : ''}
+        ${data.assigner ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">CNA: ${esc(data.assigner)}</div>` : ''}
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">pub ${esc((data.published||'').slice(0,10))}${data.modified ? ' · mod '+esc((data.modified||'').slice(0,10)) : ''}</div>
+      </div>
+      ${data.summary ? `<div style="color:var(--text-dim);line-height:1.6;margin-bottom:10px;white-space:pre-wrap;">${esc(data.summary)}</div>` : '<div style="color:var(--text-dimmer);font-style:italic;margin-bottom:10px;">No description returned by CIRCL.</div>'}
+      ${data.cvss_vector ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:8px;">Vector: <span style="color:var(--text);">${esc(data.cvss_vector)}</span></div>` : ''}
+      ${cwes ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:8px;">CWE: <span style="color:var(--text);">${cwes}</span></div>` : ''}
+      ${affected ? `<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-dim);font-family:var(--mono);font-size:11px;">Affected products (${(data.affected||[]).length})</summary><ul style="margin-top:6px;padding-left:18px;">${affected}</ul></details>` : ''}
+      ${refs ? `<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-dim);font-family:var(--mono);font-size:11px;">References (${(data.references||[]).length})</summary><ul style="margin-top:6px;padding-left:18px;">${refs}</ul></details>` : ''}
+      ${data.detail_url ? `<div style="margin-top:10px;"><a href="${esc(data.detail_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">Open on cve.circl.lu ↗</a></div>` : ''}
+    </div>`;
+  });
+
+  // -------- IP reputation (DNSBL) --------
+  const repForm = document.getElementById('rep-form');
+  if (repForm) repForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('rep-out'); ready(out);
+    out.textContent = 'querying 8 DNSBLs…';
+    const {ok, data} = await jfetch('/api/v1/network/ip-reputation', {ip: new FormData(e.target).get('ip')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    const rows = (data.rows||[]).map(r => `
+      <tr>
+        <td style="padding:4px 8px;font-family:var(--mono);">${esc(r.list)}</td>
+        <td style="padding:4px 8px;"><span style="color:${r.listed?'var(--danger)':'var(--accent)'};font-family:var(--mono);font-weight:600;">${r.listed ? 'LISTED' : 'clean'}</span></td>
+        <td style="padding:4px 8px;color:var(--text-dim);font-size:11px;">${esc(r.description)}</td>
+        <td style="padding:4px 8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${r.listed ? esc((r.answer||[]).join(', ')) : ''}</td>
+        <td style="padding:4px 8px;text-align:right;">${r.detail_url ? `<a href="${esc(r.detail_url)}" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:10px;color:var(--accent);text-decoration:none;">details ↗</a>` : ''}</td>
+      </tr>`).join('');
+    const banner = data.listed_on > 0
+      ? `<div style="padding:10px 12px;background:rgba(224,96,96,.1);border:1px solid rgba(224,96,96,.4);border-radius:6px;margin:10px 12px;"><strong>${data.listed_on}/${data.lists_checked}</strong> lists flag <span class="mono">${esc(data.ip)}</span>.</div>`
+      : `<div style="padding:10px 12px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);border-radius:6px;margin:10px 12px;">Clean across all ${data.lists_checked} blocklists.</div>`;
+    out.innerHTML = banner + `<table style="width:100%;font-size:12px;border-collapse:collapse;margin:0 12px 12px;">
+      <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">List</th><th style="padding:6px 8px;">Status</th>
+        <th style="padding:6px 8px;">What it tracks</th><th style="padding:6px 8px;">Answer</th>
+        <th style="padding:6px 8px;text-align:right;">Details</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  });
+
+  // A small helper: if the server returns 412, surface a friendly
+  // "configure your API key" message instead of a generic error.
+  function renderError(out, status, data) {
+    if (status === 412) {
+      out.innerHTML = `<div style="padding:14px 16px;">
+        <div style="color:var(--warn);font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px;">API key required</div>
+        <div style="color:var(--text-dim);font-size:12px;line-height:1.6;">${esc(data.detail||data.error||'missing integration')}</div>
+        <div style="margin-top:10px;"><a href="/ui/admin/integrations#threat-intel" style="color:var(--accent);font-family:var(--mono);font-size:11px;">Open Admin → Integrations → Threat Intel ↗</a></div>
+      </div>`;
+      return;
+    }
+    out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail||('HTTP '+status))}</div>`;
+  }
+  async function jfetchFull(url, body) {
+    const r = await fetch(url, {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    let data = {};
+    try { data = await r.json(); } catch {}
+    return {ok: r.ok, status: r.status, data};
+  }
+
+  // -------- AbuseIPDB --------
+  const abForm = document.getElementById('abuseipdb-form');
+  if (abForm) abForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('abuseipdb-out'); ready(out);
+    out.textContent = 'querying AbuseIPDB…';
+    const {ok, status, data} = await jfetchFull('/api/v1/network/abuseipdb-lookup', {ip: new FormData(e.target).get('ip')});
+    if (!ok) return renderError(out, status, data);
+    const conf = Number(data.confidence || 0);
+    const color = conf >= 75 ? 'var(--danger)' : conf >= 25 ? 'var(--warn,#eab308)' : 'var(--accent)';
+    const kv = (k, v) => v==null||v===''?'':`<tr><td style="padding:4px 8px;color:var(--text-dim);width:180px;">${esc(k)}</td><td style="padding:4px 8px;font-family:var(--mono);">${esc(String(v))}</td></tr>`;
+    out.innerHTML = `<div style="padding:14px 16px;">
+      <div style="display:flex;gap:16px;margin-bottom:12px;align-items:center;">
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text);">${esc(data.ip)}</div>
+        <div style="font-family:var(--mono);font-size:22px;color:${color};font-weight:600;">${conf}%</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">abuse confidence</div>
+      </div>
+      <div style="height:6px;background:rgba(255,255,255,.05);border-radius:3px;margin-bottom:14px;overflow:hidden;">
+        <div style="width:${conf}%;height:100%;background:${color};"></div>
+      </div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        ${kv('Country', data.country)}
+        ${kv('ISP', data.isp)}
+        ${kv('Domain', data.domain)}
+        ${kv('Usage', data.usage)}
+        ${kv('Total reports', data.total_reports)}
+        ${kv('Distinct reporters', data.distinct_users)}
+        ${kv('Last reported', data.last_reported)}
+        ${kv('Tor exit', data.is_tor ? 'yes' : '')}
+        ${(data.hostnames||[]).length ? kv('Hostnames', (data.hostnames||[]).join(', ')) : ''}
+      </table>
+      <div style="margin-top:10px;"><a href="${esc(data.detail_url||'')}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">Full AbuseIPDB dossier ↗</a></div>
+    </div>`;
+  });
+
+  // -------- GreyNoise --------
+  const gnForm = document.getElementById('greynoise-form');
+  if (gnForm) gnForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('greynoise-out'); ready(out);
+    out.textContent = 'querying GreyNoise…';
+    const {ok, status, data} = await jfetchFull('/api/v1/network/greynoise-lookup', {ip: new FormData(e.target).get('ip')});
+    if (!ok) return renderError(out, status, data);
+    if (!data.seen) {
+      out.innerHTML = `<div style="padding:14px 16px;color:var(--text-dim);">
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text);margin-bottom:6px;">${esc(data.ip)}</div>
+        <div>Not observed by GreyNoise — i.e. not seen performing internet-wide scanning in the observable window.</div>
+      </div>`;
+      return;
+    }
+    const cls = (data.classification||'').toLowerCase();
+    const color = cls === 'malicious' ? 'var(--danger)' : cls === 'benign' ? 'var(--accent)' : 'var(--warn,#eab308)';
+    out.innerHTML = `<div style="padding:14px 16px;">
+      <div style="display:flex;gap:16px;margin-bottom:10px;align-items:baseline;">
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text);">${esc(data.ip)}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:${color};font-weight:600;text-transform:uppercase;">${esc(data.classification||'unknown')}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(data.name||'')}</div>
+      </div>
+      <div style="color:var(--text-dim);font-size:12px;margin-bottom:6px;">${esc(data.message||'')}</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">Last seen ${esc(data.last_seen||'?')}</div>
+      ${data.link ? `<div style="margin-top:10px;"><a href="${esc(data.link)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">GreyNoise context ↗</a></div>` : ''}
+    </div>`;
+  });
+
+  // -------- VirusTotal --------
+  const vtForm = document.getElementById('virustotal-form');
+  if (vtForm) vtForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('virustotal-out'); ready(out);
+    out.textContent = 'querying VirusTotal…';
+    const {ok, status, data} = await jfetchFull('/api/v1/network/virustotal-lookup', {target: new FormData(e.target).get('target')});
+    if (!ok) return renderError(out, status, data);
+    if (!data.found) { out.innerHTML = `<div style="padding:14px 16px;color:var(--text-dim);">No VirusTotal record for <span class="mono">${esc(data.target)}</span>.</div>`; return; }
+    const mal = Number(data.malicious||0), sus = Number(data.suspicious||0);
+    const color = mal > 0 ? 'var(--danger)' : sus > 0 ? 'var(--warn,#eab308)' : 'var(--accent)';
+    const kv = (k, v) => v==null||v===''?'':`<tr><td style="padding:4px 8px;color:var(--text-dim);width:180px;">${esc(k)}</td><td style="padding:4px 8px;font-family:var(--mono);">${esc(String(v))}</td></tr>`;
+    out.innerHTML = `<div style="padding:14px 16px;">
+      <div style="display:flex;gap:16px;margin-bottom:12px;align-items:baseline;flex-wrap:wrap;">
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text);">${esc(data.target)}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);">${esc((data.kind||'').toUpperCase())}</div>
+        <div style="font-family:var(--mono);font-size:18px;color:${color};font-weight:600;">${mal} malicious · ${sus} suspicious</div>
+      </div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        ${kv('Reputation', data.reputation)}
+        ${kv('Harmless', data.harmless)}
+        ${kv('Undetected', data.undetected)}
+        ${kv('Timeout', data.timeout)}
+        ${kv('Tags', (data.tags||[]).join(', '))}
+        ${kv('ASN', data.asn ? 'AS'+data.asn+(data.as_owner?' · '+data.as_owner:'') : '')}
+        ${kv('Country', data.country)}
+        ${data.last_analysis_date ? kv('Last analysis', new Date(data.last_analysis_date*1000).toISOString().slice(0,19).replace('T',' ')) : ''}
+      </table>
+      ${data.detail_url ? `<div style="margin-top:10px;"><a href="${esc(data.detail_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">Open in VirusTotal ↗</a></div>` : ''}
+    </div>`;
+  });
+
+  // -------- URLScan.io --------
+  const usForm = document.getElementById('urlscan-form');
+  if (usForm) usForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('urlscan-out'); ready(out);
+    out.textContent = 'querying URLScan.io…';
+    const {ok, status, data} = await jfetchFull('/api/v1/network/urlscan-search', {query: new FormData(e.target).get('query')});
+    if (!ok) return renderError(out, status, data);
+    if (!data.rows || !data.rows.length) {
+      out.innerHTML = `<div style="padding:14px 16px;color:var(--text-dim);">No matches for <span class="mono">${esc(data.query)}</span>.</div>`;
+      return;
+    }
+    const rows = data.rows.map(r => `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;">${esc((r.time||'').slice(0,19).replace('T',' '))}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;">${esc(r.domain||'')}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(r.ip||'')}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(r.country||'')} · AS${esc(String(r.asn||'—'))}</td>
+      <td style="padding:4px 8px;"><span style="color:${r.verdict && r.verdict.malicious ? 'var(--danger)' : 'var(--accent)'};font-family:var(--mono);font-size:11px;">${r.verdict && r.verdict.malicious ? 'malicious' : 'clean'}</span></td>
+      <td style="padding:4px 8px;"><a href="${esc(r.result||('https://urlscan.io/result/'+(r.uuid||'')))}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">view ↗</a></td>
+    </tr>`).join('');
+    out.innerHTML = `<div style="padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+      ${data.total} match${data.total===1?'':'es'} for <span style="color:var(--text);">${esc(data.query)}</span>
+    </div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;margin:0 12px 12px;">
+      <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">Time</th><th style="padding:6px 8px;">Domain</th>
+        <th style="padding:6px 8px;">IP</th><th style="padding:6px 8px;">ASN</th>
+        <th style="padding:6px 8px;">Verdict</th><th style="padding:6px 8px;">Result</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  });
+
+  // -------- Shodan --------
+  const shForm = document.getElementById('shodan-form');
+  if (shForm) shForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('shodan-out'); ready(out);
+    out.textContent = 'querying Shodan…';
+    const {ok, status, data} = await jfetchFull('/api/v1/network/shodan-lookup', {ip: new FormData(e.target).get('ip')});
+    if (!ok) return renderError(out, status, data);
+    if (!data.found) { out.innerHTML = `<div style="padding:14px 16px;color:var(--text-dim);">No Shodan record for <span class="mono">${esc(data.ip)}</span>.</div>`; return; }
+    const svcRows = (data.services||[]).map(s => `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+      <td style="padding:4px 8px;font-family:var(--mono);">${esc(s.port)}/${esc(s.transport||'tcp')}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;">${esc(s.product||'')}${s.version?' '+esc(s.version):''}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">${esc(s.module||'')}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${esc((s.timestamp||'').slice(0,10))}</td>
+    </tr>`).join('');
+    const vulns = (data.vulns||[]).slice(0,30).map(v =>
+      `<a href="https://nvd.nist.gov/vuln/detail/${esc(v)}" target="_blank" rel="noopener" style="display:inline-block;margin:2px 4px 2px 0;padding:2px 6px;background:rgba(224,96,96,.12);border-radius:3px;color:var(--danger);font-family:var(--mono);font-size:10px;text-decoration:none;">${esc(v)}</a>`
+    ).join('');
+    out.innerHTML = `<div style="padding:14px 16px;">
+      <div style="display:flex;gap:16px;margin-bottom:10px;align-items:baseline;flex-wrap:wrap;">
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text);">${esc(data.ip)}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(data.org||data.isp||'')}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${esc(data.country||'')} · ${esc(data.city||'')} · AS${esc(String(data.asn||''))}</div>
+      </div>
+      ${(data.hostnames||[]).length ? `<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:10px;">Hostnames: <span style="color:var(--text);">${(data.hostnames||[]).map(esc).join(', ')}</span></div>` : ''}
+      ${(data.tags||[]).length ? `<div style="margin-bottom:10px;">${(data.tags||[]).map(t => `<span style="margin-right:4px;padding:2px 6px;background:rgba(255,255,255,.04);border-radius:3px;color:var(--accent);font-family:var(--mono);font-size:10px;">${esc(t)}</span>`).join('')}</div>` : ''}
+      ${vulns ? `<div style="margin-bottom:12px;"><div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:4px;">Known CVEs on this host:</div>${vulns}</div>` : ''}
+      ${svcRows ? `<table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+          <th style="padding:6px 8px;">Port</th><th style="padding:6px 8px;">Product / version</th>
+          <th style="padding:6px 8px;">Module</th><th style="padding:6px 8px;">Seen</th>
+        </tr></thead><tbody>${svcRows}</tbody></table>` : ''}
+      <div style="margin-top:10px;"><a href="${esc(data.detail_url||'')}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">Full Shodan host page ↗</a></div>
+    </div>`;
+  });
+
+  // -------- Censys --------
+  const csForm = document.getElementById('censys-form');
+  if (csForm) csForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('censys-out'); ready(out);
+    out.textContent = 'querying Censys…';
+    const {ok, status, data} = await jfetchFull('/api/v1/network/censys-lookup', {ip: new FormData(e.target).get('ip')});
+    if (!ok) return renderError(out, status, data);
+    if (!data.found) { out.innerHTML = `<div style="padding:14px 16px;color:var(--text-dim);">No Censys record for <span class="mono">${esc(data.ip)}</span>.</div>`; return; }
+    const svcRows = (data.services||[]).map(s => `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+      <td style="padding:4px 8px;font-family:var(--mono);">${esc(s.port)}/${esc(s.transport||'tcp')}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;">${esc(s.service_name||'')}${s.extended?' · '+esc(s.extended):''}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:11px;">${esc(s.product||'')}${s.version?' '+esc(s.version):''}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${esc((s.observed_at||'').slice(0,10))}</td>
+    </tr>`).join('');
+    out.innerHTML = `<div style="padding:14px 16px;">
+      <div style="display:flex;gap:16px;margin-bottom:10px;align-items:baseline;flex-wrap:wrap;">
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text);">${esc(data.ip)}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(data.as_name||'')}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${esc(data.country||'')} · ${esc(data.city||'')} · AS${esc(String(data.asn||''))}</div>
+      </div>
+      ${data.os ? `<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:10px;">OS: <span style="color:var(--text);">${esc(data.os)}</span></div>` : ''}
+      ${svcRows ? `<table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+          <th style="padding:6px 8px;">Port</th><th style="padding:6px 8px;">Service</th>
+          <th style="padding:6px 8px;">Product</th><th style="padding:6px 8px;">Seen</th>
+        </tr></thead><tbody>${svcRows}</tbody></table>` : ''}
+      <div style="margin-top:10px;"><a href="${esc(data.detail_url||'')}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">Full Censys host page ↗</a></div>
+    </div>`;
+  });
+
+  // -------- DShield --------
+  const dshieldForm = document.getElementById('dshield-form');
+  if (dshieldForm) dshieldForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('dshield-out'); ready(out);
+    out.textContent = 'querying isc.sans.edu…';
+    const {ok, data} = await jfetch('/api/v1/network/dshield-lookup', {ip: new FormData(e.target).get('ip')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    if (data.error) { out.innerHTML = `<div style="padding:12px;color:var(--warn);">${esc(data.error)}</div>`; return; }
+    const kv = (k, v) => v == null || v === ''
+      ? '' : `<tr><td style="padding:4px 8px;color:var(--text-dim);width:180px;">${esc(k)}</td><td style="padding:4px 8px;font-family:var(--mono);">${esc(String(v))}</td></tr>`;
+    out.innerHTML = `<div style="padding:12px;">
+      <div style="font-family:var(--mono);font-size:13px;color:var(--text);margin-bottom:10px;">${esc(data.ip)}</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        ${kv('Total reports', data.count)}
+        ${kv('Attacks', data.attacks)}
+        ${kv('Unique targets', data.unique_targets)}
+        ${kv('Threat-feed hits', data.threatfeed_count)}
+        ${kv('First seen', data.mindate)}
+        ${kv('Last seen', data.maxdate)}
+        ${kv('Updated', data.updated)}
+        ${kv('ASN', data.asn ? `AS${data.asn}${data.asname ? ' · '+data.asname : ''}` : null)}
+        ${kv('Country', data.country)}
+        ${kv('Network', data.network)}
+        ${data.comment ? kv('Comment', data.comment) : ''}
+      </table>
+      <div style="margin-top:10px;"><a href="${esc(data.detail_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">Full ISC dossier ↗</a></div>
+    </div>`;
+  });
+})();
+</script>
+
+<script>
+// Copy / CSV / Print-PDF wiring — shared across Threat Intel cards.
+(function(){
+  function textOf(el) { return (el.innerText || el.textContent || '').replace(/\u00a0/g,' ').trimEnd(); }
+  function tableTSV(el) {
+    const rows = [];
+    el.querySelectorAll('table tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c =>
+        (c.innerText || '').trim().replace(/\s*\u21c5\s*$/,'').replace(/\t/g,' ').replace(/\n+/g,' ')));
+    });
+    return rows.length ? rows.map(r => r.join('\t')).join('\n') : '';
+  }
+  function csvFromTable(el) {
+    const rows = [];
+    el.querySelectorAll('table tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c => {
+        const v = (c.innerText || '').trim().replace(/\s*\u21c5\s*$/, '');
+        return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v;
+      }));
+    });
+    return rows.length ? rows.map(r => r.join(',')).join('\r\n') + '\r\n' : null;
+  }
+  function copy(btn, text) {
+    const orig = btn.textContent;
+    const done = ok => { btn.textContent = ok ? '\u2713 copied' : '\u2717 failed'; setTimeout(() => btn.textContent = orig, 1500); };
+    if (navigator.clipboard) { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); }
+    else {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      try { done(document.execCommand('copy')); } catch { done(false); } ta.remove();
+    }
+  }
+  function download(name, body, mime) {
+    const blob = new Blob([body], {type: mime});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+  }
+
+  document.querySelectorAll('.result-actions').forEach(actions => {
+    const selStr = actions.dataset.source;
+    const src = document.querySelector(selStr);
+    if (!src) return;
+    const copyBtn = actions.querySelector('.act-copy');
+    const csvBtn  = actions.querySelector('.act-csv');
+    const printBtn= actions.querySelector('.act-print');
+    const hasContent = () => {
+      if (src.classList.contains('empty')) return false;
+      const t = textOf(src).trim();
+      if (!t) return false;
+      if (/^(waiting|fetching|running|scanning|loading|probing|resolving|capturing|tracing|querying|checking|searching)\b/i.test(t)) return false;
+      return true;
+    };
+    const update = () => {
+      const enable = hasContent();
+      if (copyBtn)  copyBtn.disabled  = !enable;
+      if (csvBtn)   csvBtn.disabled   = !enable;
+      if (printBtn) printBtn.disabled = !enable;
+    };
+    new MutationObserver(update).observe(src, {childList:true, subtree:true, attributes:true, attributeFilter:['class']});
+    update();
+
+    copyBtn && copyBtn.addEventListener('click', () => copy(copyBtn, tableTSV(src) || textOf(src)));
+    csvBtn  && csvBtn .addEventListener('click', () => {
+      const body = csvFromTable(src) || (textOf(src) + '\n');
+      const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+      const slug = selStr.replace(/^#/,'').replace(/[^a-z0-9_-]/ig,'-');
+      download(`${slug}-${stamp}.csv`, body, 'text/csv;charset=utf-8');
+    });
+    printBtn && printBtn.addEventListener('click', () => {
+      const card = src.closest('.card') || src.parentElement;
+      if (card) card.classList.add('print-active');
+      document.body.classList.add('print-scoped');
+      const cleanup = () => {
+        if (card) card.classList.remove('print-active');
+        document.body.classList.remove('print-scoped');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+  });
+})();
+</script>
+
+<script>
+// If an admin has disabled the source whose panel is the HTML default
+// (CVE), the .active tab will be something else — force the matching
+// panel visible, everything else hidden.
+(function(){
+  const active = document.querySelector('[data-tabs="ti"] .tab.active');
+  if (!active) return;
+  const key = active.dataset.tab;
+  document.querySelectorAll('[data-panel][data-group="ti"]').forEach(p => {
+    p.classList.toggle('hidden', p.dataset.panel !== key);
+  });
+})();
+</script>
+{% endblock %}

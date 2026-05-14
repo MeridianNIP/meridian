@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Sign in · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block head_extra %}
+{% if branding.login_bg_path %}
+<style>
+  body { background-image: url('/api/v1/branding/assets/login_bg?v={{ (branding.updated_at|string)[:10] }}'); background-size: cover; background-position: center; background-attachment: fixed; }
+  .login-main { background: rgba(10, 16, 24, 0.78); backdrop-filter: blur(3px); }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block frame %}
+<div class="login-main">
+  <div class="login-card">
+    <div class="warn-banner">
+      <div class="warn-icon"></div>
+      <div class="warn-text">
+        <strong>Unauthorized Access Warning</strong>
+        {{ branding.pre_login_warning or 'This system is restricted to authorized personnel only. All access attempts are logged and monitored. Unauthorized use is strictly prohibited and may be subject to civil and criminal penalties. By continuing, you acknowledge that you are an authorized user.' }}
+      </div>
+    </div>
+
+    <div class="login-box">
+      <div class="login-title">Sign in</div>
+      <div class="login-sub">Authorized technicians only</div>
+
+      {% if error %}
+        <div class="form-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/ui/login" data-form="login" autocomplete="off">
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        <div class="field" style="margin-bottom:14px;">
+          <label>Username</label>
+          <input class="input" type="text" name="username" value="{{ username or '' }}" placeholder="your.username" required autofocus>
+        </div>
+        <div class="field" style="margin-bottom:18px;">
+          <label>Password</label>
+          <input class="input" type="password" name="password" placeholder="••••••••••••" required>
+        </div>
+        <button class="btn-login" type="submit">Sign in to portal</button>
+
+        <div class="divider">
+          <div class="div-line"></div>
+          <div class="div-lbl">MFA</div>
+          <div class="div-line"></div>
+        </div>
+        <div style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);letter-spacing:.05em;margin-bottom:10px;">
+          AUTHENTICATOR CODE (IF ENABLED)
+        </div>
+        <div class="mfa-row">
+          <input class="mfa-in" maxlength="1" inputmode="numeric" aria-label="MFA digit 1">
+          <input class="mfa-in" maxlength="1" inputmode="numeric" aria-label="MFA digit 2">
+          <input class="mfa-in" maxlength="1" inputmode="numeric" aria-label="MFA digit 3">
+          <input class="mfa-in" maxlength="1" inputmode="numeric" aria-label="MFA digit 4">
+          <input class="mfa-in" maxlength="1" inputmode="numeric" aria-label="MFA digit 5">
+          <input class="mfa-in" maxlength="1" inputmode="numeric" aria-label="MFA digit 6">
+          <input type="hidden" name="mfa_code">
+        </div>
+      </form>
+      <div style="text-align:center;margin-top:12px;font-family:var(--mono);font-size:11px;">
+        <a href="/ui/forgot-password" style="color:var(--accent);text-decoration:none;">Forgot password?</a>
+        <span style="color:var(--text-faint);margin:0 8px;">·</span>
+        <a href="/ui/locked-out" style="color:var(--text-dim);text-decoration:none;" title="Submit a help request to an administrator when other paths haven't worked">Locked out?</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

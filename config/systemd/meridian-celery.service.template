@@ -1,0 +1,38 @@
+# Meridian · Celery worker (background jobs)
+# Rendered by install.sh.
+
+[Unit]
+Description=Meridian NIP · Celery worker
+After=redis-server.service postgresql.service
+Wants=redis-server.service postgresql.service
+
+[Service]
+Type=simple
+User=${SVC_USER}
+Group=${SVC_GROUP}
+WorkingDirectory=${INSTALL_ROOT}
+Environment="MERIDIAN_CONFIG=${CONFIG_ROOT}/meridian.conf"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="PYTHONUNBUFFERED=1"
+UMask=0027
+
+ExecStart=${INSTALL_ROOT}/venv/bin/celery -A app.celery_app worker \
+  --concurrency=4 \
+  --max-tasks-per-child=200 \
+  --loglevel=info \
+  --logfile=${LOG_ROOT}/celery.log
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+LockPersonality=true
+RestrictNamespaces=true
+ReadWritePaths=${DATA_ROOT} ${LOG_ROOT}
+
+[Install]
+WantedBy=multi-user.target

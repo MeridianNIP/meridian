@@ -1,0 +1,102 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wizards · Meridian Docs</title>
+    <link rel="stylesheet" href="../css/docs.css">
+    </head>
+    <body>
+    <div class="grid-bg"></div>
+    <div class="frame">
+    <aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+    <main class="content">
+    <div class="page-meta">USER · WIZARDS</div>
+    <h1>Wizards</h1>
+    <div class="page-sub">Guided, multi-step diagnostics. Each step explains what it checked and suggests evidence-backed next steps.</div>
+    <h2>When to use a wizard vs a tool</h2>
+<p>Use a <strong>tool</strong> when you know exactly what you want to check (e.g. "dig the AAAA for this host"). Use a <strong>wizard</strong> when you have a symptom and want the portal to walk through the usual chain.</p>
+
+<h2>Wizard catalog</h2>
+<ul>
+<li><code>dns.resolve_fail</code> — "Why isn't my domain resolving?". Checks delegation, SOA consistency, propagation, DNSSEC.</li>
+<li><code>zone.health</code> — formalizes the zone-health tool as a guided report.</li>
+<li><code>axfr.audit</code> — tries AXFR against every authoritative NS and flags any that succeed.</li>
+<li><code>dnssec.chain</code> — end-to-end chain-of-trust walk with DS/DNSKEY validation per label.</li>
+<li><code>dmarc.tuning</code> — pulls the SPF/DKIM/DMARC records and rates the policy.</li>
+<li><code>mail.delivery</code> + <code>mail.flow_validator</code> — "why is my mail bouncing?" and "is this domain configured to send?".</li>
+<li><code>registrar.mismatch</code> — compares registrar WHOIS NS set against the zone's actual NS records.</li>
+<li><code>ssl.deep_inspect</code> — full TLS audit: chain, hostname, expiry, cipher set, cert key type, issuer, self-signed check.</li>
+<li><code>cloudflare.validator</code> — detects Cloudflare in front of a domain and checks proxying/origin coverage.</li>
+<li><code>typosquat.sweep</code> — permutation generation + resolution check.</li>
+<li><code>network.reachability</code> — ping/trace/port sweep bundled into a single report.</li>
+<li><code>network.up_for_everyone</code> — DNS + HTTP from multiple public resolvers to distinguish "broken for me" from "broken globally".</li>
+<li><code>ip.reputation</code> — DNSBL check + ASN/prefix context.</li>
+<li><code>domain.bringup</code> — checklist for a brand-new domain about to go live.</li>
+<li><code>infoblox.drift</code> — compares Infoblox DHCP/IPAM records against live DNS.</li>
+</ul>
+
+<h2>How to read the output</h2>
+<p>Each step is one of <strong>ok</strong> / <strong>info</strong> / <strong>warn</strong> / <strong>fail</strong>. The badge color matches. Below the steps, the wizard ranks suggested next actions by priority (<code>critical</code> / <code>recommended</code> / <code>suggested</code> / <code>info</code>), each with a one-click deeplink to the relevant tool or admin page.</p>
+
+<h2>Gotchas</h2>
+<ul>
+<li>DNS propagation fans out to 16 public resolvers. A wizard run that uses it will take 5-10 s — the "running..." state is normal.</li>
+<li>Wizard runs are recorded in <code>wizard_runs</code>. You can see your recent ones under Admin &rarr; Audit.</li>
+</ul>
+    </main>
+    </div>
+    </body>
+    </html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getting started · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">USER · GETTING STARTED</div>
+<h1>Getting started</h1>
+<div class="page-sub">Your first login, MFA enrollment, the AUP, and the basics of the UI.</div>
+
+<h2>First login</h2>
+<ol>
+<li>Browse to your portal URL (e.g. <code>https://meridiannip.acme.com</code>).</li>
+<li>Enter the username + temporary password your admin provided.</li>
+<li>If MFA is required for your role, enter the 6-digit code from your authenticator app.</li>
+<li>You'll be prompted to change the temporary password. Choose something you haven't used on any other system.</li>
+</ol>
+
+<h2>Accepting the Acceptable Use Policy</h2>
+<p>On first login, the portal shows your organization's full AUP and requires you to tick "I accept". This is one-time per AUP version. Your acceptance is audit-logged with timestamp, IP, and user agent. If the AUP is updated later, you'll be re-prompted.</p>
+
+<h2>Enrolling MFA</h2>
+<p>Even if MFA isn't required for your role, enrolling it is strongly recommended.</p>
+<ol>
+<li>Settings → MFA / Security → "Enroll authenticator"</li>
+<li>Scan the QR code with an app: Google Authenticator, Authy, 1Password, Bitwarden, etc.</li>
+<li>Enter the 6-digit code to confirm.</li>
+<li>Save the backup codes somewhere safe — each is good for one login if you lose the authenticator device.</li>
+</ol>
+
+<h2>The sidebar</h2>
+<p>The left sidebar is your primary navigation:</p>
+<table>
+<tr><th>Section</th><th>What's there</th></tr>
+<tr><td>Dashboard</td><td>Your overview — pinned tools, recent activity, URL monitors, service health</td></tr>
+<tr><td>DNS Tools</td><td>Dig sandbox, propagation checker, DNSSEC chain, zone health, AXFR audit, etc.</td></tr>
+<tr><td>DHCP</td><td>Query live leases, scopes, reservations across Infoblox / Kea / MS DHCP</td></tr>
+<tr><td>IPAM</td><td>Subnet utilization, IP claim/release, conflict detection across external IPAM systems</td></tr>
+<tr><td>Network Tools</td><td>Ping, MTR, port scan, iperf3, HTTP tester, SNMP, packet capture</td></tr>
+<tr><td>Wizards</td><td>Guided diagnostics — "Why isn't my domain resolving?", "Why isn't mail delivering?", etc.</td></tr>
+<tr><td>Monitors</td><td>Your uptime + latency watchlists</td></tr>
+<tr><td>Directory</td><td>AD / Entra ID user, group, and DL lookups (if your admin has granted access)</td></tr>
+<tr><td>Certificates</td><td>TLS cert lifecycle for monitored domains and the portal itself</td></tr>
+<tr><td>File Repo</td><td>Your personal file space (scripts, docs, exported pcaps, PDF reports)</td></tr>
+<tr><td>Messages</td><td>Inter-user messages + admin broadcasts</td></tr>
+</table>
+
+<h2>Command palette</h2>
+<p>Press <code>Ctrl+K</code> (or <code>Cmd+K</code> on macOS) anywhere to open the command palette. Type a tool name, domain, or IP to jump directly. Press <code>?</code> to see the full keyboard-shortcut cheat sheet.</p>
+
+<h2>Running your first query</h2>
+<p>DNS Tools → Dig:</p>
+<ol>
+<li>Type a domain in the target field (e.g. <code>example.com</code>).</li>
+<li>Pick a record type (A, AAAA, MX, etc.).</li>
+<li>Pick a resolver (Cloudflare 1.1.1.1, Google 8.8.8.8, Quad9 9.9.9.9, or Local BIND9).</li>
+<li>Click flag chips to toggle dig options (<code>+short</code>, <code>+trace</code>, <code>+dnssec</code>, …).</li>
+<li>Click "Run query".</li>
+</ol>
+<p>Output appears in the console panel below. Use "Copy", "CSV", "JSON", or "PDF" to export.</p>
+
+<h2>Pinning to your dashboard</h2>
+<p>On any tool result, click the "Pin to dashboard" button. It appears as a widget in the Pinned Tools grid on your Dashboard.</p>
+
+<h2>Idle timeout</h2>
+<p>By default you're signed out after 30 minutes of no activity. A 60-second warning modal appears before logout with a "Stay signed in" button. You can change your personal timeout in Settings → Sessions (within limits your admin allows).</p>
+
+<h2>Single-session policy</h2>
+<p>Meridian allows one active session per user by default. Signing in on a new device signs you out of the previous one and records both the old and new IP/device to the audit log. This prevents credential sharing.</p>
+<p>If you legitimately need multi-device (phone + laptop), ask your admin to raise your <code>max_concurrent_sessions</code>.</p>
+
+<h2>Getting help</h2>
+<ul>
+<li>Press <code>?</code> for keyboard shortcuts</li>
+<li>Every sandboxed tool has an "Example" button showing realistic usage</li>
+<li>Wizards walk you through common diagnostics step-by-step with plain-English explanations</li>
+<li>Your admin's support contact is in the page footer and on the AUP</li>
+</ul>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

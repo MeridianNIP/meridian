@@ -1,0 +1,476 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Updates · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Updates</div>
+    <div class="page-sub">Pending apt updates, pinned version manifest, drift, snapshot + update history. Apply is a CLI-only operation (<code style="color:var(--accent);">meridian-nip upgrade</code>) — the portal helps you prep, it does not silently upgrade itself.</div>
+  </div>
+  {% with docs_path="admin/updates.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="stat-grid" id="summary-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;"></div>
+
+<div class="tabs" data-tabs="upd">
+  <button class="tab active" data-tab="pending">Pending apt</button>
+  <button class="tab"        data-tab="drift">Drift</button>
+  <button class="tab"        data-tab="manifest">Version manifest</button>
+  <button class="tab"        data-tab="snapshots">Snapshots</button>
+  <button class="tab"        data-tab="history">Update history</button>
+  {% if user.role in ('admin', 'super_admin') %}
+  <button class="tab"        data-tab="apply">Apply + reboot</button>
+  {% endif %}
+</div>
+
+<!-- Pending apt panel -->
+<div data-panel="pending" data-group="upd">
+  <div class="card" style="margin-bottom:14px;">
+    <div style="padding:12px 14px;display:flex;gap:10px;align-items:center;">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);" id="pending-summary">loading…</span>
+      <span style="flex:1;"></span>
+      <button class="btn" id="btn-snap" style="font-size:11px;">▸ Take snapshot now</button>
+      <button class="btn btn-primary" id="btn-rescan-pending" style="font-size:11px;">▸ Rescan apt</button>
+    </div>
+  </div>
+  <div class="card">
+    <table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Package</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">From</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">To</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Repo</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Type</th>
+      </tr></thead>
+      <tbody id="pending-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Drift panel -->
+<div data-panel="drift" data-group="upd" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div style="padding:12px 14px;display:flex;gap:10px;align-items:center;">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">Installed-vs-pinned comparison. Drift rows clear automatically when versions realign.</span>
+      <span style="flex:1;"></span>
+      <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="chk-resolved"> include resolved
+      </label>
+      <button class="btn btn-primary" id="btn-rescan-drift" style="font-size:11px;">▸ Rescan drift</button>
+    </div>
+  </div>
+  <div class="card">
+    <table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Component</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Category</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Found</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Expected</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Severity</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Detected</th>
+      </tr></thead>
+      <tbody id="drift-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Manifest panel -->
+<div data-panel="manifest" data-group="upd" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div style="padding:12px 14px;font-size:12px;color:var(--text-dim);">The pinned tested version for every component we care about. Rows with a changelog URL link out to the upstream notes for the pinned version.</div>
+  </div>
+  <div class="card">
+    <table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Category</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Component</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Debian</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Pinned</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Range</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Purpose</th>
+        <th style="text-align:right;padding:8px;"></th>
+      </tr></thead>
+      <tbody id="manifest-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Snapshots panel -->
+<div data-panel="snapshots" data-group="upd" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div style="padding:12px 14px;font-size:12px;color:var(--text-dim);">Snapshots wrap <code>scripts/backup.sh</code> — pg_dump + /etc/meridian config + uploads. Master keys are <strong>not</strong> included; keep those off-box.</div>
+  </div>
+  <div class="card">
+    <table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">When</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Reason</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Path</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Size</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Includes</th>
+        <th style="text-align:right;padding:8px;"></th>
+      </tr></thead>
+      <tbody id="snap-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- History panel -->
+<div data-panel="history" data-group="upd" class="hidden">
+  <div class="card">
+    <table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">When</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Component</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">From → To</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Status</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Snapshot</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Notes</th>
+      </tr></thead>
+      <tbody id="hist-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+{% if user.role in ('admin', 'super_admin') %}
+<!-- Apply + reboot panel: immediate or scheduled apt upgrade + reboot. -->
+<div data-panel="apply" data-group="upd" class="hidden">
+  <div class="card" style="margin-bottom:14px;padding:14px 16px;background:rgba(234,179,8,.06);border-left:3px solid var(--warn,#eab308);">
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+      <strong style="color:var(--warn,#eab308);">Disruptive action.</strong>
+      Running with the reboot flag set takes the portal offline for ~60 s while
+      the host comes back up. Outstanding sessions are interrupted; the sample
+      collector, cert expiry sweep, and other beat jobs lose their current
+      iteration. Only run during an approved maintenance window, or use
+      <strong>Schedule</strong> to queue for a quieter time. All actions are
+      logged to the tamper-evident audit chain.
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Run now</div></div>
+    <div style="padding:14px 16px;">
+      <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+        <input type="checkbox" id="applynow-reboot" checked> reboot after upgrade
+      </label>
+      <button class="btn btn-primary" id="btn-apply-now" style="font-size:12px;">▸ Update + Reboot now</button>
+      <span id="applynow-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);"></span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Schedule for a maintenance window</div></div>
+    <div style="padding:14px 16px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>When (your local time)</label>
+          <input class="input mono" type="datetime-local" id="sched-when">
+        </div>
+        <div class="field"><label>Reboot?</label>
+          <select class="select" id="sched-reboot">
+            <option value="true" selected>yes · apply + reboot</option>
+            <option value="false">no · apply only</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-schedule" style="font-size:12px;margin-top:8px;">+ Schedule run</button>
+      <span id="sched-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Run history</div>
+      <span id="runs-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+    </div>
+    <table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">When</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Status</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Reboot</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Exit</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Duration</th>
+        <th style="text-align:right;padding:8px;"></th>
+      </tr></thead>
+      <tbody id="runs-rows"></tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function(){
+  const sevColor = {ok:'var(--accent)', warn:'var(--warn)', block:'var(--danger)'};
+  const human = (b) => {
+    if (b == null) return '—';
+    const u = ['B','KB','MB','GB']; let i = 0; let n = b;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(1)} ${u[i]}`;
+  };
+
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+
+  async function loadPending() {
+    document.getElementById('pending-summary').textContent = 'running apt-get update + apt list --upgradable…';
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/updates/pending');
+    if (!ok) {
+      document.getElementById('pending-summary').textContent = `error: ${data.error || data.detail}`;
+      return {total: 0, security: 0};
+    }
+    document.getElementById('pending-summary').innerHTML =
+      `<span style="color:var(--text);">${data.total}</span> upgradable packages · <span style="color:var(--warn);">${data.security}</span> from security`;
+    document.getElementById('pending-rows').innerHTML = (data.rows || []).map(r => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);">${r.package}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);">${r.from_version}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--accent);">${r.to_version}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${r.repo}</td>
+        <td style="padding:8px;font-family:var(--mono);color:${r.is_security ? 'var(--warn)' : 'var(--text-dim)'};font-weight:${r.is_security ? 600 : 400};">${r.is_security ? 'security' : 'regular'}</td>
+      </tr>`).join('');
+    return data;
+  }
+
+  async function loadDrift() {
+    const includeResolved = document.getElementById('chk-resolved').checked;
+    const {ok, data} = await jfetch('GET', `/api/v1/admin/updates/drift?include_resolved=${includeResolved}`);
+    if (!ok) return {length: 0};
+    document.getElementById('drift-rows').innerHTML = data.map(d => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);${d.resolved_at ? 'opacity:0.5;' : ''}">
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);">${d.component_name}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${d.category}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);">${d.found_version}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--accent);">${d.expected_version}</td>
+        <td style="padding:8px;font-family:var(--mono);color:${sevColor[d.severity]};font-weight:600;">${d.severity}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${(d.detected_at || '').slice(0,16).replace('T',' ')}${d.resolved_at ? ` · resolved ${d.resolved_at.slice(0,16).replace('T',' ')}` : ''}</td>
+      </tr>`).join('');
+    return data;
+  }
+
+  async function loadManifest() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/updates/manifest');
+    if (!ok) return;
+    document.getElementById('manifest-rows').innerHTML = data.map(m => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${m.category}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);">${m.component_name}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);font-size:10px;">${m.tested_on_debian}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--accent);">${m.pinned_version}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);font-size:10px;">${m.min_version || '—'} … ${m.max_version || '—'}</td>
+        <td style="padding:8px;color:var(--text-dim);">${m.purpose || ''}</td>
+        <td style="padding:8px;text-align:right;">${m.changelog_url ? `<a href="${m.changelog_url}" target="_blank" style="font-family:var(--mono);font-size:10px;color:var(--accent);">changelog ↗</a>` : ''}</td>
+      </tr>`).join('');
+  }
+
+  async function loadSnapshots() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/updates/snapshots');
+    if (!ok) return {length: 0};
+    document.getElementById('snap-rows').innerHTML = data.map(s => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);${!s.on_disk ? 'opacity:0.5;' : ''}">
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);font-size:11px;">${(s.created_at || '').slice(0,19).replace('T',' ')}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);">${s.reason}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;word-break:break-all;">${s.storage_path}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);">${human(s.size_bytes)}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);font-size:10px;">
+          ${s.db_included ? 'DB' : ''}${s.config_included ? ' · config' : ''}${s.files_included ? ' · files' : ''}
+        </td>
+        <td style="padding:8px;text-align:right;">
+          ${s.on_disk ? `<a href="/api/v1/admin/updates/snapshots/${s.id}/download" class="btn" style="font-size:10px;padding:4px 8px;" download>▸ download</a>` : `<span style="color:var(--text-dimmer);font-size:10px;">off-disk</span>`}
+        </td>
+      </tr>`).join('');
+    return data;
+  }
+
+  async function loadHistory() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/updates/history');
+    if (!ok) return;
+    document.getElementById('hist-rows').innerHTML = data.map(h => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);font-size:11px;">${(h.applied_at || '').slice(0,19).replace('T',' ')}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);">${h.component}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);"><span style="color:var(--text-dimmer);">${h.from_version || '—'}</span> → <span style="color:var(--accent);">${h.to_version}</span></td>
+        <td style="padding:8px;font-family:var(--mono);color:${h.status === 'ok' ? 'var(--accent)' : h.status === 'rolled_back' ? 'var(--warn)' : 'var(--danger)'};">${h.status}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${h.snapshot_id ? h.snapshot_id.slice(0,8) : '—'}</td>
+        <td style="padding:8px;color:var(--text-dim);">${h.notes || ''}</td>
+      </tr>`).join('');
+  }
+
+  async function refreshSummary() {
+    const pending = await loadPending();
+    const drift = await loadDrift();
+    const snaps = await loadSnapshots();
+    await loadManifest();
+    await loadHistory();
+    const g = document.getElementById('summary-grid');
+    const openDrift = (drift || []).filter(d => !d.resolved_at).length;
+    const securityCount = pending?.security || 0;
+    const lastSnap = snaps && snaps.length ? (snaps[0].created_at || '').slice(0,10) : '—';
+    g.innerHTML = `
+      <div class="stat"><div class="stat-label">Upgradable packages</div><div class="stat-value">${pending?.total || 0}</div><div class="stat-delta">${securityCount} security</div></div>
+      <div class="stat"><div class="stat-label" style="color:${openDrift ? 'var(--danger)' : 'var(--accent)'};">Drift rows</div><div class="stat-value">${openDrift}</div><div class="stat-delta">vs pinned manifest</div></div>
+      <div class="stat"><div class="stat-label">Last snapshot</div><div class="stat-value" style="font-size:14px;">${lastSnap}</div><div class="stat-delta">pg_dump + config</div></div>
+      <div class="stat"><div class="stat-label">Apply path</div><div class="stat-value" style="font-size:13px;color:var(--accent);">CLI only</div><div class="stat-delta">meridian-nip upgrade</div></div>`;
+  }
+
+  document.getElementById('btn-rescan-pending').addEventListener('click', async () => {
+    // /pending invokes apt-get update. On a box with fresh mirrors this returns
+    // in under 1s — without a visible confirmation the click looks inert. We
+    // toast the result so the admin can see the scan ran + what it found.
+    const btn = document.getElementById('btn-rescan-pending');
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '⟳ scanning apt…';
+    const t0 = performance.now();
+    let pending = null;
+    try { pending = await loadPending(); await refreshSummary(); }
+    finally { btn.disabled = false; btn.textContent = orig; }
+    const dur = Math.round(performance.now() - t0);
+    const msg = pending
+      ? `✓ scan complete · ${pending.total || 0} upgradable (${pending.security || 0} security) · ${dur} ms`
+      : `✗ scan failed (see console)`;
+    let toast = document.getElementById('rescan-toast');
+    if (!toast) {
+      toast = document.createElement('span');
+      toast.id = 'rescan-toast';
+      toast.style.cssText = 'margin-left:10px;font-family:var(--mono);font-size:10px;color:var(--accent);';
+      btn.parentNode.insertBefore(toast, btn.nextSibling);
+    }
+    toast.textContent = msg;
+    setTimeout(() => { if (toast.textContent === msg) toast.textContent = ''; }, 8000);
+  });
+  document.getElementById('btn-rescan-drift').addEventListener('click', async () => {
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/updates/drift/scan');
+    if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    alert(`drift scan queued as ${data.task_id} — reload in a few seconds`);
+  });
+  document.getElementById('chk-resolved').addEventListener('change', loadDrift);
+  document.getElementById('btn-snap').addEventListener('click', async () => {
+    if (!confirm('Take a pre-upgrade snapshot now? Calls scripts/backup.sh synchronously on the worker.')) return;
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/updates/snapshot', {reason: 'manual'});
+    if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    alert(`snapshot task ${data.task_id} queued — reload the Snapshots tab when it finishes`);
+  });
+
+  refreshSummary();
+
+  // ------------------------------------------------------------------
+  // Apply + reboot panel
+  // ------------------------------------------------------------------
+  const applyBtn  = document.getElementById('btn-apply-now');
+  const schedBtn  = document.getElementById('btn-schedule');
+  const runsRows  = document.getElementById('runs-rows');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', async () => {
+      const reboot = document.getElementById('applynow-reboot').checked;
+      const prompt = reboot
+        ? 'Run apt upgrade NOW and REBOOT when finished?\n\nThe portal will be unreachable for ~60 s during reboot.'
+        : 'Run apt upgrade NOW (no reboot)?\n\nA kernel upgrade will require a manual reboot afterwards.';
+      if (!confirm(prompt)) return;
+      const s = document.getElementById('applynow-status');
+      s.textContent = 'queuing…'; s.style.color = 'var(--text-dim)';
+      const {ok, data} = await jfetch('POST', '/api/v1/admin/updates/apply-now', {reboot});
+      if (!ok) { s.textContent = `error: ${data.error || data.detail}`; s.style.color = 'var(--danger)'; return; }
+      s.textContent = `queued run ${(data.run_id||'').slice(0,8)} — watch run history below`;
+      s.style.color = 'var(--accent)';
+      loadRuns();
+    });
+  }
+  if (schedBtn) {
+    schedBtn.addEventListener('click', async () => {
+      const whenEl = document.getElementById('sched-when');
+      const when = whenEl.value;
+      if (!when) { alert('Pick a date/time first.'); return; }
+      // datetime-local inputs emit "YYYY-MM-DDTHH:MM" without a zone.
+      // Convert to UTC ISO via the browser's timezone.
+      const isoUtc = new Date(when).toISOString();
+      const reboot = document.getElementById('sched-reboot').value === 'true';
+      const s = document.getElementById('sched-status');
+      s.textContent = 'saving…'; s.style.color = 'var(--text-dim)';
+      const {ok, data} = await jfetch('POST', '/api/v1/admin/updates/schedule',
+        {scheduled_for: isoUtc, reboot});
+      if (!ok) { s.textContent = `error: ${data.error || data.detail}`; s.style.color = 'var(--danger)'; return; }
+      s.textContent = `scheduled for ${new Date(data.scheduled_for).toLocaleString()}`;
+      s.style.color = 'var(--accent)';
+      whenEl.value = '';
+      loadRuns();
+    });
+  }
+
+  function fmtDur(r) {
+    if (!r.started_at || !r.completed_at) return '—';
+    const ms = new Date(r.completed_at) - new Date(r.started_at);
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s/60)}m ${s%60}s`;
+  }
+  async function loadRuns() {
+    if (!runsRows) return;
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/updates/runs?limit=50');
+    if (!ok) { document.getElementById('runs-count').textContent = 'error'; return; }
+    document.getElementById('runs-count').textContent =
+      `${data.length} run${data.length === 1 ? '' : 's'}`;
+    if (!data.length) {
+      runsRows.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--text-dimmer);font-size:12px;font-style:italic;">No runs yet.</td></tr>';
+      return;
+    }
+    const color = s => ({pending:'var(--text-dim)', running:'var(--warn)',
+                         ok:'var(--accent)', failed:'var(--danger)',
+                         cancelled:'var(--text-dimmer)'})[s] || 'var(--text-dim)';
+    runsRows.innerHTML = data.map(r => {
+      const when = r.scheduled_for
+        ? `scheduled ${new Date(r.scheduled_for).toLocaleString()}`
+        : (r.started_at ? `started ${new Date(r.started_at).toLocaleString()}`
+                        : `queued ${new Date(r.created_at).toLocaleString()}`);
+      const outBtn = (r.output_tail && r.output_tail.length > 20)
+        ? `<button class="btn btn-ghost" data-run-tail="${r.id}" style="padding:4px 10px;font-size:10px;">Output</button>` : '';
+      const cancelBtn = (r.status === 'pending' && r.scheduled_for)
+        ? `<button class="btn btn-ghost" data-run-cancel="${r.id}" style="padding:4px 10px;font-size:10px;color:var(--danger);">Cancel</button>` : '';
+      const rebootLabel = r.reboot_required_after
+        ? (r.reboot ? 'auto (triggered)' : `<span style="color:var(--warn);">needed</span>`)
+        : (r.reboot ? 'done' : 'skipped');
+      return `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);" data-run="${r.id}">
+          <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text);">${when}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:11px;color:${color(r.status)};font-weight:600;">${r.status}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${rebootLabel}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:11px;color:${r.exit_code === 0 ? 'var(--accent)' : r.exit_code ? 'var(--danger)' : 'var(--text-dimmer)'};">${r.exit_code == null ? '—' : r.exit_code}</td>
+          <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${fmtDur(r)}</td>
+          <td style="padding:8px;text-align:right;white-space:nowrap;">${outBtn}${cancelBtn}</td>
+        </tr>
+        <tr data-run-out="${r.id}" style="display:none;">
+          <td colspan="6" style="padding:10px 14px;background:rgba(0,0,0,.25);">
+            <pre style="margin:0;font-family:var(--mono);font-size:10px;color:var(--text);white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto;">${(r.output_tail || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</pre>
+          </td>
+        </tr>`;
+    }).join('');
+    runsRows.querySelectorAll('[data-run-tail]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.runTail;
+      const out = runsRows.querySelector(`[data-run-out="${id}"]`);
+      if (out) out.style.display = out.style.display === 'none' ? '' : 'none';
+    }));
+    runsRows.querySelectorAll('[data-run-cancel]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Cancel this scheduled run?')) return;
+      const r = await fetch(`/api/v1/admin/updates/runs/${b.dataset.runCancel}`,
+        {method:'DELETE', credentials:'same-origin'});
+      if (r.ok) loadRuns(); else alert('cancel failed');
+    }));
+  }
+  // Refresh run history whenever the Apply tab is activated + every 10s
+  // while it's visible so a running update's exit code surfaces live.
+  let applyTimer = null;
+  document.querySelectorAll('[data-tab="apply"]').forEach(t =>
+    t.addEventListener('click', () => {
+      loadRuns();
+      if (applyTimer) clearInterval(applyTimer);
+      applyTimer = setInterval(loadRuns, 10_000);
+    }));
+})();
+</script>
+{% endblock %}

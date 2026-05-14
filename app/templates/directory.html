@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% set active = 'directory' %}
+{% block title %}Directory · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Directory</div>
+    <div class="page-sub">Active Directory / LDAP lookups · read-only by default · write actions require approval workflow</div>
+  </div>
+  {% with docs_path="user/directory.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Bound directory</div>
+    <div style="display:flex;gap:6px;align-items:center;">
+      {% if integration %}
+        <span class="dot {% if integration.last_test_ok is false %}danger{% endif %}"></span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--accent);">
+          {{ integration.kind|upper }} · {{ integration.name }}
+        </span>
+      {% else %}
+        <span style="font-family:var(--mono);font-size:10px;color:var(--warn);">NO INTEGRATION CONFIGURED</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if integration %}
+    <table style="width:100%;font-size:12px;color:var(--text-dim);">
+      <tr><td style="color:var(--text-dimmer);padding:3px 0;width:160px;">URI</td><td style="font-family:var(--mono);color:var(--text);">{{ integration.primary_uri }}</td></tr>
+      <tr><td style="color:var(--text-dimmer);padding:3px 0;">Base DN</td><td style="font-family:var(--mono);color:var(--text);">{{ integration.base_dn }}</td></tr>
+      <tr><td style="color:var(--text-dimmer);padding:3px 0;">Bind account</td><td style="font-family:var(--mono);color:var(--text);">{{ integration.bind_account }}</td></tr>
+      <tr><td style="color:var(--text-dimmer);padding:3px 0;">Auth method</td><td style="font-family:var(--mono);color:var(--text);">{{ integration.auth_method }}</td></tr>
+      <tr><td style="color:var(--text-dimmer);padding:3px 0;">Last test</td><td style="font-family:var(--mono);color:{% if integration.last_test_ok %}var(--accent){% elif integration.last_test_ok is false %}var(--danger){% else %}var(--text-dimmer){% endif %};">
+        {% if integration.last_tested_at %}{{ integration.last_tested_at.strftime('%Y-%m-%d %H:%M') }} · {{ 'ok' if integration.last_test_ok else integration.last_test_error or 'never' }}{% else %}never{% endif %}
+      </td></tr>
+    </table>
+    {% if user.role in ('admin','super_admin') %}
+      <button class="btn btn-ghost" id="test-btn" style="margin-top:12px;">Test connection</button>
+      <span id="test-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    {% endif %}
+  {% else %}
+    <div style="padding:14px 0 4px;">
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:12px;">
+        No Active Directory / LDAP / Entra integration is configured yet, so
+        user and group lookups on this page are disabled.
+        {% if user.role in ('admin','super_admin') %}
+          Configure one under
+          <strong>Admin → Integrations → Directory</strong> — the page accepts
+          LDAPS primary + fallback URIs, bind account, base DN, and optional
+          CA cert path. Everything in the vault is AES-256-GCM encrypted.
+        {% else %}
+          Ask a Meridian administrator to configure one under
+          <strong>Admin → Integrations → Directory</strong>.
+        {% endif %}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        {% if user.role in ('admin','super_admin') %}
+          <a href="/ui/admin/integrations#directory" class="btn btn-primary" style="text-decoration:none;font-size:12px;padding:8px 14px;">Open Admin → Integrations → Directory</a>
+        {% endif %}
+        <a href="/docs/admin/integrations.html" target="_blank" class="btn btn-ghost" style="text-decoration:none;font-size:12px;padding:8px 14px;">Field reference ↗</a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="tabs" data-tabs="dir">
+  <button class="tab active" data-tab="user">User lookup</button>
+  <button class="tab"        data-tab="group">Group lookup</button>
+</div>
+
+<div data-panel="user" data-group="dir">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="user-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Search (sAMAccountName, UPN, email, display name)</label>
+          <input class="input mono" name="query" placeholder="jsmith or jane.doe@acme.com" required>
+        </div>
+        <div class="field">
+          <label>Limit</label>
+          <input class="input mono" name="limit" type="number" value="25" min="1" max="100">
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" {% if not integration %}disabled{% endif %}>▸ Find user</button>
+      <span id="user-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+  <div id="user-results"></div>
+</div>
+
+<div data-panel="group" data-group="dir" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="group-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Search (group cn / sAMAccountName / displayName)</label>
+          <input class="input mono" name="query" placeholder="Domain Admins" required>
+        </div>
+        <div class="field">
+          <label>Limit</label>
+          <input class="input mono" name="limit" type="number" value="25" min="1" max="100">
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" {% if not integration %}disabled{% endif %}>▸ Find group</button>
+      <span id="group-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+  <div id="group-results"></div>
+</div>
+
+<script>
+(function(){
+  async function jfetch(url, body) {
+    const r = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : null,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+
+  const testBtn = document.getElementById('test-btn');
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      const s = document.getElementById('test-status');
+      s.textContent = 'testing…';
+      s.style.color = 'var(--text-dim)';
+      const id = {{ integration.id | tojson if integration else 'null' }};
+      const {ok, data} = await jfetch(`/api/v1/directory/integrations/${id}/test`);
+      if (ok && data.ok) { s.textContent = `✓ bound in ${data.latency_ms}ms`; s.style.color = 'var(--accent)'; }
+      else { s.textContent = `✗ ${data.error || data.detail || 'failed'}`; s.style.color = 'var(--danger)'; }
+    });
+  }
+
+  function renderUserCard(entry) {
+    const uac = (entry._uac_flags || []).join(', ');
+    const groups = entry.memberOf
+      ? (Array.isArray(entry.memberOf) ? entry.memberOf : [entry.memberOf])
+      : [];
+    const rows = [
+      ['sAMAccountName', entry.sAMAccountName],
+      ['UPN', entry.userPrincipalName],
+      ['Display name', entry.displayName || entry.cn],
+      ['Email', entry.mail],
+      ['Title', entry.title],
+      ['Department', entry.department],
+      ['Phone', entry.telephoneNumber || entry.mobile],
+      ['Manager', entry.manager],
+      ['Account flags', uac || 'normal'],
+      ['Last logon', entry.lastLogonTimestamp],
+      ['Created', entry.whenCreated],
+      ['DN', entry.dn],
+    ];
+    const rowsHtml = rows.filter(r => r[1]).map(r =>
+      `<tr><td style="color:var(--text-dimmer);font-family:var(--mono);font-size:11px;width:150px;padding:3px 0;">${r[0]}</td><td style="font-family:var(--mono);font-size:11px;color:var(--text);word-break:break-all;">${r[1]}</td></tr>`
+    ).join('');
+    const groupsHtml = groups.length
+      ? `<div style="margin-top:12px;"><div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.06em;margin-bottom:6px;">GROUP MEMBERSHIPS (${groups.length})</div>
+         <div style="display:flex;flex-wrap:wrap;gap:5px;">${groups.map(g =>
+           `<span class="chip" style="font-size:10px;">${g.split(',')[0].replace(/^CN=/, '')}</span>`
+         ).join('')}</div></div>`
+      : '';
+    return `<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;">${entry.displayName || entry.cn || entry.sAMAccountName || 'user'}</div>
+      <table style="width:100%;">${rowsHtml}</table>
+      ${groupsHtml}
+    </div>`;
+  }
+
+  function renderGroupCard(entry) {
+    const members = entry.member
+      ? (Array.isArray(entry.member) ? entry.member : [entry.member])
+      : [];
+    return `<div class="card" style="margin-bottom:10px;">
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px;">${entry.displayName || entry.cn}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">${entry.description || ''}</div>
+      <table style="width:100%;">
+        <tr><td style="color:var(--text-dimmer);font-family:var(--mono);font-size:11px;width:150px;padding:3px 0;">sAMAccountName</td><td style="font-family:var(--mono);font-size:11px;color:var(--text);">${entry.sAMAccountName || '—'}</td></tr>
+        <tr><td style="color:var(--text-dimmer);font-family:var(--mono);font-size:11px;padding:3px 0;">DN</td><td style="font-family:var(--mono);font-size:11px;color:var(--text);word-break:break-all;">${entry.dn}</td></tr>
+        <tr><td style="color:var(--text-dimmer);font-family:var(--mono);font-size:11px;padding:3px 0;">Direct members</td><td style="font-family:var(--mono);font-size:11px;color:var(--text);">${members.length}</td></tr>
+      </table>
+    </div>`;
+  }
+
+  document.getElementById('user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const s = document.getElementById('user-status');
+    const out = document.getElementById('user-results');
+    s.textContent = 'searching…'; s.style.color = 'var(--text-dim)'; out.innerHTML = '';
+    const {ok, data} = await jfetch('/api/v1/directory/user/search', {
+      query: fd.get('query'),
+      limit: Number(fd.get('limit')),
+    });
+    if (!ok) { s.textContent = data.error || data.detail || 'error'; s.style.color = 'var(--danger)'; return; }
+    s.textContent = `${data.count} result${data.count === 1 ? '' : 's'}`;
+    s.style.color = data.count ? 'var(--accent)' : 'var(--text-dim)';
+    out.innerHTML = data.results.map(renderUserCard).join('') || '<div class="card" style="color:var(--text-dimmer);font-style:italic;">No matches.</div>';
+  });
+
+  document.getElementById('group-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const s = document.getElementById('group-status');
+    const out = document.getElementById('group-results');
+    s.textContent = 'searching…'; s.style.color = 'var(--text-dim)'; out.innerHTML = '';
+    const {ok, data} = await jfetch('/api/v1/directory/group/search', {
+      query: fd.get('query'),
+      limit: Number(fd.get('limit')),
+    });
+    if (!ok) { s.textContent = data.error || data.detail || 'error'; s.style.color = 'var(--danger)'; return; }
+    s.textContent = `${data.count} result${data.count === 1 ? '' : 's'}`;
+    s.style.color = data.count ? 'var(--accent)' : 'var(--text-dim)';
+    out.innerHTML = data.results.map(renderGroupCard).join('') || '<div class="card" style="color:var(--text-dimmer);font-style:italic;">No matches.</div>';
+  });
+})();
+</script>
+{% endblock %}

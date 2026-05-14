@@ -1,0 +1,34 @@
+{# Shared admin tab strip. Every admin_*.html template includes this
+   partial so adding a new tab is a one-file change. The currently-active
+   page is detected by matching the request URL path; the matching tab
+   renders as `.active` without an href so it doesn't link to itself.
+
+   To add a tab: append a (path, label) pair to the list below. Done.
+   No need to touch any per-page template.
+#}
+{%- set _ap = request.url.path -%}
+{%- set _admin_tabs = [
+  ('/ui/admin',              'Overview'),
+  ('/ui/admin/users',        'Users'),
+  ('/ui/admin/scope',        'Scope Manager'),
+  ('/ui/admin/integrations', 'Integrations'),
+  ('/ui/admin/devices',      'Network Devices'),
+  ('/ui/admin/vuln',         'Vulnerabilities'),
+  ('/ui/admin/health',       'System Health'),
+  ('/ui/admin/appeals',      'Lockout appeals'),
+  ('/ui/admin/queues',       'Queues'),
+  ('/ui/admin/network',      'Network'),
+  ('/ui/admin/credentials',  'Credentials'),
+  ('/ui/admin/updates',      'Updates'),
+  ('/ui/admin/webhooks',     'Webhooks'),
+  ('/ui/admin/branding',     'Branding'),
+] -%}
+<div class="tabs"{% if tabs_style is defined %} style="{{ tabs_style }}"{% endif %}>
+  {%- for href, label in _admin_tabs -%}
+    {%- if _ap == href -%}
+      <a class="tab active" href="{{ href }}">{{ label }}</a>
+    {%- else -%}
+      <a class="tab" href="{{ href }}">{{ label }}</a>
+    {%- endif -%}
+  {%- endfor -%}
+</div>

@@ -1,0 +1,23 @@
+# /etc/sudoers.d/meridian-deploy
+# Install with: sudo install -m 0440 -o root -g root \
+#   meridian-deploy /etc/sudoers.d/meridian-deploy
+#
+# Lets the deploy account (meridian-user) restart the three portal units
+# after an rsync, and reload nginx after a template/TLS change. Nothing
+# else — no shell, no arbitrary systemctl, no package installs.
+
+Cmnd_Alias MERIDIAN_RESTART = \
+    /bin/systemctl restart meridian-app.service, \
+    /bin/systemctl restart meridian-celery.service, \
+    /bin/systemctl restart meridian-beat.service, \
+    /bin/systemctl reload  nginx.service, \
+    /bin/systemctl status  meridian-app.service, \
+    /bin/systemctl status  meridian-celery.service, \
+    /bin/systemctl status  meridian-beat.service, \
+    /usr/sbin/nginx -t
+
+meridian-user ALL=(root) NOPASSWD: MERIDIAN_RESTART
+# The meridian service account needs the same nginx reload/test pair so the
+# portal's TLS hardening repair actions can apply config changes without
+# going through this sudoers entry requiring an interactive account.
+meridian ALL=(root) NOPASSWD: /usr/sbin/nginx -t, /bin/systemctl reload nginx.service

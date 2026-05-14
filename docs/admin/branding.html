@@ -1,0 +1,86 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branding &amp; identity · Meridian Docs</title>
+    <link rel="stylesheet" href="../css/docs.css">
+    </head>
+    <body>
+    <div class="grid-bg"></div>
+    <div class="frame">
+    <aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+    <main class="content">
+    <div class="page-meta">ADMIN · BRANDING</div>
+    <h1>Branding &amp; identity</h1>
+    <div class="page-sub">Customer-level personalization applied site-wide. Logos, favicon, theme, legal text, outbound sender identity, license.</div>
+    <h2>Assets</h2>
+<ul>
+<li>Logo, favicon, login background, PDF report header. Each is magic-byte-sniffed and SVGs are stripped of scripts.</li>
+<li>Favicon preset picker: 5 bundled inline-SVG icons (shield / globe / network / radar / lock) for operators who don't have their own.</li>
+</ul>
+
+<h2>Legal</h2>
+<p>Pre-login warning banner (legal-notice text shown above login), login banner text, AUP (acceptable use policy) body, AUP-require-first-login toggle, AUP re-prompt on change.</p>
+
+<h2>Outbound communications</h2>
+<p>Sender <em>identity</em> only — email from-name + from-address, email signature, Slack/Teams sender name, SMS sender identity, PDF report footer. Transport configuration (SMTP host, Slack webhook, etc.) lives in <a href="integrations.html">Integrations &rarr; Notifications</a>.</p>
+
+<h2>License</h2>
+<p>Paste-in box for <code>MRD-...</code> / <code>TRIAL-...</code> tokens. Validates offline (Ed25519) using the baked-in vendor public key. See <a href="licensing.html">Licensing</a> for how tokens are issued.</p>
+    </main>
+    </div>
+    </body>
+    </html>

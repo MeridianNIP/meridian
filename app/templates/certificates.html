@@ -1,0 +1,526 @@
+{% extends "base.html" %}
+{% set active = 'certs' %}
+{% block title %}Certificates · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Certificates</div>
+    <div class="page-sub">Portal certificate · external watchlist · CSR generation</div>
+  </div>
+  {% with docs_path="user/certificates.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="tabs" data-tabs="certs">
+  <button class="tab active" data-tab="watchlist">Watchlist</button>
+  <button class="tab"        data-tab="upload">Upload</button>
+  <button class="tab"        data-tab="csr">Generate CSR</button>
+</div>
+
+<div data-panel="watchlist" data-group="certs">
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Add domain to watchlist</div></div>
+    <form id="wl-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Hostname</label><input class="input mono" name="host" placeholder="api.clientco.io" required></div>
+        <div class="field"><label>Port</label><input class="input mono" name="port" type="number" value="443" min="1" max="65535"></div>
+        <div class="field"><label>Alert before (days)</label><input class="input mono" name="renew_before_days" type="number" value="30" min="1" max="365"></div>
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label>Notification channels</label>
+        <div id="wl-channels" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;font-size:11px;color:var(--text-dimmer);">loading channels…</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-top:4px;">
+          Leave all unchecked to use the global default routing. Alerts fire at 30 / 14 / 7 / 3 / 1 day thresholds and on any unexpected fingerprint change.
+          Manage channels under <a href="/ui/admin/integrations#notifications" style="color:var(--accent);">Admin → Integrations → Notifications</a>.
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;">+ Add to watchlist</button>
+      <span id="wl-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+
+  <div class="card" id="certs-card">
+    <div class="card-head">
+      <div class="card-title">Monitored certificates</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);" id="certs-count">loading…</div>
+        <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#certs-source">
+          <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+          <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+          <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+        </div>
+      </div>
+    </div>
+    <div id="certs-source">
+      <table style="width:100%;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">CN</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Type</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Issuer</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Valid</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Expires</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Key</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Alerts</th>
+            <th style="text-align:right;padding:8px;" class="no-print"></th>
+          </tr>
+        </thead>
+        <tbody id="certs-rows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div data-panel="upload" data-group="certs" class="hidden">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Upload a PEM certificate</div></div>
+    <form id="up-form">
+      <div class="form-row">
+        <div class="field"><label>Type</label>
+          <select class="select" name="cert_type">
+            <option value="internal" selected>Internal</option>
+            <option value="client_mtls">Client (mTLS)</option>
+            <option value="monitored">Monitored</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Leaf certificate (PEM)</label>
+        <textarea class="input mono" name="leaf_pem" required style="min-height:120px;font-size:11px;" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:14px;">
+        <label>Intermediate chain (PEM, optional)</label>
+        <textarea class="input mono" name="chain_pem" style="min-height:100px;font-size:11px;"></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Upload</button>
+      <span id="up-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+</div>
+
+<div data-panel="csr" data-group="certs" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Generate private key + CSR</div></div>
+    <form id="csr-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Subject CN</label><input class="input mono" name="subject_cn" placeholder="api.example.com" required></div>
+        <div class="field"><label>Key type</label>
+          <select class="select" name="key_type">
+            <option value="ecdsa_p256" selected>ECDSA P-256</option>
+            <option value="ecdsa_p384">ECDSA P-384</option>
+            <option value="rsa2048">RSA 2048</option>
+            <option value="rsa3072">RSA 3072</option>
+            <option value="rsa4096">RSA 4096</option>
+            <option value="ed25519">Ed25519</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>SANs (comma-separated; leave blank to use CN)</label>
+        <input class="input mono" name="sans_raw" placeholder="api.example.com, api.alt.example.com">
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Organization</label><input class="input" name="organization"></div>
+        <div class="field"><label>Country (2-letter)</label><input class="input mono" name="country" maxlength="2"></div>
+      </div>
+      <button class="btn btn-primary" type="submit">Generate CSR</button>
+      <span id="csr-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Generated CSR</div></div>
+    <pre class="console empty" id="csr-output">Generate a CSR and it will appear here. The private key is stored in the encrypted vault — download it now if you need it locally.</pre>
+  </div>
+</div>
+
+<script>
+(function(){
+  async function jfetch(url, opts = {}) {
+    const r = await fetch(url, {credentials: 'same-origin', ...opts});
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, status: r.status, data};
+  }
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // --- Notification channels cache (shared by watchlist form + per-row editors) ---
+  let channelsCache = [];
+  async function loadChannels() {
+    try {
+      const r = await fetch('/api/v1/notifications/channels', {credentials:'same-origin'});
+      if (!r.ok) return [];
+      return channelsCache = await r.json();
+    } catch { return channelsCache = []; }
+  }
+  function renderChannelPicker(containerId, selected) {
+    const host = document.getElementById(containerId);
+    if (!host) return;
+    if (!channelsCache.length) {
+      host.innerHTML = `<span style="font-family:var(--mono);font-size:11px;color:var(--warn);">No channels configured — add one under Admin → Integrations → Notifications.</span>`;
+      return;
+    }
+    const sel = new Set((selected || []).map(String));
+    host.innerHTML = channelsCache.map(ch => `
+      <label style="display:inline-flex;align-items:center;gap:5px;padding:4px 8px;background:rgba(255,255,255,.03);border-radius:4px;font-family:var(--mono);font-size:11px;color:var(--text-dim);cursor:pointer;">
+        <input type="checkbox" data-channel-id="${esc(ch.id)}" ${sel.has(ch.id) ? 'checked' : ''} style="accent-color:var(--accent);">
+        <span style="color:${ch.enabled ? 'var(--text)' : 'var(--text-dimmer)'};">${esc(ch.kind)}</span>
+        <span style="color:var(--text-dimmer);">${esc(ch.description || ch.target)}</span>
+      </label>
+    `).join('');
+  }
+  function collectChecked(containerId) {
+    return [...document.querySelectorAll(`#${containerId} input[data-channel-id]:checked`)]
+      .map(el => el.dataset.channelId);
+  }
+
+  document.getElementById('wl-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const s = document.getElementById('wl-status');
+    const body = {
+      host: fd.get('host'),
+      port: Number(fd.get('port')),
+      renew_before_days: Number(fd.get('renew_before_days') || 30),
+      notify_channels: collectChecked('wl-channels'),
+    };
+    s.textContent = 'fetching cert + saving…'; s.style.color = 'var(--text-dim)';
+    const {ok, data} = await jfetch('/api/v1/certs/watchlist', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (ok) {
+      s.textContent = `added ${data.common_name} · ${data.days_remaining}d remaining`;
+      s.style.color = 'var(--accent)';
+      e.target.reset();
+      await loadCerts();
+      await loadChannels(); renderChannelPicker('wl-channels', []);
+    } else {
+      s.textContent = `error: ${data.error || data.detail}`; s.style.color = 'var(--danger)';
+    }
+  });
+
+  document.getElementById('up-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const s = document.getElementById('up-status');
+    const {ok, data} = await jfetch('/api/v1/certs/upload', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        cert_type: fd.get('cert_type'),
+        leaf_pem: fd.get('leaf_pem'),
+        chain_pem: fd.get('chain_pem') || null,
+      }),
+    });
+    if (ok) { s.textContent = `uploaded ${data.common_name}`; s.style.color = 'var(--accent)';
+              setTimeout(() => location.reload(), 800); }
+    else { s.textContent = `error: ${data.error || data.detail}`; s.style.color = 'var(--danger)'; }
+  });
+
+  document.getElementById('csr-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const sans = (fd.get('sans_raw') || '').split(',').map(s => s.trim()).filter(Boolean);
+    const s = document.getElementById('csr-status');
+    const out = document.getElementById('csr-output');
+    const {ok, data} = await jfetch('/api/v1/certs/csr', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        subject_cn: fd.get('subject_cn'),
+        sans: sans,
+        key_type: fd.get('key_type'),
+        organization: fd.get('organization') || null,
+        country: fd.get('country') || null,
+      }),
+    });
+    if (ok) {
+      s.textContent = `generated · key in vault as ${data.key_secret_id}`;
+      s.style.color = 'var(--accent)';
+      out.classList.remove('empty');
+      out.textContent = data.csr_pem;
+    } else {
+      s.textContent = `error: ${data.error || data.detail}`;
+      s.style.color = 'var(--danger)';
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // Watchlist table — rendered client-side so add / edit / refresh /
+  // delete don't require a page reload.
+  // ------------------------------------------------------------------
+  function typePill(kind) {
+    const cls = kind === 'portal'     ? 'background:rgba(32,200,150,.15);color:var(--accent);'
+              : kind === 'monitored'  ? 'background:rgba(59,130,246,.15);color:#60a5fa;'
+              : kind === 'client_mtls'? 'background:rgba(139,92,246,.15);color:#a78bfa;'
+              :                         'background:rgba(148,163,184,.15);color:#94a3b8;';
+    return `<span style="font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:10px;${cls}">${esc((kind||'').toUpperCase())}</span>`;
+  }
+  function daysColor(d) {
+    if (d == null) return 'var(--text-dimmer)';
+    if (d < 14) return 'var(--danger)';
+    if (d < 30) return 'var(--warn)';
+    return 'var(--accent)';
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toISOString().slice(0, 10); } catch { return iso; }
+  }
+  function channelNames(ids) {
+    if (!ids || !ids.length) return '';
+    const byId = new Map(channelsCache.map(c => [c.id, c]));
+    return ids.map(id => {
+      const c = byId.get(id);
+      return c ? `${c.kind}:${(c.description || c.target || '').slice(0, 18)}` : '';
+    }).filter(Boolean).join(', ');
+  }
+  function renderDetailRow(c) {
+    const sans = (c.sans || []).slice(0, 80).map(s =>
+      `<span class="chip" style="font-family:var(--mono);font-size:10px;">${esc(s)}</span>`).join(' ');
+    const channelPickerId = `ch-picker-${c.id}`;
+    const fp = c.fingerprint_sha256 || '';
+    return `
+      <td></td>
+      <td colspan="7" style="padding:12px 14px;background:rgba(32,200,150,.03);border-top:1px solid rgba(32,200,150,.12);">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+          <div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px;">Identity</div>
+            <table style="width:100%;font-size:11px;color:var(--text-dim);">
+              <tr><td style="color:var(--text-dimmer);padding:2px 8px 2px 0;width:110px;">Serial</td><td style="font-family:var(--mono);color:var(--text);word-break:break-all;">${esc(c.serial_hex || '—')}</td></tr>
+              <tr><td style="color:var(--text-dimmer);padding:2px 8px 2px 0;">Sig alg</td><td style="font-family:var(--mono);color:var(--text);">${esc(c.signature_alg || '—')}</td></tr>
+              <tr><td style="color:var(--text-dimmer);padding:2px 8px 2px 0;">Key</td><td style="font-family:var(--mono);color:var(--text);">${esc(c.key_type || '—')} · ${esc(String(c.key_size || '?'))}-bit</td></tr>
+              <tr><td style="color:var(--text-dimmer);padding:2px 8px 2px 0;">Valid from</td><td style="font-family:var(--mono);color:var(--text);">${esc(c.valid_from || '—')}</td></tr>
+              <tr><td style="color:var(--text-dimmer);padding:2px 8px 2px 0;">Valid until</td><td style="font-family:var(--mono);color:var(--text);">${esc(c.valid_until || '—')}</td></tr>
+              <tr><td style="color:var(--text-dimmer);padding:2px 8px 2px 0;">Fingerprint</td><td style="font-family:var(--mono);color:var(--text);font-size:10px;word-break:break-all;">${esc(fp)}${fp ? ` <button type="button" class="btn btn-ghost" data-copy-fp="${esc(fp)}" style="padding:2px 6px;font-size:9px;margin-left:4px;">copy</button>` : ''}</td></tr>
+              <tr><td style="color:var(--text-dimmer);padding:2px 8px 2px 0;">Issuer</td><td style="font-family:var(--mono);color:var(--text);word-break:break-all;">${esc(c.issuer || '—')}</td></tr>
+            </table>
+            ${sans ? `<div style="margin-top:10px;"><div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px;">SANs (${(c.sans||[]).length})</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${sans}</div></div>` : ''}
+          </div>
+          <div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px;">Alerts</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:6px;">
+              Fires at thresholds <span style="color:var(--text);">30 / 14 / 7 / 3 / 1 day</span> and on fingerprint change.
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;" id="${channelPickerId}">loading channels…</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+              <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">Alert before (days):
+                <input class="input mono" data-edit-field="renew_before_days" data-id="${c.id}" type="number" min="1" max="365" value="${c.renew_before_days ?? 30}" style="width:70px;margin-left:6px;font-size:11px;padding:3px 6px;">
+              </label>
+              <button class="btn btn-primary" data-save-alerts="${c.id}" style="padding:5px 14px;font-size:11px;">Save alerts</button>
+              <span data-save-status="${c.id}" style="font-family:var(--mono);font-size:10px;"></span>
+            </div>
+          </div>
+        </div>
+      </td>
+    `;
+  }
+  function renderRow(c) {
+    const nChans = (c.notify_channels || []).length;
+    const alertsCell = nChans
+      ? `<span style="font-family:var(--mono);color:var(--accent);font-size:11px;">${nChans} ch${nChans > 1 ? 's' : ''}</span>`
+      : `<span style="font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">default</span>`;
+    const canRefresh = c.cert_type === 'monitored';
+    const canDelete  = c.cert_type !== 'portal';
+    const mainRow = `
+      <tr data-main="${c.id}" style="border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;" data-toggle-row="${c.id}">
+        <td style="padding:10px 8px;">
+          <div style="color:var(--text);font-weight:500;font-family:var(--mono);">${esc(c.common_name)}</div>
+          ${(c.sans || []).length > 1 ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">+${(c.sans||[]).length - 1} SANs</div>` : ''}
+        </td>
+        <td style="padding:10px 8px;">${typePill(c.cert_type)}</td>
+        <td style="padding:10px 8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.issuer || '')}">${esc((c.issuer || '—').slice(0, 48))}</td>
+        <td style="padding:10px 8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;">${fmtDate(c.valid_from)} → ${fmtDate(c.valid_until)}</td>
+        <td style="padding:10px 8px;font-family:var(--mono);color:${daysColor(c.days_remaining)};">${c.days_remaining != null ? c.days_remaining + 'd' : '—'}</td>
+        <td style="padding:10px 8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;">${esc(c.key_type || '—')}${c.key_size ? ' ' + c.key_size : ''}</td>
+        <td style="padding:10px 8px;">${alertsCell}</td>
+        <td style="padding:10px 8px;text-align:right;white-space:nowrap;">
+          ${canRefresh ? `<button class="btn btn-ghost" data-refresh="${c.id}" style="padding:4px 10px;font-size:10px;">Refresh</button>` : ''}
+          ${canDelete ? `<button class="btn btn-ghost" data-delete="${c.id}" style="padding:4px 10px;font-size:10px;color:var(--danger);">Delete</button>` : ''}
+        </td>
+      </tr>
+      <tr data-detail="${c.id}" style="display:none;">${renderDetailRow(c)}</tr>
+    `;
+    return mainRow;
+  }
+
+  async function loadCerts() {
+    const {ok, data} = await jfetch('/api/v1/certs/');
+    const tbody = document.getElementById('certs-rows');
+    const count = document.getElementById('certs-count');
+    if (!ok) { count.textContent = 'error'; return; }
+    if (!data.length) {
+      count.textContent = '0 tracked';
+      tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-dimmer);font-size:12px;font-style:italic;padding:12px;">No certificates tracked yet. Add one above to start monitoring expiry.</td></tr>';
+      return;
+    }
+    count.textContent = `${data.length} tracked`;
+    window.__lastCerts = data;
+    tbody.innerHTML = data.map(renderRow).join('');
+    wireRowHandlers(data);
+  }
+
+  function wireRowHandlers(certs) {
+    const byId = new Map(certs.map(c => [c.id, c]));
+
+    // Row click → toggle detail drawer. Clicks on buttons bubble up, so
+    // ignore events that originated inside a <button>.
+    document.querySelectorAll('[data-toggle-row]').forEach(tr => {
+      tr.addEventListener('click', (ev) => {
+        if (ev.target.closest('button, input, label, a')) return;
+        const id = tr.dataset.toggleRow;
+        const detail = document.querySelector(`[data-detail="${id}"]`);
+        if (!detail) return;
+        const opening = detail.style.display === 'none';
+        detail.style.display = opening ? '' : 'none';
+        if (opening) {
+          renderChannelPicker(`ch-picker-${id}`, byId.get(id).notify_channels || []);
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-refresh]').forEach(b => b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      b.disabled = true;
+      const prev = b.textContent; b.textContent = '…';
+      const {ok, data} = await jfetch(`/api/v1/certs/${b.dataset.refresh}/refresh`, {method: 'POST'});
+      b.disabled = false; b.textContent = prev;
+      // Announce the outcome inline so the click never feels silent —
+      // unchanged certs (most refreshes) still confirm "same cert still
+      // live" + the current days-remaining.
+      const announce = (ok_, text, colour) => {
+        const old = b.nextElementSibling;
+        if (old && old.classList.contains('refresh-toast')) old.remove();
+        const toast = document.createElement('span');
+        toast.className = 'refresh-toast';
+        toast.style.cssText = `margin-left:6px;padding:2px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;color:${colour};background:${colour === 'var(--accent)' ? 'rgba(32,200,150,.12)' : colour === 'var(--warn,#eab308)' ? 'rgba(234,179,8,.12)' : 'rgba(224,96,96,.15)'};`;
+        toast.textContent = (ok_ ? '✓ ' : '✗ ') + text;
+        b.insertAdjacentElement('afterend', toast);
+        setTimeout(() => toast.remove(), 6000);
+      };
+      if (ok) {
+        if (data.fingerprint_changed) {
+          announce(true, `FINGERPRINT CHANGED · ${data.days_remaining}d · alert sent`, 'var(--warn,#eab308)');
+        } else {
+          announce(true, `unchanged · ${data.days_remaining}d remaining`, 'var(--accent)');
+        }
+        await loadCerts();
+      } else {
+        announce(false, (data.error || data.detail || 'unknown error').slice(0, 100), 'var(--danger)');
+      }
+    }));
+    document.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (!confirm('Delete this cert record? Alert channels wired to this cert are untouched.')) return;
+      const r = await fetch(`/api/v1/certs/${b.dataset.delete}`, {method: 'DELETE', credentials: 'same-origin'});
+      if (r.ok) await loadCerts();
+    }));
+    document.querySelectorAll('[data-save-alerts]').forEach(b => b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const id = b.dataset.saveAlerts;
+      const status = document.querySelector(`[data-save-status="${id}"]`);
+      status.textContent = 'saving…'; status.style.color = 'var(--text-dim)';
+      const rbd = Number(document.querySelector(`[data-edit-field="renew_before_days"][data-id="${id}"]`)?.value || 30);
+      const {ok, data} = await jfetch(`/api/v1/certs/${id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          notify_channels: collectChecked(`ch-picker-${id}`),
+          renew_before_days: rbd,
+        }),
+      });
+      if (ok) { status.textContent = '✓ saved'; status.style.color = 'var(--accent)'; setTimeout(() => loadCerts(), 500); }
+      else    { status.textContent = `✗ ${data.error || data.detail}`; status.style.color = 'var(--danger)'; }
+    }));
+    document.querySelectorAll('[data-copy-fp]').forEach(b => b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const fp = b.dataset.copyFp;
+      (navigator.clipboard?.writeText(fp) ?? Promise.reject())
+        .then(() => { const prev = b.textContent; b.textContent = '✓'; setTimeout(() => b.textContent = prev, 900); })
+        .catch(() => {});
+    }));
+  }
+
+  (async () => {
+    await loadChannels();
+    renderChannelPicker('wl-channels', []);
+    await loadCerts();
+    wireToolbar();
+  })();
+
+  // ------------------------------------------------------------------
+  // Copy / Export CSV / Print-PDF toolbar for the watchlist table.
+  // CSV uses the full JSON returned by /api/v1/certs/ (not the visible
+  // columns) so every field we render in the detail drawer is in the
+  // export — fingerprint, SANs, serial, alerts, etc.
+  // ------------------------------------------------------------------
+  function wireToolbar() {
+    const actions = document.querySelector('.result-actions[data-source="#certs-source"]');
+    const src = document.getElementById('certs-source');
+    if (!actions || !src) return;
+    const copyBtn = actions.querySelector('.act-copy');
+    const csvBtn  = actions.querySelector('.act-csv');
+    const printBtn= actions.querySelector('.act-print');
+    const update = () => {
+      const have = !!document.querySelectorAll('#certs-rows tr[data-main]').length;
+      [copyBtn, csvBtn, printBtn].forEach(b => { if (b) b.disabled = !have; });
+    };
+    new MutationObserver(update).observe(document.getElementById('certs-rows'),
+      {childList:true, subtree:true});
+    update();
+
+    function lastLoaded() { return window.__lastCerts || []; }
+    function q(v) { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
+
+    copyBtn && copyBtn.addEventListener('click', () => {
+      const rows = [...document.querySelectorAll('#certs-rows tr[data-main]')];
+      const txt = rows.map(r => [...r.children]
+        .map(c => (c.innerText || '').replace(/\s+/g, ' ').trim())
+        .filter((_, i) => i < 7)
+        .join('\t')).join('\n');
+      const prev = copyBtn.textContent;
+      (navigator.clipboard?.writeText(txt) ?? Promise.reject())
+        .then(() => { copyBtn.textContent = '✓ copied'; setTimeout(() => copyBtn.textContent = prev, 1500); })
+        .catch(() => { copyBtn.textContent = '✗ failed'; setTimeout(() => copyBtn.textContent = prev, 1500); });
+    });
+
+    csvBtn && csvBtn.addEventListener('click', () => {
+      const data = lastLoaded();
+      const cols = ['common_name','cert_type','issuer','serial_hex','fingerprint_sha256',
+                    'valid_from','valid_until','days_remaining','key_type','key_size',
+                    'signature_alg','auto_renew','managed','ocsp_stapled','ct_logged',
+                    'renew_before_days','notify_channels','sans'];
+      const lines = [cols.map(q).join(',')];
+      data.forEach(c => {
+        lines.push(cols.map(col => {
+          const v = c[col];
+          if (Array.isArray(v)) return q(v.join(' | '));
+          return q(v);
+        }).join(','));
+      });
+      const body = lines.join('\r\n') + '\r\n';
+      const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+      const blob = new Blob([body], {type:'text/csv;charset=utf-8'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `cert-watchlist-${stamp}.csv`;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+    });
+
+    printBtn && printBtn.addEventListener('click', () => {
+      const card = document.getElementById('certs-card');
+      if (card) card.classList.add('print-active');
+      document.body.classList.add('print-scoped');
+      const cleanup = () => {
+        if (card) card.classList.remove('print-active');
+        document.body.classList.remove('print-scoped');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+  }
+})();
+</script>
+{% endblock %}

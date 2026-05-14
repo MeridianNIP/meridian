@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% set active = 'reports' %}
+{% block title %}Scheduled Reports · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Scheduled Reports</div>
+    <div class="page-sub">Generate portal rollups on a cadence — download them from here or deliver by email. Add/edit schedules below; each row shows its next fire time and last result.</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Create a schedule</div>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">requires role: operator / admin / super_admin</span>
+  </div>
+  <form id="sched-form" style="padding:12px 14px;">
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Name</label>
+        <input class="input" name="name" required maxlength="200" placeholder="e.g. Daily DNS health email"></div>
+      <div class="field" style="flex:2;"><label>Report type</label>
+        <select class="select" name="report_type" id="sched-type" required></select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field"><label>Cadence</label>
+        <select class="select" name="cadence" id="sched-cadence">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="custom">Custom (cron)</option>
+        </select>
+      </div>
+      <div class="field" id="field-time"><label>Hour of day (UTC)</label>
+        <input class="input mono" name="time_of_day" type="number" min="0" max="23" value="7">
+      </div>
+      <div class="field hidden" id="field-dow"><label>Day of week</label>
+        <select class="select" name="day_of_week">
+          <option value="0">Sun</option><option value="1" selected>Mon</option>
+          <option value="2">Tue</option><option value="3">Wed</option>
+          <option value="4">Thu</option><option value="5">Fri</option>
+          <option value="6">Sat</option>
+        </select>
+      </div>
+      <div class="field hidden" id="field-dom"><label>Day of month</label>
+        <input class="input mono" name="day_of_month" type="number" min="1" max="28" value="1">
+      </div>
+      <div class="field hidden" id="field-cron"><label>Cron (5-field)</label>
+        <input class="input mono" name="custom_cron" placeholder="*/15 * * * *">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field"><label>Format</label>
+        <select class="select" name="format">
+          <option value="csv" selected>CSV — machine-readable</option>
+          <option value="html">HTML — print-friendly</option>
+        </select>
+      </div>
+      <div class="field"><label>Delivery</label>
+        <select class="select" name="delivery" id="sched-delivery">
+          <option value="download" selected>Download — fetch from this page</option>
+          <option value="email">Email — send as attachment</option>
+        </select>
+      </div>
+      <div class="field hidden" style="flex:2;" id="field-email"><label>Email to (comma-separated)</label>
+        <input class="input mono" name="email_to" placeholder="ops@example.com, sec@example.com">
+      </div>
+    </div>
+
+    <div id="sched-filters" style="margin-top:8px;"></div>
+
+    <button class="btn btn-primary" type="submit" style="margin-top:10px;">+ Create schedule</button>
+    <span id="sched-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Schedules</div>
+    <span id="sched-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <div id="sched-rows" style="padding:6px 14px 14px;"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Recent runs</div>
+    <button type="button" class="btn btn-ghost" id="runs-refresh" style="padding:3px 10px;font-size:11px;">↻ Refresh</button>
+  </div>
+  <div id="runs-rows" style="padding:6px 14px 14px;"></div>
+</div>
+
+<script>
+(function(){
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined});
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, status: r.status, data};
+  }
+
+  let CATALOG = [];
+
+  async function loadCatalog() {
+    const {ok, data} = await jfetch('GET', '/api/v1/reports/catalog');
+    if (!ok) return;
+    CATALOG = data.reports || [];
+    const sel = document.getElementById('sched-type');
+    sel.innerHTML = CATALOG.map(r =>
+      `<option value="${esc(r.key)}">${esc(r.label)}</option>`).join('');
+    renderFilters();
+  }
+
+  function renderFilters() {
+    const key = document.getElementById('sched-type').value;
+    const meta = CATALOG.find(r => r.key === key);
+    const host = document.getElementById('sched-filters');
+    if (!meta || !meta.filter_schema || !meta.filter_schema.length) {
+      host.innerHTML = `<div style="font-size:11px;color:var(--text-dimmer);font-family:var(--mono);">no parameters</div>`;
+      return;
+    }
+    host.innerHTML = `<div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dimmer);margin-bottom:4px;">${esc(meta.description || '')}</div>
+      <div class="form-row">
+        ${meta.filter_schema.map(f => `
+          <div class="field"><label>${esc(f.label)}</label>
+            <input class="input mono" data-filter="${esc(f.key)}" type="${f.type === 'int' ? 'number' : 'text'}"
+                   ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''}
+                   value="${esc(f.default)}"></div>
+        `).join('')}
+      </div>`;
+  }
+
+  function collectFilters() {
+    const out = {};
+    document.querySelectorAll('#sched-filters [data-filter]').forEach(el => {
+      const v = el.value;
+      if (v === '' || v == null) return;
+      out[el.dataset.filter] = el.type === 'number' ? Number(v) : v;
+    });
+    return out;
+  }
+
+  function applyCadenceVisibility() {
+    const c = document.getElementById('sched-cadence').value;
+    document.getElementById('field-time').classList.toggle('hidden', c === 'custom');
+    document.getElementById('field-dow').classList.toggle('hidden', c !== 'weekly');
+    document.getElementById('field-dom').classList.toggle('hidden', c !== 'monthly');
+    document.getElementById('field-cron').classList.toggle('hidden', c !== 'custom');
+  }
+  function applyDeliveryVisibility() {
+    const d = document.getElementById('sched-delivery').value;
+    document.getElementById('field-email').classList.toggle('hidden', d !== 'email');
+  }
+
+  document.getElementById('sched-cadence').addEventListener('change', applyCadenceVisibility);
+  document.getElementById('sched-delivery').addEventListener('change', applyDeliveryVisibility);
+  document.getElementById('sched-type').addEventListener('change', renderFilters);
+
+  async function loadSchedules() {
+    const {ok, data} = await jfetch('GET', '/api/v1/reports');
+    const host = document.getElementById('sched-rows');
+    const count = document.getElementById('sched-count');
+    if (!ok) { host.innerHTML = `<div style="padding:12px;color:var(--danger);">error: ${esc(data.detail)}</div>`; count.textContent = ''; return; }
+    const rows = data.schedules || [];
+    count.textContent = `${rows.length} schedule${rows.length === 1 ? '' : 's'}`;
+    if (!rows.length) {
+      host.innerHTML = `<div style="padding:12px;color:var(--text-dimmer);font-size:12px;font-style:italic;">No schedules yet — create one above.</div>`;
+      return;
+    }
+    host.innerHTML = rows.map(s => `
+      <div data-sid="${s.id}" style="margin:6px 0;padding:10px 12px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:6px;">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+          <span style="font-weight:500;">${esc(s.name)}</span>
+          <span class="chip" style="font-size:10px;">${esc(s.report_type)}</span>
+          <span class="chip" style="font-size:10px;">${esc(s.cadence)} · <span class="mono">${esc(s.cron_expression)}</span></span>
+          <span class="chip" style="font-size:10px;">${esc(s.format)} → ${esc(s.delivery)}</span>
+          ${s.enabled ? '' : '<span class="chip" style="font-size:10px;color:var(--warn);">disabled</span>'}
+          ${s.consecutive_failures > 0 ? `<span class="chip" style="font-size:10px;color:var(--danger);">${s.consecutive_failures} consecutive fail${s.consecutive_failures === 1 ? '' : 's'}</span>` : ''}
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-top:4px;">
+          next: ${esc(s.next_run_at ? fmt.ts(s.next_run_at) : '—')} · last: ${esc(s.last_run_at ? fmt.ts(s.last_run_at) : 'never')}${s.email_to ? ' · to: ' + esc(s.email_to) : ''}
+        </div>
+        <div style="margin-top:8px;display:flex;gap:6px;">
+          <button class="btn btn-ghost" data-run="${s.id}" style="padding:4px 10px;font-size:11px;">▸ Run now</button>
+          <button class="btn btn-ghost" data-toggle="${s.id}" style="padding:4px 10px;font-size:11px;">${s.enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-ghost" data-del="${s.id}" style="padding:4px 10px;font-size:11px;color:var(--danger);">Delete</button>
+        </div>
+      </div>`).join('');
+
+    host.querySelectorAll('[data-run]').forEach(b => b.addEventListener('click', async () => {
+      const sid = b.dataset.run;
+      const s = rows.find(x => x.id === sid);
+      b.disabled = true; b.textContent = '…';
+      const {ok, data} = await jfetch('POST', '/api/v1/reports/run',
+        {report_type: s.report_type, format: s.format, filters: s.filters, schedule_id: sid});
+      b.disabled = false; b.textContent = '▸ Run now';
+      if (!ok) alert(`error: ${data.detail || data.error}`);
+      loadRuns();
+    }));
+    host.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => {
+      const sid = b.dataset.toggle;
+      const s = rows.find(x => x.id === sid);
+      await jfetch('PATCH', `/api/v1/reports/${sid}`, {enabled: !s.enabled});
+      loadSchedules();
+    }));
+    host.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Delete this schedule? Past runs are retained.')) return;
+      await fetch(`/api/v1/reports/${b.dataset.del}`, {method:'DELETE', credentials:'same-origin'});
+      loadSchedules();
+    }));
+  }
+
+  async function loadRuns() {
+    const {ok, data} = await jfetch('GET', '/api/v1/reports/runs?limit=30');
+    const host = document.getElementById('runs-rows');
+    if (!ok) { host.innerHTML = `<div style="padding:12px;color:var(--danger);">error: ${esc(data.detail)}</div>`; return; }
+    const runs = data.runs || [];
+    if (!runs.length) {
+      host.innerHTML = `<div style="padding:12px;color:var(--text-dimmer);font-size:12px;font-style:italic;">No runs yet.</div>`;
+      return;
+    }
+    host.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">Started</th>
+        <th style="padding:6px 8px;">Report</th>
+        <th style="padding:6px 8px;">Format</th>
+        <th style="padding:6px 8px;">Status</th>
+        <th style="padding:6px 8px;">Rows</th>
+        <th style="padding:6px 8px;">Size</th>
+        <th style="padding:6px 8px;"></th>
+      </tr></thead><tbody>
+      ${runs.map(r => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+          <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;" title="${esc(r.started_at)} (UTC)">${esc(fmt.ts(r.started_at))}</td>
+          <td style="padding:6px 8px;">${esc(r.report_type)}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;">${esc(r.format)}</td>
+          <td style="padding:6px 8px;color:${r.status === 'success' ? 'var(--accent)' : r.status === 'failed' ? 'var(--danger)' : 'var(--warn)'};">${esc(r.status)}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;">${r.row_count == null ? '—' : r.row_count}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;">${r.artifact_bytes == null ? '—' : Math.round(r.artifact_bytes/1024) + ' KiB'}</td>
+          <td style="padding:6px 8px;">
+            ${r.status === 'success' ? `<a class="btn btn-ghost" style="padding:3px 10px;font-size:11px;" href="/api/v1/reports/runs/${r.id}/download">download</a>` : (r.detail && r.detail.error ? `<span title="${esc(r.detail.error)}" style="color:var(--danger);font-size:11px;cursor:help;">error</span>` : '')}
+          </td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  document.getElementById('runs-refresh').addEventListener('click', loadRuns);
+
+  document.getElementById('sched-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const status = document.getElementById('sched-status');
+    status.textContent = 'creating…'; status.style.color = 'var(--text-dim)';
+    const body = {
+      name: fd.get('name'),
+      report_type: fd.get('report_type'),
+      cadence: fd.get('cadence'),
+      time_of_day: Number(fd.get('time_of_day') || 7),
+      day_of_week: Number(fd.get('day_of_week') || 1),
+      day_of_month: Number(fd.get('day_of_month') || 1),
+      custom_cron: fd.get('custom_cron') || null,
+      format: fd.get('format'),
+      delivery: fd.get('delivery'),
+      email_to: fd.get('email_to') || null,
+      filters: collectFilters(),
+    };
+    const {ok, data} = await jfetch('POST', '/api/v1/reports', body);
+    if (ok) {
+      status.textContent = '✓ created'; status.style.color = 'var(--accent)';
+      e.target.reset(); applyCadenceVisibility(); applyDeliveryVisibility(); renderFilters();
+      loadSchedules();
+    } else {
+      status.textContent = `✗ ${data.detail || data.error}`;
+      status.style.color = 'var(--danger)';
+    }
+    setTimeout(() => status.textContent = '', 4000);
+  });
+
+  (async function boot() {
+    await loadCatalog();
+    applyCadenceVisibility();
+    applyDeliveryVisibility();
+    await loadSchedules();
+    await loadRuns();
+  })();
+})();
+</script>
+
+<style>.hidden { display: none !important; }</style>
+{% endblock %}

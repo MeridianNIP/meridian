@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Branding · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Branding &amp; identity</div>
+    <div class="page-sub">Customer-level personalization · applies site-wide on save</div>
+</div>
+  <div class="page-actions">
+    <button class="btn btn-ghost" id="preview-login-btn">Preview login ↗</button>
+    <button class="btn btn-primary" id="save-btn">Save changes</button>
+  </div>
+  {% with docs_path="admin/branding.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div style="background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.25);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--text-dim);line-height:1.55;margin-bottom:18px;">
+  <strong style="color:#60a5fa;font-family:var(--mono);font-size:10px;letter-spacing:.08em;">TWO-TIER BRANDING</strong><br>
+  Product (Meridian) branding is locked. Everything on this page is <strong style="color:var(--text);">your organization's</strong> branding — logo, colors, AUP text, email identity, SSH MOTD. Hide-vendor-attribution is available to anyone (Meridian is Apache 2.0); the "MeridianNIP" trademark stays protected per LICENSE Section 6.
+</div>
+
+<form id="brand-form">
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Your organization</div></div>
+  <div class="form-row">
+    <div class="field"><label>Display name</label><input class="input" name="display_name" value="{{ b.display_name }}"></div>
+    <div class="field"><label>Short name</label><input class="input mono" name="short_name" value="{{ b.short_name }}"></div>
+  </div>
+  <div class="form-row">
+    <div class="field"><label>Support email</label><input class="input mono" name="support_email" value="{{ b.support_email or '' }}"></div>
+    <div class="field"><label>Support URL</label><input class="input mono" name="support_url" value="{{ b.support_url or '' }}"></div>
+  </div>
+  <div class="form-row">
+    <div class="field"><label>Privacy URL</label><input class="input mono" name="privacy_url" value="{{ b.privacy_url or '' }}"></div>
+    <div class="field"><label>Imprint / legal URL</label><input class="input mono" name="imprint_url" value="{{ b.imprint_url or '' }}"></div>
+  </div>
+  <div class="form-row">
+    <div class="field"><label>Default time zone</label><input class="input mono" name="default_timezone" value="{{ b.default_timezone }}"></div>
+    <div class="field"><label>Date format</label>
+      <select class="select" name="date_format">
+        {% for v, lbl in [('iso','2026-04-18 (ISO)'),('us','Apr 18, 2026'),('eu','18 Apr 2026')] %}
+          <option value="{{ v }}" {% if b.date_format == v %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Brand assets</div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">uploaded files live under {{ 'data_root' }}/branding/</span></div>
+  <div style="padding:12px 14px;font-size:12px;color:var(--text-dim);line-height:1.55;">
+    Upload your organization's visual assets. Each one is sniffed for magic bytes and rejected if it doesn't match the declared mime; SVGs are sanitized to strip <code>&lt;script&gt;</code> and event handlers. The favicon + login background are served publicly so the login page can show them before the user authenticates.
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;padding:0 14px 14px;">
+    {% for kind, label, hint in [
+         ('logo',       'Logo',              'Shown in the top bar · PNG/SVG/WebP/JPEG · 2 MB max'),
+         ('favicon',    'Favicon',           'Browser tab icon · ICO/PNG/SVG · 256 KB max'),
+         ('login_bg',   'Login background',  'Backdrop on /login · JPEG/PNG/WebP · 5 MB max'),
+         ('pdf_header', 'PDF header',        'Top banner on exported reports · PNG/JPEG · 1 MB max')
+    ] %}
+      <div style="border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-family:var(--mono);font-size:12px;color:var(--text);">{{ label }}</div>
+          <span id="asset-status-{{ kind }}" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);"></span>
+        </div>
+        <div style="background:rgba(255,255,255,.02);border-radius:4px;min-height:80px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;padding:8px;">
+          <img id="asset-preview-{{ kind }}" alt="(no {{ label|lower }})" style="max-width:100%;max-height:120px;display:{% if b[kind + '_path'] %}block{% else %}none{% endif %};"
+               src="/api/v1/branding/assets/{{ kind }}?v={{ b.updated_at.isoformat() if b.updated_at else '0' }}">
+          <span id="asset-empty-{{ kind }}" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);display:{% if b[kind + '_path'] %}none{% else %}block{% endif %};">no {{ label|lower }} uploaded</span>
+        </div>
+        <div style="font-size:10px;color:var(--text-dimmer);margin-bottom:10px;">{{ hint }}</div>
+        <div style="display:flex;gap:6px;">
+          <label class="btn" style="font-size:11px;cursor:pointer;">
+            <input type="file" data-asset-upload="{{ kind }}" style="display:none;">▸ Upload
+          </label>
+          <button class="btn" type="button" data-asset-delete="{{ kind }}" style="font-size:11px;color:var(--danger);">Delete</button>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  <div style="padding:0 14px 14px;">
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:6px;">
+      Or pick a bundled favicon preset (SVG, applies to the Favicon slot):
+    </div>
+    <div id="favicon-presets" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Theme &amp; accent</div></div>
+  <div class="form-row">
+    <div class="field"><label>Theme</label>
+      <select class="select" name="theme">
+        {% for v in ['dark','midnight','light','high_contrast'] %}
+          <option value="{{ v }}" {% if b.theme == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Accent color (#rrggbb)</label><input class="input mono" name="accent_hex" value="{{ b.accent_hex }}" pattern="^#[0-9a-fA-F]{6}$"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Logo click-through</div></div>
+  <div class="form-row">
+    <div class="field" style="flex:2;"><label>URL the top-bar logo opens</label><input class="input mono" name="logo_click_url" value="{{ b.logo_click_url }}"></div>
+    <div class="field"><label>Open in</label>
+      <select class="select" name="logo_click_target">
+        <option value="_blank" {% if b.logo_click_target == '_blank' %}selected{% endif %}>New tab</option>
+        <option value="_self"  {% if b.logo_click_target == '_self'  %}selected{% endif %}>Same tab</option>
+      </select>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--text-dim);margin-top:-4px;padding-left:2px;line-height:1.5;">
+    Default is the Meridian homepage. Override to your intranet, NOC, or support portal. Leave blank to disable the link.
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Login page text</div></div>
+  <div class="field" style="margin-bottom:14px;">
+    <label>Pre-login warning banner</label>
+    <textarea class="input" name="pre_login_warning" rows="4" placeholder="Example:
+WARNING · U.S. Government / Company Information System
+
+This system is for authorized use only. By logging in you consent to monitoring and audit of all activity. Unauthorized access is prohibited and may result in disciplinary action or criminal prosecution. If you do not agree, disconnect now.">{{ b.pre_login_warning or '' }}</textarea>
+    <div style="font-size:10px;color:var(--text-dimmer);margin-top:4px;font-family:var(--mono);line-height:1.5;">
+      Displayed above the login form. Suggested wording: legal ownership of the system,
+      notice of monitoring, prohibition on unauthorized access, and a disconnect directive.
+    </div>
+  </div>
+  <div class="notif-row"><div class="notif-label">Require click-through AUP accept on first login<div class="notif-desc">New users must read + check "I accept" before any page loads. Acceptance is audit-logged with timestamp + IP + UA.</div></div><div class="toggle {% if b.aup_require_first_login %}on{% endif %}" data-field="aup_require_first_login"></div></div>
+  <div class="notif-row"><div class="notif-label">Re-prompt when AUP changes<div class="notif-desc">All users re-accept when you publish new policy text.</div></div><div class="toggle {% if b.aup_reprompt_on_change %}on{% endif %}" data-field="aup_reprompt_on_change"></div></div>
+  <div class="notif-row"><div class="notif-label">Show "Acceptable Use Policy" link in footer<div class="notif-desc">Adds a persistent link so users can re-read the policy any time.</div></div><div class="toggle {% if b.aup_show_footer_link %}on{% endif %}" data-field="aup_show_footer_link"></div></div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Outbound communications</div>
+    <a href="/docs/admin/outbound-communications.html" target="_blank" style="font-family:var(--mono);font-size:10px;color:var(--accent);text-decoration:none;">Configuration guide ↗</a>
+  </div>
+  <div style="padding:0 14px 8px;font-size:11px;color:var(--text-dim);line-height:1.55;">
+    Settings that define <em>who</em> messages come from (sender identity, signatures).
+    The transport layer — SMTP host, Slack webhook, Teams incoming webhook, Twilio —
+    is stored in the <code class="mono">notif_channels</code> table and is not yet
+    editable from the UI. Use <code class="mono">meridian-nip notif channel add</code>
+    (or hit <code class="mono">POST /api/v1/notifications/channels</code>) to register
+    a transport, then reference it from monitor alerts and webhook fan-outs.
+  </div>
+  <div class="form-row">
+    <div class="field"><label>Email · from name</label><input class="input" name="email_from_name" value="{{ b.email_from_name or '' }}" placeholder="Meridian NIP"></div>
+    <div class="field"><label>Email · from address</label><input class="input mono" name="email_from_address" value="{{ b.email_from_address or '' }}" placeholder="noreply@acme.com"></div>
+  </div>
+  <div class="field" style="margin-bottom:14px;">
+    <label>Email signature block</label>
+    <textarea class="input mono" name="email_signature" rows="4" style="font-size:11px;">{{ b.email_signature or '' }}</textarea>
+  </div>
+  <div class="form-row">
+    <div class="field"><label>Slack sender name</label><input class="input" name="slack_sender_name" value="{{ b.slack_sender_name or '' }}"></div>
+    <div class="field"><label>Teams sender name</label><input class="input" name="teams_sender_name" value="{{ b.teams_sender_name or '' }}"></div>
+  </div>
+  <div class="form-row">
+    <div class="field"><label>SMS sender identity (Twilio)</label><input class="input mono" name="sms_sender_identity" value="{{ b.sms_sender_identity or '' }}"></div>
+    <div class="field"><label>PDF report footer text</label><input class="input" name="pdf_footer_text" value="{{ b.pdf_footer_text or '' }}"></div>
+  </div>
+  <div class="notif-row"><div class="notif-label">PDF watermark<div class="notif-desc">Adds a diagonal "CONFIDENTIAL" overlay to every exported report. Recommended for client deliverables.</div></div><div class="toggle {% if b.pdf_watermark %}on{% endif %}" data-field="pdf_watermark"></div></div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">SSH &amp; system messages</div></div>
+  <div class="field" style="margin-bottom:14px;">
+    <label>SSH login banner (MOTD)</label>
+    <textarea class="input mono" name="ssh_motd" rows="8" style="font-size:11px;">{{ b.ssh_motd or '' }}</textarea>
+  </div>
+  <div class="notif-row"><div class="notif-label">Show MOTD on every SSH login<div class="notif-desc">Applies to the <code style="font-family:var(--mono);font-size:11px;color:var(--text);">ddi-ssh</code> group. Required for most compliance regimes.</div></div><div class="toggle {% if b.ssh_motd_on_every_login %}on{% endif %}" data-field="ssh_motd_on_every_login"></div></div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Session policy</div></div>
+  <div class="form-row">
+    <div class="field"><label>Default idle timeout (min, 0 = never)</label><input class="input mono" type="number" name="session_idle_timeout_default_min" value="{{ b.session_idle_timeout_default_min }}" min="0" max="1440"></div>
+    <div class="field"><label>Max allowed override (min)</label><input class="input mono" type="number" name="session_idle_timeout_max_min" value="{{ b.session_idle_timeout_max_min }}" min="1" max="1440"></div>
+  </div>
+  <div class="notif-row"><div class="notif-label">Allow "Never" as a user choice<div class="notif-desc">Lets users disable idle timeout. Not recommended for unattended workstations.</div></div><div class="toggle {% if b.session_idle_never_allowed %}on{% endif %}" data-field="session_idle_never_allowed"></div></div>
+  <div class="notif-row"><div class="notif-label">Allow custom (manual) timeout entry<div class="notif-desc">Users can enter any value up to the ceiling above. Disable to force preset-only choices.</div></div><div class="toggle {% if b.session_idle_custom_allowed %}on{% endif %}" data-field="session_idle_custom_allowed"></div></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">White-label</div>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">Apache 2.0 — anyone can re-brand</span>
+  </div>
+  <div class="notif-row"><div class="notif-label">Hide "Powered by Meridian" attribution<div class="notif-desc">Removes vendor attribution from footer, PDF reports, and email signatures. Note: per LICENSE Section 6, this does not grant rights to use the "MeridianNIP" trademark — forks must use a different name and logo.</div></div><div class="toggle {% if b.vendor_attribution_hidden %}on{% endif %}" data-field="vendor_attribution_hidden"></div></div>
+</div>
+
+</form>
+
+<div id="save-status" style="margin-top:14px;font-family:var(--mono);font-size:11px;"></div>
+
+<script>
+(function(){
+  document.querySelectorAll('.toggle').forEach(t => {
+    if (t.style.pointerEvents === 'none') return;
+    t.addEventListener('click', () => t.classList.toggle('on'));
+  });
+
+  document.getElementById('save-btn').addEventListener('click', async () => {
+    const form = document.getElementById('brand-form');
+    const body = {};
+    new FormData(form).forEach((v, k) => {
+      if (k.endsWith('_min')) body[k] = v === '' ? null : Number(v);
+      else body[k] = v === '' ? null : v;
+    });
+    document.querySelectorAll('.toggle[data-field]').forEach(t => {
+      body[t.dataset.field] = t.classList.contains('on');
+    });
+
+    const s = document.getElementById('save-status');
+    s.textContent = 'saving…'; s.style.color = 'var(--text-dim)';
+    const r = await fetch('/api/v1/branding/', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    if (r.ok) {
+      s.textContent = `✓ saved · ${(data.updated || []).length} field(s) changed`;
+      s.style.color = 'var(--accent)';
+    } else {
+      s.textContent = `✗ ${data.error || data.detail || r.statusText}`;
+      s.style.color = 'var(--danger)';
+    }
+  });
+
+  document.getElementById('preview-login-btn').addEventListener('click', () => {
+    window.open('/ui/login?preview=1', '_blank');
+  });
+
+  // Asset upload + delete wiring
+  document.querySelectorAll('[data-asset-upload]').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const kind = inp.dataset.assetUpload;
+      const file = inp.files[0];
+      if (!file) return;
+      const status = document.getElementById(`asset-status-${kind}`);
+      status.textContent = 'uploading…';
+      status.style.color = 'var(--text-dim)';
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch(`/api/v1/branding/assets/${kind}`, {
+        method: 'POST', credentials: 'same-origin', body: fd,
+      });
+      let data = {}; try { data = await r.json(); } catch {}
+      if (!r.ok) {
+        status.textContent = `✗ ${data.detail || data.error || r.statusText}`;
+        status.style.color = 'var(--danger)';
+        inp.value = '';
+        return;
+      }
+      status.textContent = `✓ ${(data.size_bytes/1024).toFixed(1)} KB · ${data.mime}`;
+      status.style.color = 'var(--accent)';
+      const img = document.getElementById(`asset-preview-${kind}`);
+      const empty = document.getElementById(`asset-empty-${kind}`);
+      img.src = data.url;
+      img.style.display = 'block';
+      empty.style.display = 'none';
+      inp.value = '';
+    });
+  });
+
+  document.querySelectorAll('[data-asset-delete]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const kind = btn.dataset.assetDelete;
+      if (!confirm(`Delete the ${kind} asset? The file is removed from disk and the branding row cleared.`)) return;
+      const status = document.getElementById(`asset-status-${kind}`);
+      const r = await fetch(`/api/v1/branding/assets/${kind}`, {
+        method: 'DELETE', credentials: 'same-origin',
+      });
+      if (!r.ok && r.status !== 204) {
+        let data = {}; try { data = await r.json(); } catch {}
+        status.textContent = `✗ ${data.detail || data.error || r.statusText}`;
+        status.style.color = 'var(--danger)';
+        return;
+      }
+      status.textContent = '✓ removed';
+      status.style.color = 'var(--accent)';
+      document.getElementById(`asset-preview-${kind}`).style.display = 'none';
+      document.getElementById(`asset-empty-${kind}`).style.display = 'block';
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Favicon preset picker — 5 inline SVGs. Click installs the SVG as the
+  // Favicon asset via the same upload endpoint the file-input uses.
+  // ------------------------------------------------------------------
+  const FAVICON_PRESETS = [
+    {name:'shield',   svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M16 2 L28 7 V16 C28 22 22 28 16 30 C10 28 4 22 4 16 V7 Z" fill="#20c896" stroke="#0e1116" stroke-width="1.5"/><path d="M10 16 L14 20 L22 12" fill="none" stroke="#0e1116" stroke-width="2.5" stroke-linecap="round"/></svg>`},
+    {name:'globe',    svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="#0e1116" stroke="#20c896" stroke-width="2"/><path d="M4 16 h24 M16 4 C22 10 22 22 16 28 M16 4 C10 10 10 22 16 28" fill="none" stroke="#20c896" stroke-width="1.5"/></svg>`},
+    {name:'network',  svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="6" r="3" fill="#20c896"/><circle cx="6" cy="22" r="3" fill="#20c896"/><circle cx="26" cy="22" r="3" fill="#20c896"/><path d="M16 9 L6 19 M16 9 L26 19 M6 22 L26 22" stroke="#20c896" stroke-width="1.8" fill="none"/></svg>`},
+    {name:'radar',    svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#20c896" stroke-width="1.2" opacity="0.4"/><circle cx="16" cy="16" r="9" fill="none" stroke="#20c896" stroke-width="1.2" opacity="0.6"/><circle cx="16" cy="16" r="5" fill="none" stroke="#20c896" stroke-width="1.2" opacity="0.8"/><circle cx="16" cy="16" r="2" fill="#20c896"/><line x1="16" y1="16" x2="28" y2="8" stroke="#20c896" stroke-width="2"/></svg>`},
+    {name:'lock',     svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="7" y="14" width="18" height="14" rx="2" fill="#20c896"/><path d="M11 14 V10 A5 5 0 0 1 21 10 V14" fill="none" stroke="#20c896" stroke-width="2.5"/><circle cx="16" cy="21" r="2" fill="#0e1116"/></svg>`},
+  ];
+  const presetRow = document.getElementById('favicon-presets');
+  if (presetRow) {
+    presetRow.innerHTML = FAVICON_PRESETS.map((p, i) => `
+      <button type="button" data-preset-idx="${i}" title="Use ${p.name}"
+        style="width:48px;height:48px;padding:4px;border:1px solid var(--border);border-radius:4px;background:rgba(255,255,255,.02);cursor:pointer;">
+        ${p.svg}
+      </button>`).join('');
+    presetRow.querySelectorAll('[data-preset-idx]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const p = FAVICON_PRESETS[Number(btn.dataset.presetIdx)];
+        const blob = new Blob([p.svg], {type:'image/svg+xml'});
+        const fd = new FormData();
+        fd.append('file', blob, `${p.name}.svg`);
+        const status = document.getElementById('asset-status-favicon');
+        status.textContent = '⟳ applying preset…'; status.style.color = 'var(--text-dim)';
+        const r = await fetch('/api/v1/branding/assets/favicon', {
+          method:'POST', credentials:'same-origin', body: fd,
+        });
+        if (r.ok) {
+          const d = await r.json();
+          status.textContent = '✓ applied'; status.style.color = 'var(--accent)';
+          const img = document.getElementById('asset-preview-favicon');
+          img.src = d.url; img.style.display = 'block';
+          document.getElementById('asset-empty-favicon').style.display = 'none';
+        } else {
+          const d = await r.json().catch(() => ({}));
+          status.textContent = `✗ ${d.error||d.detail||r.statusText}`;
+          status.style.color = 'var(--danger)';
+        }
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

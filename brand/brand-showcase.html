@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Meridian — Brand Showcase</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:#0a0e1a;color:#e2e8f0;min-height:100vh;padding:40px 32px;}
+.wrap{max-width:1280px;margin:0 auto;}
+h1{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:.16em;color:#20c896;margin-bottom:6px;}
+h2{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;color:#4a5568;text-transform:uppercase;margin:40px 0 14px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08);}
+.tagline{font-size:28px;font-weight:600;color:#e2e8f0;letter-spacing:-.01em;margin-bottom:8px;}
+.sub{font-size:14px;color:#718096;margin-bottom:30px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;}
+.tile{background:rgba(15,20,35,.7);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:200px;gap:18px;position:relative;}
+.tile.light{background:#f8fafc;border-color:#e2e8f0;color:#1a202c;}
+.tile.paper{background:#fefefe;border-color:#d1d5db;color:#1a202c;}
+.tile-meta{font-family:'JetBrains Mono',monospace;font-size:10px;color:#4a5568;letter-spacing:.06em;text-transform:uppercase;text-align:center;margin-top:auto;}
+.tile.light .tile-meta,.tile.paper .tile-meta{color:#718096;}
+.tile img{max-width:100%;height:auto;display:block;}
+.badge{position:absolute;top:10px;right:10px;font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;border-radius:10px;background:rgba(32,200,150,.15);color:#20c896;letter-spacing:.06em;}
+.badge.mono{background:rgba(148,163,184,.2);color:#94a3b8;}
+.sizes{display:flex;align-items:flex-end;gap:28px;justify-content:center;}
+.sizes img{display:block;}
+.size-label{font-family:'JetBrains Mono',monospace;font-size:9px;color:#4a5568;letter-spacing:.06em;margin-top:8px;text-align:center;text-transform:uppercase;}
+
+/* Letterhead mockup */
+.letterhead{background:#fefefe;color:#1a202c;border-radius:8px;padding:40px 48px 48px;min-height:520px;box-shadow:0 20px 60px rgba(0,0,0,.4);position:relative;overflow:hidden;font-family:'DM Sans',sans-serif;}
+.letterhead-head{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:20px;border-bottom:1.5px solid #20c896;margin-bottom:30px;}
+.letterhead-head img{height:52px;}
+.letterhead-meta{text-align:right;font-size:10px;color:#718096;font-family:'JetBrains Mono',monospace;letter-spacing:.05em;line-height:1.7;}
+.letterhead-body h3{font-size:18px;font-weight:600;margin-bottom:14px;color:#1a202c;}
+.letterhead-body p{font-size:13px;color:#4a5568;line-height:1.7;margin-bottom:14px;}
+.letterhead-sig{margin-top:30px;font-size:12px;color:#4a5568;line-height:1.6;}
+.letterhead-foot{position:absolute;bottom:20px;left:48px;right:48px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:9px;color:#a0aec0;font-family:'JetBrains Mono',monospace;letter-spacing:.05em;}
+
+/* Business card */
+.bcard{width:360px;height:220px;background:#0a0e1a;color:#e2e8f0;border-radius:10px;padding:24px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 20px 40px rgba(0,0,0,.5);}
+.bcard-name{font-size:18px;font-weight:600;margin-bottom:3px;}
+.bcard-title{font-family:'JetBrains Mono',monospace;font-size:10px;color:#20c896;letter-spacing:.1em;text-transform:uppercase;}
+.bcard-info{font-family:'JetBrains Mono',monospace;font-size:10px;color:#718096;line-height:1.7;letter-spacing:.04em;}
+
+/* Email sig */
+.email-sig{background:#fefefe;color:#1a202c;padding:20px 24px;border-radius:8px;font-family:'DM Sans',sans-serif;border-left:3px solid #20c896;}
+.email-sig-head{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.email-sig-head img{height:40px;}
+.email-sig-name{font-size:15px;font-weight:600;color:#1a202c;}
+.email-sig-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#20c896;letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+.email-sig-body{font-size:11px;color:#4a5568;line-height:1.7;font-family:'JetBrains Mono',monospace;letter-spacing:.02em;}
+
+.dl{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+.dl a{font-family:'JetBrains Mono',monospace;font-size:10px;color:#20c896;text-decoration:none;padding:5px 10px;border:1px solid rgba(32,200,150,.25);border-radius:5px;letter-spacing:.04em;}
+.dl a:hover{background:rgba(32,200,150,.1);}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.palette{display:flex;gap:10px;margin-top:14px;}
+.swatch{width:64px;height:64px;border-radius:8px;display:flex;align-items:flex-end;justify-content:center;padding:6px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MERIDIAN · BRAND SHOWCASE</h1>
+<div class="tagline">The mark, wordmark, and usage examples.</div>
+<div class="sub">Files live in <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#20c896;">/home/pj/projects/meridian/brand/</code></div>
+
+<h2>Animated mark · for web</h2>
+<div class="grid">
+  <div class="tile">
+    <object data="meridian-mark-animated.svg" type="image/svg+xml" style="width:140px;height:140px;"></object>
+    <div class="tile-meta">animated · full color · 3 meridians + pulse</div>
+    <span class="badge">WEB ONLY</span>
+  </div>
+  <div class="tile">
+    <object data="meridian-mark-animated.svg" type="image/svg+xml" style="width:64px;height:64px;"></object>
+    <div class="tile-meta">64px · header / app</div>
+    <span class="badge">WEB ONLY</span>
+  </div>
+  <div class="tile">
+    <object data="meridian-mark-animated.svg" type="image/svg+xml" style="width:32px;height:32px;"></object>
+    <div class="tile-meta">32px · compact nav</div>
+    <span class="badge">WEB ONLY</span>
+  </div>
+</div>
+
+<h2>Static mark — teal (for dark surfaces)</h2>
+<div class="grid">
+  <div class="tile">
+    <img src="meridian-mark-teal.svg" style="width:256px;height:256px;" alt="">
+    <div class="tile-meta">256 × 256 · poster / splash</div>
+  </div>
+  <div class="tile">
+    <div class="sizes">
+      <div><img src="meridian-mark-teal.svg" style="width:128px;height:128px;"><div class="size-label">128</div></div>
+      <div><img src="meridian-mark-teal.svg" style="width:64px;height:64px;"><div class="size-label">64</div></div>
+      <div><img src="meridian-mark-teal.svg" style="width:32px;height:32px;"><div class="size-label">32</div></div>
+      <div><img src="meridian-mark-teal.svg" style="width:16px;height:16px;"><div class="size-label">16</div></div>
+    </div>
+    <div class="tile-meta">scales cleanly · favicon-ready</div>
+  </div>
+</div>
+
+<h2>Static mark — monochrome (for letterhead, print, fax)</h2>
+<div class="grid">
+  <div class="tile paper">
+    <img src="meridian-mark-mono-black.svg" style="width:160px;height:160px;" alt="">
+    <div class="tile-meta">mono black · on light paper</div>
+    <span class="badge mono">LETTERHEAD</span>
+  </div>
+  <div class="tile">
+    <img src="meridian-mark-mono-white.svg" style="width:160px;height:160px;" alt="">
+    <div class="tile-meta">mono white · on dark surface</div>
+    <span class="badge mono">DARK BG</span>
+  </div>
+  <div class="tile light">
+    <img src="meridian-mark.svg" style="width:160px;height:160px;color:#1a202c;" alt="">
+    <div class="tile-meta">mark.svg using currentColor · adapts to any CSS color</div>
+    <span class="badge mono">ADAPTIVE</span>
+  </div>
+</div>
+
+<h2>Wordmark (horizontal lockup)</h2>
+<div class="grid" style="grid-template-columns:1fr;">
+  <div class="tile" style="min-height:140px;">
+    <img src="meridian-wordmark-teal.svg" style="height:60px;width:auto;" alt="">
+    <div class="tile-meta">teal mark + dark text · on light background</div>
+  </div>
+  <div class="tile paper" style="min-height:140px;">
+    <img src="meridian-wordmark-mono-black.svg" style="height:60px;width:auto;" alt="">
+    <div class="tile-meta">mono black · letterhead / business card</div>
+  </div>
+  <div class="tile" style="min-height:140px;">
+    <img src="meridian-wordmark-mono-white.svg" style="height:60px;width:auto;" alt="">
+    <div class="tile-meta">mono white · dark header / footer</div>
+  </div>
+</div>
+
+<h2>Usage example · Letterhead</h2>
+<div class="letterhead">
+  <div class="letterhead-head">
+    <img src="meridian-wordmark-mono-black.svg" alt="">
+    <div class="letterhead-meta">
+      Meridian NIP, LLC<br>
+      meridiannip.com · support@meridiannip.com<br>
+      Invoice #INV-2026-0418 · 2026-04-18
+    </div>
+  </div>
+  <div class="letterhead-body">
+    <h3>Re: Network Intelligence Platform · Medium Tier · 12-Month License</h3>
+    <p>Thank you for choosing Meridian for your DNS, network, and directory operations. Your license is enclosed below and has been activated on your registered installation.</p>
+    <p>This tier includes up to 50 named users, all core features (DNS tools, DHCP &amp; IPAM queries, network testing, AD/Entra integration, wizards, vulnerability scanning, and scheduled jobs), and email support with a 2-business-day response SLA. White-label attribution hiding is available on Enterprise tier — contact us if you'd like to upgrade.</p>
+    <p>Your renewal window opens 30 days before expiry. You'll receive a reminder via email and in-portal notification as part of the standard lifecycle.</p>
+    <div class="letterhead-sig">
+      Best regards,<br>
+      <strong style="color:#1a202c;">The Meridian Team</strong>
+    </div>
+  </div>
+  <div class="letterhead-foot">
+    <div>MERIDIAN NIP · MERIDIANNIP.COM</div>
+    <div>PAGE 1 OF 1</div>
+  </div>
+</div>
+
+<h2>Usage example · Business card + email signature</h2>
+<div class="two">
+  <div class="tile" style="padding:30px;">
+    <div class="bcard">
+      <div>
+        <img src="meridian-wordmark-mono-white.svg" style="height:36px;width:auto;margin-bottom:20px;">
+      </div>
+      <div>
+        <div class="bcard-name">Pete Johnson</div>
+        <div class="bcard-title">Founder · Network Engineer</div>
+      </div>
+      <div class="bcard-info">
+        pete@meridiannip.com<br>
+        meridiannip.com · +1 (555) 010-4242
+      </div>
+    </div>
+    <div class="tile-meta" style="margin-top:16px;">business card · dark variant</div>
+  </div>
+  <div class="tile" style="padding:30px;">
+    <div class="email-sig">
+      <div class="email-sig-head">
+        <img src="meridian-mark-teal.svg" alt="">
+        <div>
+          <div class="email-sig-name">Pete Johnson</div>
+          <div class="email-sig-title">Founder · Meridian NIP</div>
+        </div>
+      </div>
+      <div class="email-sig-body">
+        pete@meridiannip.com<br>
+        meridiannip.com
+      </div>
+    </div>
+    <div class="tile-meta" style="margin-top:16px;">email signature block · light variant</div>
+  </div>
+</div>
+
+<h2>Color palette</h2>
+<div class="palette">
+  <div class="swatch" style="background:#20c896;color:#0a0e1a;">#20C896</div>
+  <div class="swatch" style="background:#0a0e1a;color:#20c896;border:1px solid rgba(255,255,255,.1);">#0A0E1A</div>
+  <div class="swatch" style="background:#1a1d29;color:#e2e8f0;">#1A1D29</div>
+  <div class="swatch" style="background:#e2e8f0;color:#1a202c;">#E2E8F0</div>
+  <div class="swatch" style="background:#4a5568;color:#e2e8f0;">#4A5568</div>
+</div>
+
+<h2>Files &amp; downloads</h2>
+<div class="dl">
+  <a href="meridian-mark-animated.svg" download>meridian-mark-animated.svg</a>
+  <a href="meridian-mark.svg" download>meridian-mark.svg (currentColor)</a>
+  <a href="meridian-mark-teal.svg" download>meridian-mark-teal.svg</a>
+  <a href="meridian-mark-mono-black.svg" download>meridian-mark-mono-black.svg</a>
+  <a href="meridian-mark-mono-white.svg" download>meridian-mark-mono-white.svg</a>
+  <a href="meridian-wordmark.svg" download>meridian-wordmark.svg (currentColor)</a>
+  <a href="meridian-wordmark-teal.svg" download>meridian-wordmark-teal.svg</a>
+  <a href="meridian-wordmark-mono-black.svg" download>meridian-wordmark-mono-black.svg</a>
+  <a href="meridian-wordmark-mono-white.svg" download>meridian-wordmark-mono-white.svg</a>
+</div>
+
+<div style="margin-top:40px;padding:16px 20px;background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.2);border-radius:8px;font-size:12px;color:#94a3b8;line-height:1.6;">
+  <strong style="color:#60a5fa;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;">USAGE NOTES</strong><br>
+  · <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0;">currentColor</code> variants take the CSS <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0;">color</code> property of their container — drop into any page and set the color once.<br>
+  · Animated SVG uses inline <code style="font-family:'JetBrains Mono',monospace;color:#e2e8f0;">&lt;style&gt;</code> so it animates standalone in any browser. Not suitable for print / letterhead / email clients.<br>
+  · Mono variants are intentionally single-color so they reproduce identically on fax, B&amp;W print, and embossed / foiled stamping.<br>
+  · Minimum legible size: 16×16 px on screen; 10 mm wide in print. Below that, use the center-meridian-only simplified variant (can be generated from mark.svg by removing the rotated ellipses if needed).<br>
+  · Clear space around the mark: 1/4 of the mark's height on all sides.
+</div>
+
+</div>
+</body>
+</html>

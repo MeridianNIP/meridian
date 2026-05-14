@@ -1,0 +1,1129 @@
+{% extends "base.html" %}
+{% set active = 'network' %}
+{% block title %}Network Tools · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Network Tools</div>
+    <div class="page-sub">Sandboxed reachability + performance. Scope guardrails apply: <strong>{{ scope }}</strong></div>
+  </div>
+  {% with docs_path="user/network-tools.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="tabs" data-tabs="net">
+  <button class="tab active" data-tab="ping">Ping</button>
+  <button class="tab"        data-tab="trace">Traceroute</button>
+  <button class="tab"        data-tab="httptest">HTTP test</button>
+  <button class="tab"        data-tab="portscan">Port scan</button>
+  <button class="tab"        data-tab="snmp">SNMP walk</button>
+  <button class="tab"        data-tab="pcap">Packet capture</button>
+  <button class="tab"        data-tab="asn">ASN lookup</button>
+  <button class="tab"        data-tab="bgp">BGP LG</button>
+  <button class="tab"        data-tab="geoip">Geolocation</button>
+  <button class="tab"        data-tab="headers">Header audit</button>
+  <button class="tab"        data-tab="subnet">Subnet calc</button>
+  <button class="tab"        data-tab="devices">Devices</button>
+</div>
+
+<div data-panel="ping" data-group="net">
+  <div class="card" style="margin-bottom:14px;">
+    <form data-endpoint="/api/v1/network/ping" data-output="#ping-output">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Target host or IP</label>
+          <input class="input mono" name="target" value="1.1.1.1" required>
+        </div>
+        <div class="field">
+          <label>Count</label>
+          <input class="input mono" name="count" type="number" value="4" min="1" max="100"
+                 title="Number of ICMP echo packets to send. Note: the 'time=9012ms' you see in the native ping footer is *total elapsed wall time* (count minus 1 × interval), not per-packet latency. Per-packet RTT is shown on each line and in the min/avg/max summary.">
+
+        </div>
+        <div class="field">
+          <label>Interval (s)</label>
+          <input class="input mono" name="interval_s" type="number" value="1" min="0.2" max="5" step="0.1">
+        </div>
+        <div class="field">
+          <label>Packet size</label>
+          <input class="input mono" name="packet_size" type="number" value="56" min="16" max="1472">
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" data-submit>▸ Start test</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Live output</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#ping-output"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div class="console empty" id="ping-output">Start a test to see output here.</div>
+  </div>
+</div>
+
+<!-- Traceroute panel -->
+<div data-panel="trace" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form data-endpoint="/api/v1/network/traceroute" data-output="#trace-output">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Target host or IP</label>
+          <input class="input mono" name="target" value="1.1.1.1" required>
+        </div>
+        <div class="field">
+          <label>Max hops</label>
+          <input class="input mono" name="max_hops" type="number" value="30" min="1" max="64">
+        </div>
+        <div class="field">
+          <label>Per-hop probes</label>
+          <input class="input mono" name="per_hop_probes" type="number" value="3" min="1" max="10">
+        </div>
+        <div class="field">
+          <label>Timeout (s)</label>
+          <input class="input mono" name="timeout_s" type="number" value="3" min="1" max="15">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Default uses UDP probes (unprivileged). Toggle ICMP if you need RFC1393-style ICMP echo hops.
+      </div>
+      <button class="btn btn-primary" type="submit" data-submit>▸ Trace route</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Hops</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#trace-output"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div class="console empty" id="trace-output">Run a trace to see hops.</div>
+  </div>
+</div>
+
+<!-- HTTP test panel -->
+<div data-panel="httptest" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form data-endpoint="/api/v1/network/http-test" data-output="#http-output">
+      <div class="form-row">
+        <div class="field" style="flex:3;">
+          <label>URL</label>
+          <input class="input mono" name="url" value="https://example.com/" required>
+        </div>
+        <div class="field">
+          <label>Method</label>
+          <select class="select" name="method">
+            {% for m in ['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'] %}
+              <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Timeout (s)</label>
+          <input class="input mono" name="timeout_s" type="number" value="15" min="1" max="120">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Sends one request, follows redirects up to 10 hops, captures per-hop timing. Response body preview is truncated to 2 KB.
+      </div>
+      <button class="btn btn-primary" type="submit" data-submit>▸ Run HTTP test</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Request chain</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#http-output"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div class="console empty" id="http-output">Run a request to see the redirect chain + headers.</div>
+  </div>
+</div>
+
+<!-- Port scan panel -->
+<div data-panel="portscan" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="portscan-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Host</label>
+          <input class="input mono" name="host" value="127.0.0.1" required>
+        </div>
+        <div class="field" style="flex:2;">
+          <label>Ports (e.g. 22,80,443,8000-8010)</label>
+          <input class="input mono" name="ports" value="22,80,443,3306,5432,8080,8443" required>
+        </div>
+        <div class="field">
+          <label>Timeout (s)</label>
+          <input class="input mono" name="timeout_s" type="number" value="2" min="0.25" max="15" step="0.25">
+        </div>
+        <div class="field">
+          <label>Concurrency</label>
+          <input class="input mono" name="concurrency" type="number" value="64" min="1" max="256">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Async TCP-connect scan. Scope guardrails apply — internal scope blocks public IPs; external scope blocks RFC1918 / loopback / link-local. Max 1024 ports per run.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Start scan</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Scan results</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#portscan-out"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div id="portscan-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Enter a host + port spec and press start.</div>
+  </div>
+</div>
+
+<!-- SNMP walk panel -->
+<div data-panel="snmp" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="snmp-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Host</label>
+          <input class="input mono" name="host" value="switch.lab.internal" required>
+        </div>
+        <div class="field" style="flex:2;">
+          <label>OID (name or dotted)</label>
+          <input class="input mono" name="oid" value="system" required>
+        </div>
+        <div class="field">
+          <label>Version</label>
+          <select class="select" name="version">
+            <option value="2c" selected>v2c</option>
+            <option value="1">v1</option>
+            <option value="3">v3</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Community (v1/v2c)</label>
+          <input class="input mono" name="community" value="public">
+        </div>
+        <div class="field">
+          <label>Timeout (s)</label>
+          <input class="input mono" name="timeout_s" type="number" value="8" min="1" max="30">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Requires <code>network.tcpdump</code> permission. SNMPv3 auth/priv keys load from the vault on the server — v1/v2c shown here for convenience. Avoid community strings other than “public” on untrusted networks.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Walk OID</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">OID rows</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#snmp-out"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div id="snmp-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Run a walk to see OID rows.</div>
+  </div>
+</div>
+
+<!-- Packet capture panel -->
+<div data-panel="pcap" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="pcap-form">
+      <div class="form-row">
+        <div class="field">
+          <label>Interface</label>
+          <div style="display:flex;gap:4px;">
+            <select class="select" name="interface" id="pcap-iface" required style="flex:1;">
+              <option value="any" selected>any &mdash; capture on every interface</option>
+              <!-- populated by JS from /api/v1/network/interfaces; re-reads on every open -->
+            </select>
+            <button type="button" id="pcap-iface-refresh" class="btn btn-ghost"
+                    style="padding:0 8px;font-size:11px;"
+                    title="Re-read the kernel's list of interfaces (for hot-plugged NICs).">&#x21bb;</button>
+          </div>
+        </div>
+        <div class="field" style="flex:3;">
+          <label>BPF filter (optional)</label>
+          <input class="input mono" name="bpf_filter" placeholder="e.g. 'tcp port 443 and host 10.0.0.5'">
+        </div>
+        <div class="field">
+          <label>Duration (s)</label>
+          <input class="input mono" name="duration_s" type="number" value="10" min="1" max="120">
+        </div>
+        <div class="field">
+          <label>Max packets</label>
+          <input class="input mono" name="max_packets" type="number" value="5000" min="1" max="100000">
+        </div>
+        <div class="field">
+          <label>Snaplen</label>
+          <input class="input mono" name="snaplen" type="number" value="262" min="64" max="65535">
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Requires <code>network.tcpdump</code> (admin-gated). Capture stops at duration OR packet-count, whichever fires first. pcap is saved to the File Repo — per-user quota applies. BPF syntax same as tcpdump.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Start capture</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Capture result</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#pcap-out"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div id="pcap-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Configure and press start. Capture runs synchronously (this request stays open).</div>
+  </div>
+</div>
+
+<!-- ASN lookup panel -->
+<div data-panel="asn" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="asn-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>IP address</label><input class="input mono" name="ip" value="1.1.1.1" required></div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Lookup ASN</button>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-left:8px;">via whois.cymru.com</span>
+    </form>
+  </div>
+  <div class="card"><div class="card-head"><div class="card-title">ASN record</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#asn-out"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div id="asn-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Enter an IP and run.</div></div>
+</div>
+
+<!-- BGP looking glass panel -->
+<div data-panel="bgp" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="bgp-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>IP address or <code class="mono">AS&lt;number&gt;</code></label><input class="input mono" name="target" value="AS15169" required></div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Route view</button>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-left:8px;">via bgpview.io (public, no key)</span>
+    </form>
+  </div>
+  <div class="card"><div class="card-head"><div class="card-title">Route / ASN view</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#bgp-out"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div id="bgp-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No result yet.</div></div>
+</div>
+
+<!-- IP reputation panel -->
+<!-- Geolocation panel -->
+<div data-panel="geoip" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="geo-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>IP address</label><input class="input mono" name="ip" value="8.8.8.8" required></div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Geolocate</button>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-left:8px;">via ipapi.co (public, rate-limited to 1k/day per source IP)</span>
+    </form>
+  </div>
+  <div class="card"><div class="card-head"><div class="card-title">Geolocation</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#geo-out"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div id="geo-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No lookup yet.</div></div>
+</div>
+
+<!-- Security header audit panel -->
+<div data-panel="headers" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="hdr-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>URL (or hostname)</label><input class="input mono" name="url" value="https://meridian.local" required></div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+        Fetches the URL and grades HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, and cookie flags. Same checks as Mozilla Observatory's header section.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Audit headers</button>
+    </form>
+  </div>
+  <div class="card"><div class="card-head"><div class="card-title">Audit result</div> <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#hdr-out"><button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button><button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button><button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button></div></div>
+    <div id="hdr-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No audit yet.</div></div>
+</div>
+
+<!-- Devices panel: operator-facing read-only view of network device
+     inventory. Credentials + CRUD stay in Admin → Integrations →
+     Network Devices. Here an operator can trigger a backup, browse
+     snapshot history, and diff two snapshots. -->
+<div data-panel="devices" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head">
+      <div class="card-title">Network devices</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="dev-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+        <input class="input mono" id="dev-filter" placeholder="filter: name, host, tag" style="font-size:11px;padding:3px 8px;">
+      </div>
+    </div>
+    <div style="padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.55;border-bottom:1px solid var(--border);">
+      Operator-facing view. Click a row to see snapshot history, trigger an on-demand backup, or diff two snapshots.
+      Adding / editing / removing devices and rotating credentials lives under
+      <a href="/ui/admin/devices" style="color:var(--accent);">Admin → Integrations → Network Devices</a>.
+    </div>
+    <table style="width:100%;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Name</th>
+          <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Kind</th>
+          <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Host</th>
+          <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Site / tags</th>
+          <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last backup</th>
+          <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Auto</th>
+          <th style="text-align:right;padding:8px;"></th>
+        </tr>
+      </thead>
+      <tbody id="dev-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Subnet / supernet calculator. Pure CIDR math — no network calls, no
+     scope check, instant. Three operations packed into one form: describe
+     a single network, split into N subnets, aggregate a list into the
+     minimal supernet. -->
+<div data-panel="subnet" data-group="net" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head">
+      <div class="card-title">Subnet / supernet calculator</div>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">stdlib · no DNS · IPv4 + IPv6</span>
+    </div>
+    <div style="padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.55;border-bottom:1px solid var(--border);">
+      Three operations: <strong>Describe</strong> a network (range, hosts, mask, reverse pointer), <strong>Split</strong> one network into equal-size subnets at a new prefix, or <strong>Aggregate</strong> a list of networks into the minimum supernet(s). Accepts host or network syntax — <span class="mono">192.168.1.10/24</span> normalises to <span class="mono">192.168.1.0/24</span>.
+    </div>
+    <div class="tabs" data-tabs="subnet-op" style="padding:8px 14px 0;">
+      <button class="tab active" data-tab="sub-describe">Describe</button>
+      <button class="tab"        data-tab="sub-split">Split</button>
+      <button class="tab"        data-tab="sub-aggregate">Aggregate</button>
+    </div>
+
+    <div data-panel="sub-describe" data-group="subnet-op" style="padding:12px 14px;">
+      <form id="subnet-describe-form">
+        <div class="form-row">
+          <div class="field" style="flex:2;">
+            <label>CIDR</label>
+            <input class="input mono" name="cidr" value="192.168.1.0/24" required>
+          </div>
+        </div>
+        <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Describe</button>
+      </form>
+    </div>
+
+    <div data-panel="sub-split" data-group="subnet-op" class="hidden" style="padding:12px 14px;">
+      <form id="subnet-split-form">
+        <div class="form-row">
+          <div class="field" style="flex:2;">
+            <label>CIDR to split</label>
+            <input class="input mono" name="cidr" value="10.0.0.0/16" required>
+          </div>
+          <div class="field">
+            <label>New prefix (must be larger)</label>
+            <input class="input mono" name="new_prefix" type="number" min="1" max="128" value="20" required>
+          </div>
+        </div>
+        <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Split</button>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-left:8px;">capped at 1024 subnets returned</span>
+      </form>
+    </div>
+
+    <div data-panel="sub-aggregate" data-group="subnet-op" class="hidden" style="padding:12px 14px;">
+      <form id="subnet-aggregate-form">
+        <div class="field">
+          <label>CIDRs to collapse (one per line)</label>
+          <textarea class="input mono" name="cidrs" rows="6" required style="resize:vertical;">192.168.0.0/24
+192.168.1.0/24
+192.168.2.0/24
+192.168.3.0/24</textarea>
+        </div>
+        <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Aggregate</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Result</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#subnet-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="subnet-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No result yet.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // Read CSRF token from the meridian_csrf cookie (double-submit pattern).
+  // The token lives in the cookie itself, not a <meta> tag — earlier
+  // version used a meta selector and silently sent an empty header,
+  // which the middleware rejected as "CSRF token missing or mismatched".
+  function csrfToken() {
+    const c = document.cookie.split(';').map(x => x.trim())
+                  .find(x => x.startsWith('meridian_csrf='));
+    return c ? c.split('=')[1] : '';
+  }
+  async function jpost(url, body) {
+    const r = await fetch(url, {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': csrfToken()},
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok, data };
+  }
+  function esc(s){ return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  const out = document.getElementById('subnet-out');
+  const kv = (k,v) => `<tr><td style="padding:3px 10px;color:var(--text-dim);font-family:var(--mono);font-size:10px;">${esc(k)}</td><td style="padding:3px 10px;color:var(--text);font-family:var(--mono);font-size:11px;">${esc(v ?? '—')}</td></tr>`;
+  const renderError = (e) => { out.innerHTML = `<div style="padding:12px;font-family:var(--mono);font-size:11px;color:var(--danger);">error: ${esc(e)}</div>`; };
+
+  document.getElementById('subnet-describe-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    out.textContent = 'computing…';
+    const fd = new FormData(e.target);
+    const {ok, data} = await jpost('/api/v1/network/subnet/calc', { cidr: fd.get('cidr') });
+    if (!ok) return renderError(data.error || data.detail || 'failed');
+    out.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        ${kv('CIDR', data.cidr)}
+        ${kv('IP version', `IPv${data.version}`)}
+        ${kv('Network', data.network)}
+        ${data.broadcast ? kv('Broadcast', data.broadcast) : ''}
+        ${kv('Netmask', data.netmask)}
+        ${data.wildcard ? kv('Wildcard / hostmask', data.wildcard) : ''}
+        ${kv('Prefix', `/${data.prefix}`)}
+        ${kv('Total addresses', data.total_addresses.toLocaleString())}
+        ${kv('Usable hosts', data.usable_hosts.toLocaleString())}
+        ${kv('Usable range', `${data.usable_first} – ${data.usable_last}`)}
+        ${kv('Reverse pointer', data.reverse_pointer)}
+        ${kv('Private', data.is_private ? 'yes' : 'no')}
+        ${kv('Global', data.is_global ? 'yes' : 'no')}
+        ${kv('Multicast', data.is_multicast ? 'yes' : 'no')}
+        ${kv('Loopback', data.is_loopback ? 'yes' : 'no')}
+        ${kv('Link-local', data.is_link_local ? 'yes' : 'no')}
+      </table>`;
+  });
+
+  document.getElementById('subnet-split-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    out.textContent = 'splitting…';
+    const fd = new FormData(e.target);
+    const {ok, data} = await jpost('/api/v1/network/subnet/split', {
+      cidr: fd.get('cidr'),
+      new_prefix: Number(fd.get('new_prefix')),
+    });
+    if (!ok) return renderError(data.error || data.detail || 'failed');
+    const rows = data.subnets.map(s => `<tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+      <td style="padding:4px 10px;font-family:var(--mono);font-size:11px;color:var(--text);">${esc(s.cidr)}</td>
+      <td style="padding:4px 10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(s.first)}</td>
+      <td style="padding:4px 10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(s.last)}</td>
+      <td style="padding:4px 10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);text-align:right;">${s.hosts.toLocaleString()}</td>
+    </tr>`).join('');
+    const banner = data.truncated
+      ? `<div style="padding:8px 12px;background:rgba(255,180,0,.08);color:var(--warn);font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border);">truncated to ${data.returned.toLocaleString()} of ${data.expected_count.toLocaleString()} expected subnets (max_subnets=${data.max_subnets})</div>`
+      : '';
+    out.innerHTML = `
+      <div style="padding:10px 12px;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border);">
+        ${esc(data.parent)} → /${data.new_prefix} · ${data.returned.toLocaleString()} subnet${data.returned===1?'':'s'} returned
+      </div>
+      ${banner}
+      <div style="max-height:500px;overflow-y:auto;">
+        <table style="width:100%;">
+          <thead><tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">CIDR</th>
+            <th style="text-align:left;padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">First</th>
+            <th style="text-align:left;padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Last</th>
+            <th style="text-align:right;padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Hosts</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  });
+
+  document.getElementById('subnet-aggregate-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    out.textContent = 'collapsing…';
+    const fd = new FormData(e.target);
+    const cidrs = String(fd.get('cidrs') || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const {ok, data} = await jpost('/api/v1/network/subnet/aggregate', { cidrs });
+    if (!ok) return renderError(data.error || data.detail || 'failed');
+    out.innerHTML = `
+      <div style="padding:10px 12px;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border);">
+        ${data.input.length.toLocaleString()} input → <span style="color:var(--accent);">${data.supernets.length.toLocaleString()} supernet${data.supernets.length===1?'':'s'}</span>
+      </div>
+      <div style="padding:10px 12px;display:flex;gap:18px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:240px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;margin-bottom:6px;">Input</div>
+          <pre style="font-family:var(--mono);font-size:11px;color:var(--text-dim);background:rgba(0,0,0,.25);padding:8px 10px;border-radius:4px;margin:0;">${esc(data.input.join('\n'))}</pre>
+        </div>
+        <div style="flex:1;min-width:240px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;margin-bottom:6px;">Supernets</div>
+          <pre style="font-family:var(--mono);font-size:11px;color:var(--accent);background:rgba(0,0,0,.25);padding:8px 10px;border-radius:4px;margin:0;">${esc(data.supernets.join('\n'))}</pre>
+        </div>
+      </div>`;
+  });
+})();
+</script>
+
+<script>
+(function(){
+  async function jfetch(url, body) {
+    const r = await fetch(url, {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+
+  document.getElementById('portscan-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const out = document.getElementById('portscan-out');
+    out.textContent = 'scanning…';
+    const {ok, data} = await jfetch('/api/v1/network/port-scan', {
+      host: fd.get('host'),
+      ports: fd.get('ports'),
+      timeout_s: Number(fd.get('timeout_s')),
+      concurrency: Number(fd.get('concurrency')),
+    });
+    if (!ok) { out.textContent = `error: ${data.error || data.detail}`; return; }
+    const color = {open:'var(--accent)', closed:'var(--text-dimmer)', filtered:'var(--warn)'};
+    out.innerHTML = `
+      <div style="padding:10px 12px;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border);margin-bottom:8px;">
+        <span style="color:var(--text);">${data.host}</span> · ${data.ports_scanned} ports scanned · ${data.open_ports.length} open · ${data.duration_ms} ms
+      </div>
+      <div style="max-height:400px;overflow-y:auto;">
+        <table style="width:100%;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Port</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">State</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Latency</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Error</th>
+          </tr></thead>
+          <tbody>${data.results.map(r => `
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text);">${r.port}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:${color[r.state] || 'var(--text-dim)'};font-weight:600;">${r.state}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dim);">${r.latency_ms != null ? r.latency_ms + ' ms' : '—'}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${r.error || ''}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+  });
+
+  document.getElementById('pcap-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const out = document.getElementById('pcap-out');
+    const dur = Number(fd.get('duration_s'));
+    // Live countdown while tcpdump runs server-side.
+    let remaining = dur;
+    const paint = () => {
+      out.innerHTML = `<div style="padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+        capturing on <span style="color:var(--text);">${fd.get('interface')}</span>
+        · <span style="color:var(--accent);">${remaining}s</span> remaining
+        <span style="color:var(--text-dimmer);">(server will cut early if ${fd.get('max_packets')} packets or timeout reached)</span>
+      </div>`;
+    };
+    paint();
+    const tick = setInterval(() => { remaining = Math.max(0, remaining - 1); paint(); }, 1000);
+    const {ok, data} = await jfetch('/api/v1/network/pcap', {
+      interface: fd.get('interface'),
+      bpf_filter: fd.get('bpf_filter') || '',
+      duration_s: dur,
+      max_packets: Number(fd.get('max_packets')),
+      snaplen: Number(fd.get('snaplen')),
+    });
+    clearInterval(tick);
+    if (!ok) { out.textContent = `error: ${data.error || data.detail}`; return; }
+    const mb = (data.size_bytes / (1024*1024)).toFixed(2);
+    out.innerHTML = `
+      <div style="padding:10px 12px;font-family:var(--mono);font-size:11px;">
+        <div style="margin-bottom:6px;">
+          <span style="color:var(--accent);font-weight:600;">CAPTURE COMPLETE</span>
+          · iface <span style="color:var(--text);">${data.interface}</span>
+          · duration ${data.duration_s}s
+          · rc ${data.returncode}
+        </div>
+        <div style="color:var(--text-dim);margin-bottom:6px;">
+          packets captured: ${data.packets_captured ?? '—'} · dropped: ${data.packets_dropped ?? '—'} · size: ${mb} MB · snaplen ${data.snaplen}
+        </div>
+        ${data.bpf_filter ? `<div style="color:var(--text-dim);margin-bottom:6px;">filter: <span style="color:var(--accent);">${data.bpf_filter}</span></div>` : ''}
+        ${data.stderr_tail ? `<pre style="font-size:10px;color:var(--text-dimmer);background:rgba(255,255,255,.03);padding:8px;border-radius:4px;white-space:pre-wrap;margin-top:6px;">${data.stderr_tail}</pre>` : ''}
+        ${data.download_url
+          ? `<div style="margin-top:10px;"><a href="${data.download_url}" class="btn btn-primary" style="font-size:11px;padding:6px 10px;text-decoration:none;" download>▸ Download .pcap</a>
+             <span style="margin-left:8px;color:var(--text-dimmer);font-size:10px;">file id: ${data.file_id}</span></div>`
+          : `<div style="margin-top:10px;color:var(--warn);">No pcap file produced (returncode ${data.returncode}). Check stderr above.</div>`}
+      </div>`;
+  });
+
+  document.getElementById('snmp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const out = document.getElementById('snmp-out');
+    out.textContent = 'walking…';
+    const {ok, data} = await jfetch('/api/v1/network/snmp-walk', {
+      host: fd.get('host'),
+      oid: fd.get('oid'),
+      version: fd.get('version'),
+      community: fd.get('community'),
+      timeout_s: Number(fd.get('timeout_s')),
+    });
+    if (!ok) { out.textContent = `error: ${data.error || data.detail}`; return; }
+    if (data.error && data.rows.length === 0) {
+      out.innerHTML = `<div style="padding:12px;font-family:var(--mono);font-size:11px;color:var(--danger);">snmpwalk error: ${data.error}</div>`;
+      return;
+    }
+    out.innerHTML = `
+      <div style="padding:10px 12px;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border);margin-bottom:8px;">
+        <span style="color:var(--text);">${data.host}</span> · root <span style="color:var(--accent);">${data.oid_root}</span> · ${data.rows.length} rows
+      </div>
+      <div style="max-height:500px;overflow-y:auto;">
+        <table style="width:100%;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">OID</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Type</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Value</th>
+          </tr></thead>
+          <tbody>${data.rows.map(r => `
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text);word-break:break-all;max-width:340px;">${r.oid}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dim);font-size:10px;">${r.type}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dim);word-break:break-all;">${r.value}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+  });
+
+  // ------------------------------------------------------------------
+  // ASN / BGP / reputation / geoip / header audit wiring.
+  // ------------------------------------------------------------------
+  function esc(s){ return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  const kv = (label, val) => `<tr><td style="padding:3px 10px;color:var(--text-dim);font-family:var(--mono);font-size:10px;">${esc(label)}</td><td style="padding:3px 10px;color:var(--text);font-family:var(--mono);font-size:11px;">${esc(val ?? '—')}</td></tr>`;
+
+  document.getElementById('asn-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('asn-out');
+    out.textContent = 'querying whois.cymru.com…';
+    const {ok, data} = await jfetch('/api/v1/network/asn-lookup', {ip: new FormData(e.target).get('ip')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    out.innerHTML = `<table style="width:100%;padding:8px;border-collapse:collapse;">
+      ${kv('IP', data.ip)} ${kv('ASN', data.asn ? 'AS'+data.asn : null)}
+      ${kv('AS Name', data.as_name)} ${kv('Country', data.country)}
+      ${kv('Registry', data.registry)} ${kv('BGP Prefix', data.bgp_prefix)}
+      ${kv('Allocated', data.allocated)}</table>
+      ${data.error ? `<div style="padding:10px;color:var(--warn);">${esc(data.error)}</div>` : ''}`;
+  });
+
+  document.getElementById('bgp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('bgp-out');
+    out.textContent = 'querying bgpview.io…';
+    const {ok, data} = await jfetch('/api/v1/network/bgp-looking-glass', {target: new FormData(e.target).get('target')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    if (data.error) { out.innerHTML = `<div style="padding:12px;color:var(--warn);">${esc(data.error)}</div>`; return; }
+    if (data.kind === 'asn') {
+      out.innerHTML = `<table style="width:100%;padding:8px;border-collapse:collapse;">
+        ${kv('ASN', data.target)} ${kv('Name', data.name)}
+        ${kv('Description', data.description)} ${kv('Country', data.country)}
+        ${kv('RIR', data.rir)} ${kv('Website', data.website)}</table>`;
+      return;
+    }
+    const rows = (data.prefixes||[]).map(p => `
+      <tr>
+        <td class="mono" style="padding:4px 8px;">${esc(p.prefix)}</td>
+        <td class="mono" style="padding:4px 8px;">${p.origin_asn ? 'AS'+p.origin_asn : '—'}</td>
+        <td class="mono" style="padding:4px 8px;color:var(--text-dim);">${esc(p.origin_name)}</td>
+        <td class="mono" style="padding:4px 8px;">${esc(p.country)}</td>
+      </tr>`).join('');
+    out.innerHTML = `<div style="padding:10px 12px;color:var(--text-dim);font-family:var(--mono);font-size:11px;">PTR: ${esc(data.ptr || '—')}</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+          <th style="padding:6px 8px;">Prefix</th><th style="padding:6px 8px;">Origin ASN</th>
+          <th style="padding:6px 8px;">Org</th><th style="padding:6px 8px;">Country</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+  });
+
+  document.getElementById('geo-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('geo-out');
+    out.textContent = 'querying ipapi.co…';
+    const {ok, data} = await jfetch('/api/v1/network/ip-geolocate', {ip: new FormData(e.target).get('ip')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    out.innerHTML = `<table style="width:100%;padding:8px;border-collapse:collapse;">
+      ${kv('IP', data.ip)} ${kv('Country', (data.country||'') + (data.country_code?' ('+data.country_code+')':''))}
+      ${kv('Region', data.region)} ${kv('City', data.city)}
+      ${kv('Postal', data.postal)} ${kv('Timezone', data.timezone)}
+      ${kv('Coordinates', data.latitude!=null ? data.latitude+', '+data.longitude : null)}
+      ${kv('Org', data.org)} ${kv('ASN', data.asn)}
+    </table>
+    ${data.latitude!=null ? `<div style="padding:10px 12px;"><a href="https://www.openstreetmap.org/?mlat=${data.latitude}&mlon=${data.longitude}#map=6/${data.latitude}/${data.longitude}" target="_blank" style="color:var(--accent);font-family:var(--mono);font-size:11px;">open in OSM ↗</a></div>` : ''}`;
+  });
+
+  document.getElementById('hdr-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('hdr-out');
+    out.textContent = 'fetching + grading…';
+    const {ok, data} = await jfetch('/api/v1/network/header-audit', {url: new FormData(e.target).get('url')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    const gradeColor = g => g==='ok' ? 'var(--accent)' : g==='warn' ? 'var(--warn)' : 'var(--danger)';
+    const rows = (data.rows||[]).map(r => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+        <td style="padding:6px 8px;font-family:var(--mono);color:var(--text);vertical-align:top;">${esc(r.name)}</td>
+        <td style="padding:6px 8px;vertical-align:top;"><span style="color:${gradeColor(r.grade)};font-family:var(--mono);font-weight:600;">${esc(r.grade.toUpperCase())}</span></td>
+        <td style="padding:6px 8px;color:var(--text-dim);font-family:var(--mono);font-size:11px;word-break:break-word;vertical-align:top;">
+          ${esc(r.detail)}
+          ${r.fix ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(32,200,150,.06);border-left:2px solid var(--accent);border-radius:0 4px 4px 0;color:var(--text);white-space:pre-wrap;"><div style="color:var(--accent);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Fix</div>${esc(r.fix)}</div>` : ''}
+        </td>
+      </tr>`).join('');
+    out.innerHTML = `<div style="padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+        URL: <span style="color:var(--text);">${esc(data.url)}</span> · HTTP ${data.final_status}
+        · overall <span style="color:${gradeColor(data.worst)};font-weight:600;">${esc(data.worst.toUpperCase())}</span></div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;margin:0 12px 12px;">
+        <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+          <th style="padding:6px 8px;">Check</th><th style="padding:6px 8px;">Grade</th><th style="padding:6px 8px;">Detail + fix</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+  });
+})();
+</script>
+
+<script>
+// Packet Capture — populate interface dropdown from the kernel's list.
+// Re-reads on every load AND on refresh-button click so hot-plugged or
+// renamed NICs show up without a full page reload.
+(function(){
+  const sel = document.getElementById('pcap-iface');
+  const btn = document.getElementById('pcap-iface-refresh');
+  if (!sel) return;
+  const esc = s => String(s||'').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function refresh() {
+    const keep = sel.value || 'any';
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    try {
+      const r = await fetch('/api/v1/network/interfaces', {credentials: 'same-origin'});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const opts = ['<option value="any">any &mdash; capture on every interface</option>'];
+      (data.interfaces || []).forEach(i => {
+        const label = [i.name, i.state || 'unknown', i.mac || '', i.mtu ? ('MTU ' + i.mtu) : '']
+          .filter(Boolean).join(' · ');
+        opts.push(`<option value="${esc(i.name)}">${esc(label)}</option>`);
+      });
+      sel.innerHTML = opts.join('');
+      if (Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+    } catch (e) {
+      sel.innerHTML = '<option value="any">any &mdash; capture on every interface</option>';
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '\u21bb'; }
+    }
+  }
+  if (btn) btn.addEventListener('click', refresh);
+  // Re-read when the Packet Capture tab becomes visible so NICs added
+  // since page-load still appear without a refresh button press.
+  document.querySelectorAll('[data-tab="pcap"], [data-tab="packet-capture"]').forEach(t =>
+    t.addEventListener('click', () => setTimeout(refresh, 50)));
+  refresh();
+})();
+</script>
+
+<script>
+// Generic Copy / Export CSV / Print-PDF wiring for any result card whose
+// header carries a `<div class="result-actions" data-source="#SEL">…</div>`
+// with three buttons (.act-copy / .act-csv / .act-print). Buttons enable
+// themselves once their source card has real content rendered into it.
+(function(){
+  function textOf(el) {
+    return (el.innerText || el.textContent || '').replace(/\u00a0/g,' ').trimEnd();
+  }
+  function tableTSV(el) {
+    const rows = [];
+    el.querySelectorAll('table tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c =>
+        (c.innerText || '').trim()
+          .replace(/\s*\u21c5\s*$/,'')
+          .replace(/\t/g,' ')
+          .replace(/\n+/g,' ')));
+    });
+    return rows.length ? rows.map(r => r.join('\t')).join('\n') : '';
+  }
+  function csvFromTable(el) {
+    const rows = [];
+    el.querySelectorAll('table tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c => {
+        const v = (c.innerText || '').trim().replace(/\s*\u21c5\s*$/, '');
+        return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v;
+      }));
+    });
+    return rows.length ? rows.map(r => r.join(',')).join('\r\n') + '\r\n' : null;
+  }
+  function copy(btn, text) {
+    const orig = btn.textContent;
+    const done = ok => { btn.textContent = ok ? '\u2713 copied' : '\u2717 failed'; setTimeout(() => btn.textContent = orig, 1500); };
+    if (navigator.clipboard) { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); }
+    else {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      try { done(document.execCommand('copy')); } catch { done(false); } ta.remove();
+    }
+  }
+  function download(name, body, mime) {
+    const blob = new Blob([body], {type: mime});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+  }
+
+  document.querySelectorAll('.result-actions').forEach(actions => {
+    const selStr = actions.dataset.source;
+    const src = document.querySelector(selStr);
+    if (!src) return;
+    const copyBtn = actions.querySelector('.act-copy');
+    const csvBtn  = actions.querySelector('.act-csv');
+    const printBtn= actions.querySelector('.act-print');
+    const hasContent = () => {
+      const t = textOf(src).trim();
+      if (!t) return false;
+      if (/^(waiting|fetching|running|scanning|loading|probing|resolving|capturing|tracing)\b/i.test(t)) return false;
+      return !!(src.querySelector('table, pre, div, span') || t.length > 0);
+    };
+    const update = () => {
+      const enable = hasContent();
+      if (copyBtn)  copyBtn.disabled  = !enable;
+      if (csvBtn)   csvBtn.disabled   = !enable;
+      if (printBtn) printBtn.disabled = !enable;
+    };
+    new MutationObserver(update).observe(src, {childList:true, subtree:true, attributes:true, attributeFilter:['class']});
+    update();
+
+    copyBtn && copyBtn.addEventListener('click', () => copy(copyBtn, tableTSV(src) || textOf(src)));
+    csvBtn  && csvBtn .addEventListener('click', () => {
+      const body = csvFromTable(src) || (textOf(src) + '\n');
+      const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+      const slug = selStr.replace(/^#/,'').replace(/[^a-z0-9_-]/ig,'-');
+      download(`${slug}-${stamp}.csv`, body, 'text/csv;charset=utf-8');
+    });
+    // Print/PDF: scope the print to just this card so the PDF carries
+    // the result data plus the branded print-header only, not the
+    // sidebar / topbar / tabs / other cards.
+    printBtn && printBtn.addEventListener('click', () => {
+      const card = src.closest('.card') || src.parentElement;
+      if (card) card.classList.add('print-active');
+      document.body.classList.add('print-scoped');
+      const cleanup = () => {
+        if (card) card.classList.remove('print-active');
+        document.body.classList.remove('print-scoped');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+  });
+})();
+</script>
+
+<script>
+// =====================================================================
+// Network Tools → Devices tab (operator-facing, read-only + backup-now).
+// Uses the existing /api/v1/admin/devices endpoints. Users without the
+// admin.devices.view permission see a friendly "no access" message
+// instead of the device list. Trigger-backup uses admin.devices.manage;
+// the button is hidden if the user lacks that, via a probe on first use.
+// =====================================================================
+(function(){
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let devicesCache = [];
+
+  function fmtTs(iso) {
+    if (!iso) return 'never';
+    try { return new Date(iso).toISOString().replace('T',' ').slice(0,16); }
+    catch { return iso; }
+  }
+
+  async function loadDevices() {
+    const tbody = document.getElementById('dev-rows');
+    const count = document.getElementById('dev-count');
+    if (!tbody) return;
+    try {
+      const r = await fetch('/api/v1/admin/devices', {credentials:'same-origin'});
+      if (r.status === 403) {
+        count.textContent = 'access denied';
+        tbody.innerHTML = `<tr><td colspan="7" style="padding:16px;color:var(--text-dim);font-size:12px;">
+          You don't have permission to view network devices. Ask an administrator to grant
+          <code>admin.devices.view</code>.</td></tr>`;
+        return;
+      }
+      if (!r.ok) { count.textContent = 'error'; return; }
+      devicesCache = await r.json();
+    } catch {
+      count.textContent = 'error'; return;
+    }
+    applyFilter();
+  }
+
+  function matchesFilter(d, q) {
+    if (!q) return true;
+    const blob = [
+      d.name, d.mgmt_host, d.kind, d.site,
+      (d.tags || []).join(' ')
+    ].filter(Boolean).join(' ').toLowerCase();
+    return blob.includes(q.toLowerCase());
+  }
+
+  function applyFilter() {
+    const q = (document.getElementById('dev-filter').value || '').trim();
+    const rows = devicesCache.filter(d => matchesFilter(d, q));
+    document.getElementById('dev-count').textContent =
+      `${rows.length} of ${devicesCache.length} device${devicesCache.length === 1 ? '' : 's'}`;
+    const tbody = document.getElementById('dev-rows');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="7" style="padding:16px;color:var(--text-dimmer);font-size:12px;font-style:italic;">
+        ${devicesCache.length ? 'No devices match that filter.' : 'No devices configured yet.'}
+      </td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map(d => {
+      const ok = d.last_backup_ok;
+      const color = ok === true ? 'var(--accent)' : ok === false ? 'var(--danger)' : 'var(--text-dimmer)';
+      const tagChips = (d.tags || []).slice(0, 3).map(t =>
+        `<span class="chip" style="font-size:10px;">${esc(t)}</span>`).join(' ');
+      return `
+        <tr data-dev="${d.id}" style="border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;">
+          <td style="padding:10px 8px;"><div style="font-family:var(--mono);color:var(--text);">${esc(d.name)}</div><div style="font-size:10px;color:var(--text-dimmer);">${esc(d.description || '')}</div></td>
+          <td style="padding:10px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(d.kind)}</td>
+          <td style="padding:10px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(d.mgmt_host)}:${d.mgmt_port}</td>
+          <td style="padding:10px 8px;font-size:11px;color:var(--text-dim);">${esc(d.site || '')} ${tagChips}</td>
+          <td style="padding:10px 8px;font-family:var(--mono);font-size:11px;color:${color};">${fmtTs(d.last_backup_at)}${ok === false ? ' ✗' : ''}</td>
+          <td style="padding:10px 8px;font-family:var(--mono);font-size:10px;color:${d.auto_backup ? 'var(--accent)' : 'var(--text-dimmer)'};">${d.auto_backup ? 'yes' : 'no'}</td>
+          <td style="padding:10px 8px;text-align:right;white-space:nowrap;">
+            <button class="btn btn-ghost" data-dev-backup="${d.id}" style="padding:4px 10px;font-size:10px;">Backup now</button>
+          </td>
+        </tr>
+        <tr data-dev-detail="${d.id}" style="display:none;background:rgba(32,200,150,.03);">
+          <td></td>
+          <td colspan="6" style="padding:10px 14px;" id="dev-detail-${d.id}"></td>
+        </tr>
+      `;
+    }).join('');
+    tbody.querySelectorAll('[data-dev]').forEach(tr => {
+      tr.addEventListener('click', (ev) => {
+        if (ev.target.closest('button, input, select, label, a')) return;
+        const id = tr.dataset.dev;
+        const detail = document.querySelector(`[data-dev-detail="${id}"]`);
+        if (!detail) return;
+        if (detail.style.display === 'none') {
+          detail.style.display = '';
+          loadSnapshots(id);
+        } else {
+          detail.style.display = 'none';
+        }
+      });
+    });
+    tbody.querySelectorAll('[data-dev-backup]').forEach(b => b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const id = b.dataset.devBackup;
+      const prev = b.textContent; b.disabled = true; b.textContent = '…running';
+      try {
+        const r = await fetch(`/api/v1/admin/devices/${id}/backup`,
+          {method:'POST', credentials:'same-origin'});
+        const data = await r.json().catch(() => ({}));
+        if (r.status === 403) {
+          alert('Access denied — triggering a backup needs admin.devices.manage.');
+        } else if (!r.ok) {
+          alert(`Backup failed: ${data.error || data.detail || r.statusText}`);
+        } else {
+          // Refresh the row + expand snapshots if already open.
+          await loadDevices();
+          const detail = document.querySelector(`[data-dev-detail="${id}"]`);
+          if (detail && detail.style.display !== 'none') loadSnapshots(id);
+        }
+      } finally {
+        b.disabled = false; b.textContent = prev;
+      }
+    }));
+  }
+
+  async function loadSnapshots(deviceId) {
+    const host = document.getElementById(`dev-detail-${deviceId}`);
+    if (!host) return;
+    host.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">loading snapshots…</div>';
+    let snaps = [];
+    try {
+      const r = await fetch(`/api/v1/admin/devices/${deviceId}/snapshots`,
+        {credentials:'same-origin'});
+      if (r.status === 403) {
+        host.innerHTML = `<div style="color:var(--warn);">Access denied to snapshots.</div>`;
+        return;
+      }
+      snaps = await r.json();
+    } catch {
+      host.innerHTML = `<div style="color:var(--danger);">error loading snapshots</div>`;
+      return;
+    }
+    if (!snaps.length) {
+      host.innerHTML = '<div style="color:var(--text-dimmer);font-size:11px;font-style:italic;">No snapshots yet. Trigger a backup above.</div>';
+      return;
+    }
+    const opts = snaps.map(s =>
+      `<option value="${esc(s.id)}">${fmtTs(s.ts)} · ${(s.sha256_hex || '').slice(0,10)}${s.size_bytes ? ` · ${s.size_bytes}B` : ''}${s.trigger_kind ? ' · '+esc(s.trigger_kind) : ''}</option>`
+    ).join('');
+    host.innerHTML = `
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="flex:1;min-width:260px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:4px;">View latest snapshot</div>
+          <div style="display:flex;gap:6px;">
+            <select class="select" data-snap-pick="${deviceId}" style="flex:1;font-size:11px;">${opts}</select>
+            <button class="btn btn-ghost" data-snap-view="${deviceId}" style="padding:5px 12px;font-size:11px;">View</button>
+          </div>
+        </div>
+        <div style="flex:1;min-width:260px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:4px;">Diff two snapshots</div>
+          <div style="display:flex;gap:6px;">
+            <select class="select" data-snap-a="${deviceId}" style="flex:1;font-size:11px;">${opts}</select>
+            <span style="align-self:center;color:var(--text-dimmer);">→</span>
+            <select class="select" data-snap-b="${deviceId}" style="flex:1;font-size:11px;">${opts}</select>
+            <button class="btn btn-ghost" data-snap-diff="${deviceId}" style="padding:5px 12px;font-size:11px;">Diff</button>
+          </div>
+        </div>
+      </div>
+      <div id="dev-view-${deviceId}"></div>
+    `;
+    // Default the second diff dropdown to the second-newest snapshot for a useful pairing.
+    const bSel = host.querySelector(`[data-snap-b="${deviceId}"]`);
+    if (bSel && bSel.options.length > 1) bSel.selectedIndex = 1;
+
+    host.querySelector(`[data-snap-view="${deviceId}"]`).addEventListener('click', async () => {
+      const pick = host.querySelector(`[data-snap-pick="${deviceId}"]`).value;
+      if (!pick) return;
+      await loadSnapshotContent(deviceId, pick);
+    });
+    host.querySelector(`[data-snap-diff="${deviceId}"]`).addEventListener('click', async () => {
+      const a = host.querySelector(`[data-snap-a="${deviceId}"]`).value;
+      const b = host.querySelector(`[data-snap-b="${deviceId}"]`).value;
+      if (!a || !b) return;
+      await loadSnapshotDiff(deviceId, a, b);
+    });
+  }
+
+  async function loadSnapshotContent(deviceId, snapId) {
+    const out = document.getElementById(`dev-view-${deviceId}`);
+    out.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">loading…</div>';
+    const r = await fetch(`/api/v1/admin/devices/${deviceId}/snapshots/${snapId}`,
+      {credentials:'same-origin'});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { out.innerHTML = `<div style="color:var(--danger);">${esc(data.error || data.detail || 'error')}</div>`; return; }
+    out.innerHTML = `
+      <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">
+        ${fmtTs(data.ts)} · SHA-256 <span style="color:var(--text-dim);">${esc(data.sha256_hex || '')}</span> · ${data.size_bytes || 0}B · ${data.line_count || 0} lines
+      </div>
+      <pre style="margin:6px 0 0;padding:10px 12px;background:rgba(0,0,0,.25);border-radius:4px;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-all;max-height:400px;overflow:auto;">${esc(data.raw_config || '')}</pre>
+    `;
+  }
+
+  async function loadSnapshotDiff(deviceId, a, b) {
+    const out = document.getElementById(`dev-view-${deviceId}`);
+    out.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">diffing…</div>';
+    const r = await fetch(`/api/v1/admin/devices/${deviceId}/snapshots/${a}/diff/${b}`,
+      {credentials:'same-origin'});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { out.innerHTML = `<div style="color:var(--danger);">${esc(data.error || data.detail || 'error')}</div>`; return; }
+    // Colour each line by its prefix (unified-diff style).
+    const colored = (data.diff || '').split('\n').map(line => {
+      const c = line[0] === '+' && !line.startsWith('+++') ? 'var(--accent)'
+              : line[0] === '-' && !line.startsWith('---') ? 'var(--danger)'
+              : line.startsWith('@@') ? 'var(--warn,#eab308)'
+              : 'var(--text-dim)';
+      return `<span style="color:${c};">${esc(line)}</span>`;
+    }).join('\n');
+    out.innerHTML = `
+      <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">
+        ${fmtTs((data.from || {}).ts)} → ${fmtTs((data.to || {}).ts)} · <span style="color:var(--accent);">+${data.lines_added || 0}</span> · <span style="color:var(--danger);">-${data.lines_removed || 0}</span>
+      </div>
+      <pre style="margin:6px 0 0;padding:10px 12px;background:rgba(0,0,0,.25);border-radius:4px;font-size:11px;color:var(--text);white-space:pre;max-height:400px;overflow:auto;">${colored || '<span style="color:var(--text-dimmer);font-style:italic;">(no differences)</span>'}</pre>
+    `;
+  }
+
+  // Filter input + lazy initial load (only fire when the tab is first opened
+  // so users who never click Devices don't pay the API call).
+  const filterEl = document.getElementById('dev-filter');
+  if (filterEl) filterEl.addEventListener('input', applyFilter);
+  let firstOpen = true;
+  document.querySelectorAll('[data-tab="devices"]').forEach(tab =>
+    tab.addEventListener('click', () => {
+      if (firstOpen) { firstOpen = false; loadDevices(); }
+    }));
+})();
+</script>
+{% endblock %}

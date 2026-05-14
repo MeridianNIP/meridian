@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Database security · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">ADMIN · DATABASE SECURITY</div>
+<h1>Database security</h1>
+<div class="page-sub">Four overlapping layers so licenses, audit logs, user data, and secrets cannot be modified offline — even by someone with direct DB access.</div>
+
+<h2>The four layers</h2>
+<table>
+<tr><th>Layer</th><th>What it protects</th><th>Mechanism</th></tr>
+<tr><td>1 · Filesystem</td><td>Disk theft, snapshot theft</td><td>LUKS2 on <code>/var/lib/postgresql</code> (optional, install-time choice)</td></tr>
+<tr><td>2 · Field encryption</td><td>DB dumps, row-level theft</td><td>AES-256-GCM per-field; master key at <code>/etc/meridian/secrets/master.key</code></td></tr>
+<tr><td>3 · Row hash chain</td><td>Silent offline modification</td><td>HMAC-SHA-256 chained <code>row_hash</code> on 8 sensitive tables</td></tr>
+<tr><td>4 · Direct-SQL lockdown</td><td>Accidental or malicious ad-hoc queries</td><td>PG bound to localhost only · SCRAM-SHA-256 · <code>meridian-app</code> role scoping</td></tr>
+</table>
+
+<h2>Layer 1 · LUKS filesystem encryption</h2>
+<p>Run separately via <code>scripts/setup_luks.sh</code>. See <a href="../installation/luks.html">LUKS setup</a>.</p>
+
+<h2>Layer 2 · Field encryption</h2>
+<p>Sensitive values are stored as AES-256-GCM ciphertext with per-row nonces. Columns currently protected:</p>
+<ul>
+<li><code>secrets.ciphertext</code> — the vault payload</li>
+<li><code>users.mfa_secret_enc</code> — TOTP seeds</li>
+<li>AD / LDAP bind passwords, API credentials, ACME DNS-provider tokens (via <code>secrets</code> FKs)</li>
+</ul>
+<p>The 32-byte master key lives at <code>/etc/meridian/secrets/master.key</code> (<code>0400 meridian:meridian</code>). The app derives per-domain subkeys (HMAC-based) so leakage of one context doesn't compromise the others.</p>
+<h3>Rotating the master key</h3>
+<pre><code>sudo meridian-nip secrets rotate-master
+# App re-encrypts all vault rows under a new key_version.
+# Old key marked retired; usable for decrypt-only reads during migration.</code></pre>
+
+<h2>Layer 3 · Row-hash tamper evidence</h2>
+<p>Eight tables carry a <code>row_hash BYTEA</code> column: <code>audit_events · license · license_activations · license_verifications · cert_events · approvals · impersonations · update_history</code>.</p>
+<p>On every insert, the app computes</p>
+<pre><code>row_hash = HMAC-SHA-256(
+  key     = load('/etc/meridian/secrets/row_hmac.key'),
+  message = canonical_row_fields || previous_row_hash
+)</code></pre>
+<p>The <code>previous_row_hash</code> term chains each row to the one before it. Any offline modification breaks the chain at the modified row and every subsequent row.</p>
+
+<h3>How tampering is detected</h3>
+<ul>
+<li><strong>Live path.</strong> Whenever the app reads the license or an audit record, it re-computes the HMAC and compares. Mismatch raises a CRITICAL alert immediately.</li>
+<li><strong>Scheduled path.</strong> The <code>db-integrity-scan</code> job runs daily at 05:00 UTC, walks every tamper-evident table, and emails all admins + SIEM on any mismatch.</li>
+<li><strong>Ad-hoc.</strong> <code>sudo meridian-nip integrity scan</code> runs it on demand.</li>
+</ul>
+
+<h3>What it catches</h3>
+<ul>
+<li>A malicious admin extending a license's <code>expires_at</code> via direct SQL</li>
+<li>Someone deleting their own audit events</li>
+<li>An attacker granting themselves a permission without a matching audit trail</li>
+<li>A silently-altered certificate record</li>
+</ul>
+<p>Any of these break the chain at the modified row. The scan reports the exact <code>ctid</code> and table; combined with PG's WAL (if archive_mode is on, which it is by default), forensic replay is possible.</p>
+
+<h2>Layer 4 · Direct-SQL access restriction</h2>
+<ul>
+<li>PostgreSQL binds <code>localhost</code> only (<code>listen_addresses = 'localhost'</code>).</li>
+<li><code>pg_hba.conf</code> allows only the <code>meridian-app</code> role via local socket with SCRAM-SHA-256. Everything else is explicitly rejected.</li>
+<li>Port 5432 is explicitly denied by UFW as a belt-and-braces measure.</li>
+<li>A separate <code>meridian-readonly</code> role exists (disabled by default) for read-only reporting integrations.</li>
+<li>There is no <code>postgres</code> superuser login allowed from the app host; emergency recovery requires physical access plus the LUKS passphrase (if configured) plus the master key file.</li>
+</ul>
+<p>A shell admin with <code>sudo -u postgres psql</code> access can technically run arbitrary SQL, but any modification to a tamper-evident table is detected within 24 hours — and logged with before/after hashes so you know exactly what changed.</p>
+
+<h2>Master key lifecycle</h2>
+<h3>Initial generation</h3>
+<p>Done automatically by <code>install.sh</code> via <code>openssl rand -out ... 32</code>. Permissions are locked to <code>0400 meridian:meridian</code>.</p>
+
+<h3>Backup</h3>
+<p>The key files are <strong>not</strong> included in routine backups by default. Include them only when creating a DR-grade bundle:</p>
+<pre><code>sudo /opt/meridian/scripts/backup.sh --include-keys --output /secure/offsite/</code></pre>
+<p>Without the keys, any backup tarball is useless against a future restore. With the keys, the bundle is full DR-grade and must be stored with the same care as the original host.</p>
+
+<h3>Loss recovery</h3>
+<p>There is no recovery path from master key loss. The database is permanently unreadable. Your only recourse is to restore from a <code>--include-keys</code> backup made before the loss. This is why the installer prints a bold warning after key generation.</p>
+
+<h2>What customers should NOT do</h2>
+<ul>
+<li>Copy the master key file to unencrypted storage</li>
+<li>Share the key file across hosts (each install must generate its own)</li>
+<li>Check the key file into git, Ansible vault, or similar</li>
+<li>Attempt to "export" audit events via direct SQL to skip row-hash validation</li>
+</ul>
+
+<h2>Incident response: integrity alert received</h2>
+<ol>
+<li>Do not restart or redeploy. Preserve the host as-is.</li>
+<li>Pull an audit snapshot: <code>sudo meridian-nip audit export --since "2h ago" --output /tmp/audit.json</code></li>
+<li>Run the integrity scanner with verbose mode: <code>sudo meridian-nip integrity scan --verbose</code></li>
+<li>Cross-reference the mismatched row with PG WAL (<code>/var/lib/meridian/backups/wal/</code>) to identify the exact modification.</li>
+<li>Escalate per your internal IR playbook.</li>
+</ol>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

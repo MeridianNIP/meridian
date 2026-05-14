@@ -1,0 +1,33 @@
+# Meridian · Celery beat (scheduled job firing)
+# Rendered by install.sh.
+
+[Unit]
+Description=Meridian NIP · Celery beat
+After=meridian-celery.service
+BindsTo=meridian-celery.service
+
+[Service]
+Type=simple
+User=${SVC_USER}
+Group=${SVC_GROUP}
+WorkingDirectory=${INSTALL_ROOT}
+Environment="MERIDIAN_CONFIG=${CONFIG_ROOT}/meridian.conf"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="PYTHONUNBUFFERED=1"
+UMask=0027
+
+ExecStart=${INSTALL_ROOT}/venv/bin/celery -A app.celery_app beat \
+  --loglevel=info \
+  --logfile=${LOG_ROOT}/celery-beat.log
+
+Restart=on-failure
+RestartSec=5s
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=${DATA_ROOT} ${LOG_ROOT}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,96 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitors · Meridian Docs</title>
+    <link rel="stylesheet" href="../css/docs.css">
+    </head>
+    <body>
+    <div class="grid-bg"></div>
+    <div class="frame">
+    <aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+    <main class="content">
+    <div class="page-meta">USER · MONITORS</div>
+    <h1>Monitors</h1>
+    <div class="page-sub">HTTP/HTTPS · TCP port · ICMP ping · cert-expiry · DNS-record monitors, sampled in the background.</div>
+    <h2>Creating a monitor</h2>
+<p>Fill in <strong>Name</strong>, <strong>Kind</strong>, <strong>Target</strong>, <strong>Interval</strong> (&ge; 30 s), and <strong>Timeout</strong>. The background scheduler (<code>meridian-beat</code>) picks it up within one beat tick (&sim; 60 s) and starts sampling.</p>
+
+<h2>Kinds</h2>
+<ul>
+<li><code>https</code> / <code>http</code> — HEAD by default, 2xx/3xx = OK, timeout/5xx = down, cert errors trigger cert-specific notifications.</li>
+<li><code>port_tcp</code> — bare TCP connect. Use for things like SMB/SSH/databases where you just want to know the port answers.</li>
+<li><code>ping_icmp</code> — ICMP echo. Requires the host to respond; many cloud providers block it.</li>
+<li><code>cert_expiry</code> — pulls the cert and alerts at 30/14/7-day thresholds.</li>
+<li><code>dns_record</code> — checks that a record resolves to a specific expected value.</li>
+</ul>
+
+<h2>Editing + deleting</h2>
+<p>Each row has <strong>Edit</strong> (inline form pre-populated with current values), <strong>Disable/Enable</strong>, and <strong>Delete</strong>. Deleting a monitor removes its samples and incident history too.</p>
+
+<h2>Notifications</h2>
+<p>Monitors dispatch <code>monitor.incident.opened</code> on state change to bad, and <code>monitor.incident.closed</code> on recovery. Attach <a href="../admin/integrations.html">notification channels</a> in Admin &rarr; Integrations &rarr; Notifications.</p>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>HTTPS against an IP</strong> (not a hostname) will fail TLS hostname verification. Use the hostname or set kind = <code>port_tcp</code>.</li>
+<li><strong>Interval &lt; 30 s</strong> is rejected — beat runs per minute, so anything tighter is wishful thinking.</li>
+<li><strong>Consecutive-fails</strong> is what triggers an alert, not a single sample — defaults to 2.</li>
+</ul>
+    </main>
+    </div>
+    </body>
+    </html>

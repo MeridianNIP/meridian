@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Admin Panel · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Admin Panel</div>
+    <div class="page-sub">System health, scheduled jobs, audit — full write operations require two-person approval</div>
+  </div>
+  {% with docs_path="admin/overview.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="stat-grid" style="grid-template-columns:repeat(4,1fr);">
+  <div class="stat"><div class="stat-label">Users enabled</div><div class="stat-value">{{ stats.users_enabled }}</div></div>
+  <div class="stat"><div class="stat-label">Active sessions</div><div class="stat-value">{{ stats.sessions_active }}</div></div>
+  <div class="stat"><div class="stat-label">Monitors enabled</div><div class="stat-value">{{ stats.monitors_enabled }}</div></div>
+  <div class="stat"><div class="stat-label">Audit events 24h</div><div class="stat-value">{{ stats.audit_24h }}</div></div>
+</div>
+
+<div class="two-col" style="margin-bottom:14px;">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Service status</div></div>
+    {% for svc in services %}
+      <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04);">
+        <span class="dot {% if svc.active != 'active' %}danger{% endif %}"></span>
+        <div style="flex:1;">
+          <div style="font-family:var(--mono);font-size:12px;color:var(--text);">{{ svc.name }}</div>
+          <div style="font-size:11px;color:var(--text-dim);">{{ svc.description }}</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:{% if svc.active == 'active' %}var(--accent){% else %}var(--danger){% endif %};">{{ svc.active }}</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Integrity</div>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--accent);">HMAC row chain</span>
+    </div>
+    {% if stats.integrity_last_scan %}
+      <div style="padding:14px;font-size:12px;color:var(--text-dim);">
+        Last scan: <span style="color:var(--text);font-family:var(--mono);">{{ stats.integrity_last_scan[0] }}</span><br>
+        Mismatches: <span style="color:{% if stats.integrity_last_scan[1] %}var(--danger){% else %}var(--accent){% endif %};font-family:var(--mono);">{{ stats.integrity_last_scan[1] }}</span>
+      </div>
+    {% else %}
+      <div style="padding:14px;font-size:12px;color:var(--text-dimmer);font-style:italic;">no scans yet — integrity job runs daily</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Scheduled jobs</div><span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">{{ jobs|length }} jobs</span></div>
+  <table style="width:100%;font-size:12px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Job</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Cron</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last run</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Enabled</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:8px;"><div style="color:var(--text);font-weight:500;">{{ j.name }}</div><div style="color:var(--text-dim);font-size:11px;">{{ j.description }}</div></td>
+          <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);">{{ j.cron_expression or 'on-event' }}</td>
+          <td style="padding:8px;font-family:var(--mono);color:{% if j.last_run_status == 'ok' %}var(--accent){% elif j.last_run_status %}var(--warn){% else %}var(--text-dimmer){% endif %};">
+            {{ j.last_run_status or '—' }}
+          </td>
+          <td style="padding:8px;font-family:var(--mono);color:{% if j.enabled %}var(--accent){% else %}var(--text-dimmer){% endif %};">
+            {{ 'yes' if j.enabled else 'no' }}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">Recent audit events</div><a style="font-family:var(--mono);font-size:10px;color:var(--accent);" href="/api/v1/admin/audit/recent?limit=500">full export ↗</a></div>
+  <table style="width:100%;font-size:12px;">
+    <tbody>
+      {% for ev in audit %}
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dimmer);font-size:11px;">{{ ev.ts }}</td>
+          <td style="padding:6px 8px;color:var(--text);">{{ ev.action }}</td>
+          <td style="padding:6px 8px;color:var(--text-dim);font-size:11px;">{{ ev.target_key or '' }}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);color:{% if ev.outcome == 'ok' %}var(--accent){% elif ev.outcome == 'denied' %}var(--warn){% else %}var(--danger){% endif %};">{{ ev.outcome }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

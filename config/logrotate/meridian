@@ -1,0 +1,44 @@
+# Meridian · logrotate policy
+# Installed to /etc/logrotate.d/meridian by install.sh.
+# Rotation frequencies match the retention job schedule.
+
+/var/log/meridian/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 meridian meridian
+    postrotate
+        systemctl kill -s HUP meridian-app.service   > /dev/null 2>&1 || true
+        systemctl kill -s HUP meridian-celery.service > /dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/nginx/meridian-*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        [ -f /var/run/nginx.pid ] && kill -USR1 "$(cat /var/run/nginx.pid)"
+    endscript
+}
+
+/var/log/named/*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 bind bind
+    postrotate
+        /usr/sbin/rndc reload > /dev/null 2>&1 || true
+    endscript
+}

@@ -1,0 +1,35 @@
+# Meridian · UFW ruleset applied by install.sh.
+# Variables:
+#   ${SSH_PORT}
+#
+# Policy:
+#   - default deny inbound
+#   - default allow outbound
+#   - SSH rate-limited to the custom port
+#   - HTTP/HTTPS open (required for ACME + users)
+#   - loopback always permitted
+#   - IPv6 mirrored
+
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+
+# Loopback allow + 127.0.0.0/8 anti-spoof are already in /etc/ufw/before.rules
+# (see `-A ufw-before-input -i lo -j ACCEPT` and the `! -i lo ... DROP`).
+# Duplicating them as user rules with `in any` would break local TCP to 127.0.0.1.
+
+# WSL2 mirrored networking routes local-to-local TCP through eth1 rather than
+# lo, so the `-i lo -j ACCEPT` rule in before.rules misses it. A source-based
+# allow covers that case without opening anything externally-reachable.
+ufw allow from 127.0.0.0/8 comment 'WSL2 mirrored loopback'
+
+ufw limit ${SSH_PORT}/tcp comment 'Meridian SSH'
+ufw allow 80/tcp  comment 'HTTP (ACME + redirect)'
+ufw allow 443/tcp comment 'HTTPS portal'
+
+# Postgres/Valkey already bind localhost-only (see postgresql.conf.overlay and
+# valkey.conf.overlay). Adding ufw deny 5432/tcp/6379/tcp here would match
+# `in any` and drop loopback too, so we leave them off.
+
+ufw logging low
+ufw --force enable

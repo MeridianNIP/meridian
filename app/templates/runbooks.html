@@ -1,0 +1,508 @@
+{% extends "base.html" %}
+{% set active = 'runbooks' %}
+{% block title %}Runbooks · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Runbooks</div>
+    <div class="page-sub">Chain tools into repeatable workflows. Each step runs only if the user holds the underlying tool permission. Stop-on-fail uses <code>continue_on</code>.</div>
+</div>
+  <button class="btn btn-primary" id="btn-new" style="font-size:11px;">▸ New runbook</button>
+  {% with docs_path="user/runbooks.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="two-col" style="gap:14px;align-items:flex-start;">
+  <div style="display:flex;flex-direction:column;gap:14px;">
+    <div class="card">
+      <div class="card-head"><div class="card-title">My + shared runbooks</div><span id="rb-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span></div>
+      <div id="rb-list" style="padding:8px 0;"></div>
+    </div>
+
+    <div class="card" id="runs-card" style="display:none;">
+      <div class="card-head"><div class="card-title">Recent runs</div></div>
+      <div id="rb-runs" style="padding:8px 0;"></div>
+    </div>
+  </div>
+
+  <div class="card" id="editor-card" style="display:none;">
+    <div class="card-head">
+      <div class="card-title" id="editor-title">Editor</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="btn-run" style="font-size:11px;">▸ Run</button>
+        <button class="btn btn-primary" id="btn-save" style="font-size:11px;">Save</button>
+        <button class="btn" id="btn-delete" style="font-size:11px;color:var(--danger);">Delete</button>
+      </div>
+    </div>
+    <div style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Name</label><input class="input mono" id="fld-name" required></div>
+        <div class="field"><label>Shared</label><select class="select" id="fld-shared"><option value="false">private</option><option value="true">shared</option></select></div>
+        <div class="field"><label>Enabled</label><select class="select" id="fld-enabled"><option value="true">yes</option><option value="false">no</option></select></div>
+      </div>
+      <div class="field" style="margin-top:10px;"><label>Description</label><input class="input" id="fld-desc" placeholder="what this runbook does"></div>
+    </div>
+    <div style="padding:0 14px 8px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="field" style="flex:1;min-width:220px;"><label>Add step</label>
+        <select class="select" id="fld-add-tool">
+          <option value="">— pick a tool —</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-add-step" style="font-size:11px;">▸ Add</button>
+    </div>
+    <div id="steps-list" style="padding:6px 14px 14px;"></div>
+    <div id="run-result" style="padding:0 14px 14px;"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const sevColor = {ok:'var(--accent)', info:'var(--text-dim)', warn:'var(--warn)', fail:'var(--danger)', denied:'var(--warn)', error:'var(--danger)', stopped:'var(--warn)'};
+  let toolsCatalog = [];
+  let currentRunbook = null;   // {id, name, description, shared, enabled, steps}
+
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data, status: r.status};
+  }
+
+  async function loadTools() {
+    const {ok, data} = await jfetch('GET', '/api/v1/runbooks/tools');
+    if (!ok) return;
+    toolsCatalog = data;
+    const sel = document.getElementById('fld-add-tool');
+    const groups = {};
+    data.forEach(t => { (groups[t.category] = groups[t.category] || []).push(t); });
+    sel.innerHTML = '<option value="">— pick a tool —</option>' + Object.entries(groups).map(([cat, items]) =>
+      `<optgroup label="${cat}">${items.map(t => `<option value="${t.key}" title="${t.description}">${t.label} · needs ${t.required_permission}</option>`).join('')}</optgroup>`
+    ).join('');
+  }
+
+  async function loadRunbooks() {
+    const {ok, data} = await jfetch('GET', '/api/v1/runbooks');
+    const list = document.getElementById('rb-list');
+    const count = document.getElementById('rb-count');
+    if (!ok) { count.textContent = `error: ${data.error || data.detail}`; return; }
+    count.textContent = `${data.length} runbook${data.length === 1 ? '' : 's'}`;
+    list.innerHTML = data.map(rb => `
+      <div data-rb="${rb.id}" style="padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;">
+        <div style="display:flex;gap:10px;align-items:center;">
+          <div style="flex:1;">
+            <div style="color:var(--text);font-weight:500;">${rb.name}</div>
+            <div style="color:var(--text-dim);font-size:11px;">${rb.description || ''}</div>
+          </div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${rb.step_count} step(s)</div>
+          ${rb.shared ? '<div style="font-family:var(--mono);font-size:10px;color:var(--warn);">shared</div>' : ''}
+          ${!rb.enabled ? '<div style="font-family:var(--mono);font-size:10px;color:var(--danger);">disabled</div>' : ''}
+        </div>
+      </div>
+    `).join('') || '<div style="padding:12px 14px;color:var(--text-dimmer);font-size:12px;">No runbooks yet — click ▸ New runbook to start.</div>';
+    list.querySelectorAll('[data-rb]').forEach(el => {
+      el.addEventListener('click', () => openRunbook(el.dataset.rb));
+    });
+  }
+
+  async function loadRuns(runbookId) {
+    const {ok, data} = await jfetch('GET', `/api/v1/runbooks/${runbookId}/runs`);
+    const card = document.getElementById('runs-card');
+    const rows = document.getElementById('rb-runs');
+    if (!ok || data.length === 0) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+    rows.innerHTML = data.slice(0, 10).map(r => `
+      <div data-run-summary="${r.id}" data-runbook-id="${runbookId}"
+           style="padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.04);font-family:var(--mono);font-size:11px;cursor:pointer;"
+           title="Click to expand full step-by-step output">
+        <span style="color:var(--text-dimmer);">${(r.started_at || '').slice(11,19)}</span>
+        <span style="color:${sevColor[r.status]};font-weight:600;margin:0 8px;">${r.status}</span>
+        <span style="color:var(--text-dim);">${r.step_count} steps</span>
+        <span style="float:right;color:var(--text-dimmer);font-size:10px;" data-run-chevron="${r.id}">▸</span>
+      </div>
+      <div data-run-detail="${r.id}" style="display:none;padding:10px 14px;background:rgba(32,200,150,.03);border-bottom:1px solid rgba(255,255,255,.04);"></div>
+    `).join('');
+    rows.querySelectorAll('[data-run-summary]').forEach(el =>
+      el.addEventListener('click', () => toggleRunDetail(el.dataset.runbookId, el.dataset.runSummary)));
+  }
+
+  async function toggleRunDetail(runbookId, runId) {
+    const detailEl = document.querySelector(`[data-run-detail="${runId}"]`);
+    const chev = document.querySelector(`[data-run-chevron="${runId}"]`);
+    if (!detailEl) return;
+    if (detailEl.style.display !== 'none') {
+      detailEl.style.display = 'none';
+      if (chev) chev.textContent = '▸';
+      return;
+    }
+    detailEl.style.display = '';
+    if (chev) chev.textContent = '▾';
+    detailEl.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">loading run…</div>';
+    const {ok, data} = await jfetch('GET', `/api/v1/runbooks/${runbookId}/runs/${runId}`);
+    if (!ok) { detailEl.innerHTML = `<div style="color:var(--danger);">error: ${data.error || data.detail}</div>`; return; }
+    detailEl.innerHTML = renderRunDetail(data);
+    wireRunToolbar(detailEl, data);
+  }
+
+  function renderRunDetail(run) {
+    const worst = (run.step_results || [])
+      .map(s => s.outcome)
+      .reduce((w, o) => (({ok:0,info:0,warn:1,fail:2,denied:2,error:3}[o] ?? 3)
+                       > ({ok:0,info:0,warn:1,fail:2,denied:2,error:3}[w] ?? 0)) ? o : w, 'ok');
+    const durTotal = (run.step_results || []).reduce((a, s) => a + (s.duration_ms || 0), 0);
+    const meta = `RUN <span style="color:${sevColor[run.status]};font-weight:600;">${(run.status||'').toUpperCase()}</span>
+                  · worst <span style="color:${sevColor[worst]};">${worst}</span>
+                  · ${(run.step_results||[]).length} step(s)
+                  · total ${durTotal} ms
+                  · started ${(run.started_at || '').slice(11,19)}`;
+    const steps = (run.step_results || []).map(s => {
+      const det = s.detail && Object.keys(s.detail).length
+        ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:var(--text-dim);font-family:var(--mono);font-size:10px;">step detail</summary>
+             <pre style="margin:4px 0 0;padding:6px 8px;background:rgba(0,0,0,.25);border-radius:4px;font-size:10px;color:var(--text);white-space:pre-wrap;word-break:break-all;">${escapeHtml(JSON.stringify(s.detail, null, 2))}</pre>
+           </details>`
+        : '';
+      return `
+        <div style="margin-top:8px;padding:8px 10px;background:rgba(0,0,0,.18);border-left:3px solid ${sevColor[s.outcome]};border-radius:0 4px 4px 0;">
+          <div style="display:flex;gap:10px;font-family:var(--mono);font-size:11px;align-items:baseline;flex-wrap:wrap;">
+            <span style="color:var(--text-dimmer);">#${(s.index ?? 0) + 1}</span>
+            <span style="color:var(--accent);">${escapeHtml(s.tool || '')}</span>
+            <span style="color:var(--text);flex:1;min-width:0;word-break:break-word;">${escapeHtml(s.label || '')}</span>
+            <span style="color:${sevColor[s.outcome]};font-weight:600;">${escapeHtml((s.outcome || '').toUpperCase())}</span>
+            ${s.duration_ms != null ? `<span style="color:var(--text-dimmer);">${s.duration_ms} ms</span>` : ''}
+          </div>
+          <div style="color:var(--text-dim);font-size:11px;margin-top:4px;font-family:var(--mono);white-space:pre-wrap;word-break:break-word;">${escapeHtml(s.summary || '')}</div>
+          ${det}
+        </div>`;
+    }).join('');
+    return `
+      <div data-run-source="${run.id}">
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="flex:1;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${meta}</div>
+          <div style="display:flex;gap:6px;" class="no-print result-actions" data-run-tools="${run.id}">
+            <button type="button" class="btn btn-action" data-act="copy" style="padding:3px 10px;font-size:10px;">Copy</button>
+            <button type="button" class="btn btn-action" data-act="csv"  style="padding:3px 10px;font-size:10px;">Export CSV</button>
+            <button type="button" class="btn btn-action" data-act="print" style="padding:3px 10px;font-size:10px;">Print / PDF</button>
+          </div>
+        </div>
+        <div>${steps || '<div style="color:var(--text-dimmer);font-size:11px;padding:6px 0;">(no steps executed)</div>'}</div>
+      </div>`;
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function wireRunToolbar(host, run) {
+    const toolbar = host.querySelector('[data-run-tools]');
+    if (!toolbar) return;
+    const quote = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+    };
+    function runAsText(r) {
+      const lines = [
+        `Runbook run ${r.id}`,
+        `Started:  ${r.started_at}`,
+        `Finished: ${r.completed_at || ''}`,
+        `Status:   ${r.status}`,
+        ``,
+      ];
+      (r.step_results || []).forEach(s => {
+        lines.push(`#${(s.index ?? 0) + 1} [${(s.outcome || '').toUpperCase()}] ${s.tool || ''} · ${s.label || ''} · ${s.duration_ms || 0} ms`);
+        if (s.summary) lines.push(`    ${s.summary}`);
+        if (s.detail && Object.keys(s.detail).length) {
+          for (const [k, v] of Object.entries(s.detail)) {
+            const val = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+            lines.push(`    · ${k} = ${val}`);
+          }
+        }
+      });
+      return lines.join('\n');
+    }
+    function runAsCSV(r) {
+      const cols = ['index','tool','label','outcome','duration_ms','summary','detail'];
+      const lines = [cols.map(quote).join(',')];
+      (r.step_results || []).forEach(s => {
+        lines.push([
+          s.index ?? '', s.tool || '', s.label || '', s.outcome || '',
+          s.duration_ms ?? '', s.summary || '',
+          s.detail ? JSON.stringify(s.detail) : '',
+        ].map(quote).join(','));
+      });
+      return lines.join('\r\n') + '\r\n';
+    }
+    toolbar.querySelector('[data-act="copy"]').addEventListener('click', () => {
+      const text = runAsText(run);
+      const btn = toolbar.querySelector('[data-act="copy"]');
+      const prev = btn.textContent;
+      (navigator.clipboard?.writeText(text) ?? Promise.reject())
+        .then(() => { btn.textContent = '✓ copied'; setTimeout(() => btn.textContent = prev, 1500); })
+        .catch(() => { btn.textContent = '✗ failed'; setTimeout(() => btn.textContent = prev, 1500); });
+    });
+    toolbar.querySelector('[data-act="csv"]').addEventListener('click', () => {
+      const body = runAsCSV(run);
+      const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+      const blob = new Blob([body], {type:'text/csv;charset=utf-8'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `runbook-run-${stamp}.csv`;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+    });
+    toolbar.querySelector('[data-act="print"]').addEventListener('click', () => {
+      // Print the whole "Recent runs" card — keeps the chrome hidden
+      // by base.html's @media print rules; the expanded run is the only
+      // detail that would render inside #runs-card at this moment.
+      const card = document.getElementById('runs-card');
+      if (card) card.classList.add('print-active');
+      document.body.classList.add('print-scoped');
+      const cleanup = () => {
+        if (card) card.classList.remove('print-active');
+        document.body.classList.remove('print-scoped');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+  }
+
+  async function openRunbook(id) {
+    const {ok, data} = await jfetch('GET', `/api/v1/runbooks/${id}`);
+    if (!ok) return;
+    currentRunbook = data;
+    document.getElementById('editor-card').style.display = 'block';
+    document.getElementById('editor-title').textContent = data.name;
+    document.getElementById('fld-name').value = data.name || '';
+    document.getElementById('fld-desc').value = data.description || '';
+    document.getElementById('fld-shared').value = String(!!data.shared);
+    document.getElementById('fld-enabled').value = String(!!data.enabled);
+    document.getElementById('run-result').innerHTML = '';
+    renderSteps();
+    loadRuns(id);
+  }
+
+  function newRunbook() {
+    currentRunbook = {id: null, name: 'Untitled runbook', description: '',
+                     shared: false, enabled: true, steps: []};
+    document.getElementById('editor-card').style.display = 'block';
+    document.getElementById('editor-title').textContent = 'New runbook';
+    document.getElementById('fld-name').value = 'Untitled runbook';
+    document.getElementById('fld-desc').value = '';
+    document.getElementById('fld-shared').value = 'false';
+    document.getElementById('fld-enabled').value = 'true';
+    document.getElementById('run-result').innerHTML = '';
+    document.getElementById('runs-card').style.display = 'none';
+    renderSteps();
+  }
+
+  function renderSteps() {
+    const el = document.getElementById('steps-list');
+    if (!currentRunbook.steps || currentRunbook.steps.length === 0) {
+      el.innerHTML = '<div style="color:var(--text-dimmer);font-size:12px;padding:8px 0;">No steps yet — add one with the picker above.</div>';
+      return;
+    }
+    el.innerHTML = currentRunbook.steps.map((step, idx) => {
+      const tool = toolsCatalog.find(t => t.key === step.tool);
+      const label = step.label || (tool ? tool.label : step.tool);
+      return `
+      <div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,.02);">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">#${idx + 1}</span>
+          <input class="input" style="flex:1;font-size:12px;" value="${label.replace(/"/g, '&quot;')}" data-step-label="${idx}">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--accent);">${tool ? tool.category : ''}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--warn);">${tool ? tool.required_permission : '?'}</span>
+          <button class="btn" data-step-up="${idx}" style="font-size:10px;padding:2px 6px;">↑</button>
+          <button class="btn" data-step-down="${idx}" style="font-size:10px;padding:2px 6px;">↓</button>
+          <button class="btn" data-step-del="${idx}" style="font-size:10px;padding:2px 6px;color:var(--danger);">✕</button>
+        </div>
+        ${tool ? renderParamFields(tool, step, idx) : `<div style="color:var(--danger);font-size:11px;">unknown tool: ${step.tool}</div>`}
+        <div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">
+          Continue on:
+          ${['ok','warn','fail','info','denied','error'].map(o => `
+            <label style="margin-left:8px;color:${sevColor[o]};">
+              <input type="checkbox" data-step-co="${idx}" data-co-val="${o}" ${(step.continue_on || ['ok','warn','info']).includes(o) ? 'checked' : ''}>
+              ${o}
+            </label>
+          `).join('')}
+        </div>
+      </div>`;
+    }).join('');
+
+    // Wire param inputs
+    el.querySelectorAll('[data-step-param]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const [idx, name] = inp.dataset.stepParam.split(':');
+        const step = currentRunbook.steps[Number(idx)];
+        step.params = step.params || {};
+        let val = inp.value;
+        if (inp.type === 'checkbox') val = inp.checked;
+        else if (inp.dataset.ptype === 'int') val = Number(val);
+        step.params[name] = val;
+      });
+    });
+    el.querySelectorAll('[data-step-label]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        currentRunbook.steps[Number(inp.dataset.stepLabel)].label = inp.value;
+      });
+    });
+    el.querySelectorAll('[data-step-co]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const idx = Number(inp.dataset.stepCo);
+        const val = inp.dataset.coVal;
+        const step = currentRunbook.steps[idx];
+        const set = new Set(step.continue_on || ['ok','warn','info']);
+        if (inp.checked) set.add(val); else set.delete(val);
+        step.continue_on = [...set];
+      });
+    });
+    el.querySelectorAll('[data-step-del]').forEach(b => {
+      b.addEventListener('click', () => {
+        currentRunbook.steps.splice(Number(b.dataset.stepDel), 1);
+        renderSteps();
+      });
+    });
+    el.querySelectorAll('[data-step-up]').forEach(b => {
+      b.addEventListener('click', () => {
+        const idx = Number(b.dataset.stepUp);
+        if (idx > 0) {
+          [currentRunbook.steps[idx - 1], currentRunbook.steps[idx]] = [currentRunbook.steps[idx], currentRunbook.steps[idx - 1]];
+          renderSteps();
+        }
+      });
+    });
+    el.querySelectorAll('[data-step-down]').forEach(b => {
+      b.addEventListener('click', () => {
+        const idx = Number(b.dataset.stepDown);
+        if (idx < currentRunbook.steps.length - 1) {
+          [currentRunbook.steps[idx + 1], currentRunbook.steps[idx]] = [currentRunbook.steps[idx], currentRunbook.steps[idx + 1]];
+          renderSteps();
+        }
+      });
+    });
+  }
+
+  function renderParamFields(tool, step, idx) {
+    if (!tool.params || tool.params.length === 0) {
+      return `<div style="color:var(--text-dimmer);font-size:11px;">no parameters</div>`;
+    }
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">` +
+      tool.params.map(p => {
+        const val = (step.params || {})[p.name];
+        const cur = val === undefined ? (p.default ?? '') : val;
+        if (p.type === 'enum' && p.options) {
+          return `<div class="field"><label>${p.label}${p.required ? ' *' : ''}</label>
+            <select class="select" data-step-param="${idx}:${p.name}" data-ptype="enum">
+              ${p.options.map(o => `<option value="${o}" ${String(cur) === o ? 'selected' : ''}>${o}</option>`).join('')}
+            </select></div>`;
+        }
+        if (p.type === 'bool') {
+          return `<div class="field"><label>${p.label}</label>
+            <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);padding-top:8px;">
+              <input type="checkbox" data-step-param="${idx}:${p.name}" data-ptype="bool" ${cur ? 'checked' : ''}> on
+            </label></div>`;
+        }
+        const inputType = p.type === 'int' ? 'number' : 'text';
+        return `<div class="field"><label>${p.label}${p.required ? ' *' : ''}</label>
+          <input class="input mono" type="${inputType}" value="${String(cur).replace(/"/g,'&quot;')}" data-step-param="${idx}:${p.name}" data-ptype="${p.type}" placeholder="${p.hint || ''}"></div>`;
+      }).join('') +
+      `</div>`;
+  }
+
+  async function save() {
+    const payload = {
+      name: document.getElementById('fld-name').value,
+      description: document.getElementById('fld-desc').value,
+      shared: document.getElementById('fld-shared').value === 'true',
+      enabled: document.getElementById('fld-enabled').value === 'true',
+      steps: currentRunbook.steps,
+    };
+    if (currentRunbook.id) {
+      const {ok, data} = await jfetch('PATCH', `/api/v1/runbooks/${currentRunbook.id}`, payload);
+      if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    } else {
+      const {ok, data} = await jfetch('POST', '/api/v1/runbooks', payload);
+      if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+      currentRunbook.id = data.id;
+    }
+    loadRunbooks();
+    document.getElementById('editor-title').textContent = payload.name;
+  }
+
+  async function run() {
+    if (!currentRunbook.id) { alert('save the runbook before running it'); return; }
+    const out = document.getElementById('run-result');
+    out.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);padding:8px 0;">running…</div>';
+    const {ok, data} = await jfetch('POST', `/api/v1/runbooks/${currentRunbook.id}/run`);
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);">error: ${data.error || data.detail}</div>`; return; }
+    out.innerHTML = `
+      <div style="margin-top:10px;padding:10px 12px;border-left:3px solid ${sevColor[data.worst_outcome]};background:rgba(255,255,255,.03);border-radius:0 6px 6px 0;">
+        <div style="font-family:var(--mono);font-size:11px;">
+          RUN <span style="color:${sevColor[data.worst_outcome]};font-weight:600;">${data.status.toUpperCase()}</span>
+          · worst: <span style="color:${sevColor[data.worst_outcome]};">${data.worst_outcome}</span>
+          · ${data.step_results.length} step(s) executed
+          ${data.stopped_early ? '· <span style="color:var(--warn);">stopped early</span>' : ''}
+        </div>
+        ${data.step_results.map(r => {
+          const det = r.detail && Object.keys(r.detail).length
+            ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:var(--text-dim);font-family:var(--mono);font-size:10px;">step detail</summary>
+                 <pre style="margin:4px 0 0;padding:6px 8px;background:rgba(0,0,0,.28);border-radius:4px;font-size:10px;color:var(--text);white-space:pre-wrap;word-break:break-all;">${escapeHtml(JSON.stringify(r.detail, null, 2))}</pre>
+               </details>`
+            : '';
+          return `
+          <div style="margin-top:8px;padding:8px 10px;background:rgba(0,0,0,.2);border-left:3px solid ${sevColor[r.outcome]};border-radius:0 4px 4px 0;">
+            <div style="display:flex;gap:10px;font-family:var(--mono);font-size:11px;">
+              <span style="color:var(--text-dimmer);">#${r.index + 1}</span>
+              <span style="color:var(--accent);">${escapeHtml(r.tool || '')}</span>
+              <span style="color:var(--text);flex:1;">${escapeHtml(r.label || '')}</span>
+              <span style="color:${sevColor[r.outcome]};font-weight:600;">${r.outcome}</span>
+              ${r.duration_ms != null ? `<span style="color:var(--text-dimmer);">${r.duration_ms} ms</span>` : ''}
+            </div>
+            <div style="color:var(--text-dim);font-size:11px;margin-top:4px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(r.summary || '')}</div>
+            ${det}
+          </div>`;
+        }).join('')}
+      </div>`;
+    loadRuns(currentRunbook.id);
+  }
+
+  async function del() {
+    if (!currentRunbook.id) { document.getElementById('editor-card').style.display = 'none'; return; }
+    if (!confirm(`Delete runbook "${currentRunbook.name}"? This cannot be undone.`)) return;
+    const {ok, data} = await jfetch('DELETE', `/api/v1/runbooks/${currentRunbook.id}`);
+    if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    document.getElementById('editor-card').style.display = 'none';
+    // Wipe the run-result pane so a prior failure message doesn't hang around
+    // after the runbook itself is gone.
+    const runOut = document.getElementById('run-result');
+    if (runOut) runOut.innerHTML = '';
+    currentRunbook = null;
+    loadRunbooks();
+  }
+
+  document.getElementById('btn-new').addEventListener('click', newRunbook);
+  document.getElementById('btn-save').addEventListener('click', save);
+  document.getElementById('btn-run').addEventListener('click', run);
+  document.getElementById('btn-delete').addEventListener('click', del);
+  document.getElementById('btn-add-step').addEventListener('click', () => {
+    const sel = document.getElementById('fld-add-tool');
+    if (!sel.value) return;
+    const tool = toolsCatalog.find(t => t.key === sel.value);
+    if (!tool) return;
+    currentRunbook = currentRunbook || {id: null, name: 'Untitled', steps: [], shared: false, enabled: true, description: ''};
+    const defaults = {};
+    tool.params.forEach(p => { if (p.default != null) defaults[p.name] = p.default; });
+    currentRunbook.steps.push({
+      tool: tool.key, label: tool.label,
+      params: defaults,
+      continue_on: ['ok', 'warn', 'info'],
+    });
+    sel.value = '';
+    renderSteps();
+  });
+
+  loadTools().then(loadRunbooks);
+})();
+</script>
+{% endblock %}

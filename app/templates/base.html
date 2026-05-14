@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}{{ branding.display_name|default('Meridian') }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/css/portal.css">
+{% if branding.favicon_path %}<link rel="icon" href="/api/v1/branding/assets/favicon?v={{ (branding.updated_at|string)[:10] }}">{% endif %}
+{% block head_extra %}{% endblock %}
+</head>
+<body data-tz="{{ effective_tz|default('UTC') }}">
+<div class="grid-bg"></div>
+{# Print-only header: hidden on screen, shown on every printed page so
+   exported PDFs carry the product branding + host/timestamp. #}
+<div id="print-header" style="display:none;">
+  <div class="ph-left" style="display:flex;align-items:center;gap:10px;">
+    {# Reuse the main logo component so printed reports carry the real
+       graphical mark + wordmark (not just a text brand line). #}
+    {% include "_logo.html" %}
+  </div>
+  <div class="ph-right">
+    <div class="ph-meta">{{ request.url.netloc if request else 'meridian' }}{% if user %} · {{ user.username }}{% endif %}</div>
+    <div class="ph-meta"><span id="print-ts"></span></div>
+  </div>
+</div>
+<script>
+// Stamp the print header with the local time at print time.
+(function(){
+  function stamp() {
+    const el = document.getElementById('print-ts');
+    if (!el) return;
+    const d = new Date();
+    el.textContent = d.toLocaleString();
+  }
+  window.addEventListener('beforeprint', stamp);
+  stamp();
+})();
+</script>
+{% include "_topbar.html" %}
+
+{% block frame %}
+<div class="app-frame">
+  {% include "_sidebar.html" %}
+  <div class="sidebar-scrim" id="sidebar-scrim" aria-hidden="true"></div>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}
+
+<script>
+(function(){
+  // Mobile/tablet navigation drawer. The CSS hides the sidebar by default
+  // under 900px; tapping #nav-toggle adds .nav-open to <body> which the
+  // CSS flips into a slide-in drawer + scrim. Click outside / press Esc
+  // closes it. Above 900px the toggle is hidden and the sidebar is static.
+  const toggle = document.getElementById('nav-toggle');
+  const scrim  = document.getElementById('sidebar-scrim');
+  const open   = () => { document.body.classList.add('nav-open'); toggle && toggle.setAttribute('aria-expanded','true'); };
+  const close  = () => { document.body.classList.remove('nav-open'); toggle && toggle.setAttribute('aria-expanded','false'); };
+  if (toggle) toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.body.classList.contains('nav-open') ? close() : open();
+  });
+  if (scrim) scrim.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  // Closing on link-click keeps the drawer from staying open after navigation
+  // when same-page anchors are used (rare, but cheap to handle).
+  document.querySelectorAll('.sidebar a').forEach(a => a.addEventListener('click', close));
+})();
+</script>
+
+<div class="footer">
+  <div><span class="dot"></span> &nbsp;SYSTEMS NOMINAL</div>
+  <div>{{ branding.display_name|default('MERIDIAN')|upper }} · {{ version }} · TLS 1.3</div>
+</div>
+
+<script src="/static/js/portal.js"></script>
+{% block scripts_extra %}{% endblock %}
+</body>
+</html>

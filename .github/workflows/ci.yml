@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint · Python + SQL + shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff==0.4.4
+
+      - name: Ruff check
+        run: ruff check app/
+
+      - name: Ruff format check
+        run: ruff format --check app/
+
+      - name: Syntax parse every .py
+        run: |
+          python3 -c '
+          import ast, os, sys
+          errs = 0
+          for r, _, files in os.walk("app"):
+            for f in files:
+              if f.endswith(".py"):
+                p = os.path.join(r, f)
+                try:
+                  ast.parse(open(p).read(), p)
+                except SyntaxError as e:
+                  errs += 1
+                  print(f"{p}:{e.lineno}: {e.msg}")
+          sys.exit(errs)
+          '
+
+      - name: Shellcheck scripts/
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: ./scripts
+          severity: warning
+
+      - name: Verify schema.sql parses
+        run: |
+          # Psql isn't available here, but sqlparse can catch gross syntax bugs.
+          pip install sqlparse
+          python3 -c '
+          import sqlparse, sys
+          stmts = sqlparse.parse(open("db/schema.sql").read())
+          print(f"schema.sql parsed into {len(stmts)} statements")
+          '
+
+  schema-vs-handlers:
+    name: Every seeded celery handler has a registered task
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python3 - <<'PY'
+          import re, os, sys
+          schema = open('db/schema.sql').read()
+          handlers = sorted(set(re.findall(r'meridian\.jobs\.[a-z]+:[a-z_]+', schema)))
+          task_names = set()
+          for r, _, files in os.walk('app'):
+            for f in files:
+              if f.endswith('.py'):
+                src = open(os.path.join(r, f)).read()
+                task_names.update(re.findall(r'@celery_app\.task\(name="([^"]+)"\)', src))
+          missing = [h for h in handlers
+                     if f'{h.split(":")[0]}.{h.split(":")[1]}' not in task_names]
+          if missing:
+            print('Handlers seeded in schema.sql with no matching @celery_app.task:')
+            for m in missing: print(f'  {m}')
+            sys.exit(1)
+          print(f'all {len(handlers)} handlers are registered')
+          PY
+
+  pytest:
+    name: Unit + smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: System packages for python-ldap / pyshark
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libldap2-dev libsasl2-dev libssl-dev tshark
+
+      - name: Install Meridian + dev deps
+        run: |
+          pip install --upgrade pip wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: pytest
+        run: pytest --strict-markers -ra
+
+  admin-nav-consistency:
+    name: All admin sub-pages carry the full tab bar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import os, re, sys
+          tabs = set()
+          admin_pages = [f for f in os.listdir('app/templates')
+                         if f.startswith('admin') and f.endswith('.html')]
+          for f in admin_pages:
+            text = open(f'app/templates/{f}').read()
+            links = set(re.findall(r'/ui/admin(?:/[a-z_-]+)?', text))
+            tabs |= links
+          # Every admin page must contain every tab.
+          bad = []
+          for f in admin_pages:
+            text = open(f'app/templates/{f}').read()
+            missing = [t for t in tabs if t not in text]
+            if missing:
+              bad.append((f, missing))
+          if bad:
+            for f, m in bad:
+              print(f'{f} missing tabs: {m}')
+            sys.exit(1)
+          print(f'all {len(admin_pages)} admin pages carry the full {len(tabs)}-tab nav')
+          PY

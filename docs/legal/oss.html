@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open-source licenses · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">LEGAL · OPEN-SOURCE LICENSES</div>
+<h1>Open-source licenses</h1>
+<div class="page-sub">How Meridian handles third-party attribution, copyleft obligations, and SBOM export.</div>
+
+<h2>Live inventory</h2>
+<p>The authoritative list of every component, its version, license, homepage, and upstream source is in the portal itself:</p>
+<blockquote><strong>Sidebar → Licenses</strong> (also accessible from the pre-login footer)</blockquote>
+<p>That page is auto-generated daily by the <code>oss-component-scan</code> job from <code>dpkg -l</code>, <code>pip list</code>, and <code>npm ls</code>. Hand-curation gets stale — Meridian rejects it on principle.</p>
+
+<h2>License families used</h2>
+<table>
+<tr><th>Family</th><th>Examples</th><th>Obligation</th></tr>
+<tr><td>Permissive</td><td>MIT · BSD-2 · BSD-3 · Apache-2.0 · PostgreSQL · ISC</td><td>Preserve notice + license text</td></tr>
+<tr><td>Weak copyleft</td><td>MPL-2.0 (bind9) · LGPL-3.0+ (psycopg2)</td><td>Preserve notice + provide source offer on request</td></tr>
+<tr><td>Strong copyleft</td><td>GPL-2.0+ (fail2ban, apparmor, util-linux)</td><td>Preserve notice + provide source offer on request</td></tr>
+<tr><td>Font</td><td>OFL-1.1 (JetBrains Mono, DM Sans)</td><td>Preserve notice; cannot be sold alone</td></tr>
+</table>
+
+<h2>How we satisfy copyleft source-offer</h2>
+<p>Meridian installs copyleft dependencies via <code>apt</code> from Debian (or pip from PyPI) — we do <strong>not</strong> bundle modified versions of their source. The source-offer is therefore satisfied by publishing a link to the upstream project for each:</p>
+<ul>
+<li><strong>bind9</strong> (MPL-2.0): <a href="https://gitlab.isc.org/isc-projects/bind9" target="_blank">gitlab.isc.org/isc-projects/bind9</a></li>
+<li><strong>fail2ban</strong> (GPL-2.0+): <a href="https://github.com/fail2ban/fail2ban" target="_blank">github.com/fail2ban/fail2ban</a></li>
+<li><strong>apparmor</strong> (GPL-2.0): <a href="https://gitlab.com/apparmor/apparmor" target="_blank">gitlab.com/apparmor/apparmor</a></li>
+<li><strong>psycopg2</strong> (LGPL-3.0+): <a href="https://github.com/psycopg/psycopg2" target="_blank">github.com/psycopg/psycopg2</a></li>
+<li>util-linux, e2fsprogs, coreutils, etc.: see the portal's Licenses page for per-package links.</li>
+</ul>
+<p>If you are required to provide the actual source tarball rather than a link (some enterprise / government contracts require this), contact <code>oss@meridiannip.com</code> and we will ship you the source set matching your installed versions.</p>
+
+<h2>SBOM export</h2>
+<p>The Licenses page in the portal exports the full component list in four formats suitable for compliance and supply-chain tooling:</p>
+<ul>
+<li><strong>CycloneDX 1.5 JSON</strong> — security tooling (Snyk, Dependency-Track, etc.)</li>
+<li><strong>CycloneDX 1.5 XML</strong></li>
+<li><strong>SPDX 2.3 JSON</strong> — legal review, compliance attestations</li>
+<li><strong>SPDX 2.3 Tag-Value</strong></li>
+</ul>
+<p>Or generate via the CLI:</p>
+<pre><code>sudo meridian-nip oss sbom --format cyclonedx_json &gt; meridian-sbom.json
+sudo meridian-nip oss sbom --format spdx_json       &gt; meridian-sbom.spdx.json</code></pre>
+
+<h2>License-change detection</h2>
+<p>The OSS scan compares each day's findings against the prior day's. If any package changes license (say, a library relicenses from MIT to BSL), the compliance report flags it and emails all admins. This catches surprises like the Redis → RSAL relicense before they break your compliance posture.</p>
+
+<h2>What Meridian itself is licensed as</h2>
+<p>Meridian 1.0.0 is commercial software. Customers with a valid license key may install, modify configuration, and operate the platform for their own organization. Redistribution is not permitted except for clearly-marked open-source components (see the Licenses page inside the portal). Full terms: see your purchase agreement or the local <a href="terms.html">Terms of use</a>.</p>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

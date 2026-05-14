@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian Documentation</title>
+<link rel="stylesheet" href="css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="installation/overview.html">Install overview</a>
+  <a href="installation/prompts.html">Installer prompts</a>
+  <a href="installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="user/getting-started.html">Getting started</a>
+  <a href="user/dashboard.html">Dashboard</a>
+  <a href="user/dns-tools.html">DNS Tools</a>
+  <a href="user/network-tools.html">Network Tools</a>
+  <a href="user/monitors.html">Monitors</a>
+  <a href="user/wizards.html">Wizards</a>
+  <a href="user/certificates.html">Certificates</a>
+  <a href="user/runbooks.html">Runbooks</a>
+  <a href="user/directory.html">Directory</a>
+  <a href="user/files.html">File Repo</a>
+  <a href="user/messages.html">Messages</a>
+  <a href="user/approvals.html">Approvals</a>
+  <a href="user/settings.html">User Settings</a>
+  <a href="user/api.html">API reference</a>
+
+  <h3>Admin</h3>
+  <a href="admin/overview.html">Admin overview</a>
+  <a href="admin/users.html">Users</a>
+  <a href="admin/scope.html">Scope Manager</a>
+  <a href="admin/integrations.html">Integrations</a>
+  <a href="admin/devices.html">Network Devices</a>
+  <a href="admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="admin/health.html">System Health</a>
+  <a href="admin/updates.html">Updates</a>
+  <a href="admin/webhooks.html">Webhooks</a>
+  <a href="admin/branding.html">Branding &amp; identity</a>
+  <a href="admin/security.html">Database security</a>
+  <a href="admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="legal/terms.html">Terms of use</a>
+  <a href="legal/aup-template.html">AUP template</a>
+  <a href="legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+  <div class="page-meta">MERIDIAN 1.0.0 · DOCUMENTATION INDEX</div>
+  <h1>Meridian · Network Intelligence Platform</h1>
+  <div class="page-sub">Self-hosted network intelligence for network teams. Every portal page is documented here — summary, purpose, and every tab it contains.</div>
+
+  <div class="callout info"><span class="lbl">OFFLINE</span><div>These docs live at <code>/opt/meridian/docs/</code> and are served by the portal at <code>/docs</code>. Each portal page has a "Docs&nbsp;↗" button on the top-right that jumps to the matching page here. No internet required.</div></div>
+
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="installation/overview.html">Install overview</a> — prerequisites, what the installer does, ~10 min to a working portal.</li>
+    <li><a href="installation/prompts.html">Installer prompts</a> — every prompt explained with "why it matters" context.</li>
+    <li><a href="user/getting-started.html">Getting started</a> — first login, tour of the portal, finding your way.</li>
+  </ol>
+
+  <hr>
+
+  <h2>User portal — tools &amp; pages</h2>
+  <p>Every regular (non-admin) page in the portal. For each: what it is, why it exists, and the tabs you'll see on it.</p>
+
+  <h3 id="user-dashboard"><a href="user/dashboard.html">Dashboard</a></h3>
+  <p><strong>Summary.</strong> The landing page after login. Shows a welcome line, stat tiles, and quick links.</p>
+  <p><strong>Purpose.</strong> Give operators an instant read on portal health without drilling anywhere — "are the services green, and is there anything that needs me?"</p>
+  <ul>
+    <li><strong>Stat tiles</strong> — monitors in WARN/FAIL, open approvals, incoming messages, recent audit events.</li>
+    <li><strong>Quick links</strong> — jump to your most-used tools (customizable in a future release).</li>
+  </ul>
+
+  <h3 id="user-dns-tools"><a href="user/dns-tools.html">DNS Tools</a></h3>
+  <p><strong>Summary.</strong> Sandboxed DNS diagnostics with scope-guardrails: everything from a simple dig to zone-health and typosquat hunts.</p>
+  <p><strong>Purpose.</strong> Replace a grab-bag of <code>dig</code>, <code>delv</code>, <code>whois</code>, and web-UI tools with one consistent, audited interface. Every query is logged with who ran it.</p>
+  <ul>
+    <li><strong>Dig</strong> — single query against a chosen resolver; common flags exposed as chips.</li>
+    <li><strong>Propagation</strong> — same query against 16 public resolvers in parallel; highlights divergence.</li>
+    <li><strong>DNSSEC</strong> — walks the chain of trust (DNSKEY → DS at parent → root), flags missing/weak links.</li>
+    <li><strong>Reverse</strong> — PTR lookup for an IP, optionally against a specific resolver.</li>
+    <li><strong>Zone Health</strong> — SOA agreement across authoritatives, lame-NS detection, MX/apex sanity.</li>
+    <li><strong>AXFR</strong> — attempts a zone transfer against each authoritative NS. A refusal is the <em>expected</em> healthy outcome.</li>
+    <li><strong>CT / crt.sh</strong> — certificate-transparency history for a domain (passive subdomain discovery).</li>
+    <li><strong>WHOIS</strong> — registrar, registrant, creation/expiry, name servers, DNSSEC flag, status codes.</li>
+    <li><strong>Bulk WHOIS</strong> — up to 200 domains at once; concurrency-capped to respect upstream rate limits; CSV export.</li>
+    <li><strong>Typosquat</strong> — homoglyph / omission / transposition / insertion / TLD-swap permutations, resolved in parallel.</li>
+    <li><strong>rndc flush</strong> <span class="dim">(admin-only)</span> — flush the local BIND9 recursive cache, optionally scoped to a single zone.</li>
+  </ul>
+
+  <h3 id="user-network-tools"><a href="user/network-tools.html">Network Tools</a></h3>
+  <p><strong>Summary.</strong> Reachability, performance, and capture tools. All scope-guardrailed so you don't accidentally probe outside what your install is allowed to touch.</p>
+  <p><strong>Purpose.</strong> Give the network team a single audited place to run the "every day" probes without ad-hoc shells, and make the results shareable with a link.</p>
+  <ul>
+    <li><strong>Ping</strong> — IPv4/IPv6 ICMP echo with count, interval, packet size.</li>
+    <li><strong>Traceroute</strong> — UDP/ICMP/TCP with per-hop RTT and AS annotation.</li>
+    <li><strong>Port scan</strong> — targeted TCP/UDP port check; <em>not</em> a full discovery scanner.</li>
+    <li><strong>HTTP test</strong> — full-URL probe with headers, TLS info, redirect trail, timing breakdown.</li>
+    <li><strong>SNMP</strong> — v2c/v3 GET / walk against configured community/user; results rendered as a tree.</li>
+    <li><strong>pcap</strong> — time-boxed capture on a selected interface with BPF filter; downloads as <code>.pcap</code>.</li>
+    <li><strong>Bandwidth</strong> — iperf3 client against a chosen server; shows throughput + retransmits.</li>
+  </ul>
+
+  <h3 id="user-monitors"><a href="user/monitors.html">Monitors</a></h3>
+  <p><strong>Summary.</strong> Scheduled synthetic checks: HTTP/HTTPS response, TCP port reachability, ICMP ping — with history.</p>
+  <p><strong>Purpose.</strong> Know when something slips from OK → WARN → FAIL without you watching — and keep enough history to spot slow-burn issues (e.g., rising latency over weeks).</p>
+  <ul>
+    <li><strong>HTTP/HTTPS</strong> — expected status, body-contains match, TLS validity window.</li>
+    <li><strong>TCP port</strong> — open/closed/filtered judgment with connect timing.</li>
+    <li><strong>ICMP ping</strong> — loss + RTT over the sampling interval.</li>
+    <li><strong>History</strong> — per-monitor trend graph; WARN/FAIL events feed the dashboard + notification channels.</li>
+  </ul>
+
+  <h3 id="user-wizards"><a href="user/wizards.html">Wizards</a></h3>
+  <p><strong>Summary.</strong> Guided multi-step diagnostics. Each step explains what it checked, why it passed/warned/failed, and suggests evidence-backed next steps.</p>
+  <p><strong>Purpose.</strong> Turn "something feels off" into a structured investigation that a less-senior operator can drive, and that produces a shareable report.</p>
+  <ul>
+    <li><strong>DNS health</strong> — full zone check from delegation down to MX/apex.</li>
+    <li><strong>Reachability</strong> — ping → traceroute → port → HTTP, short-circuits on first conclusive fail.</li>
+    <li><strong>Cert chain</strong> — leaf/intermediate/root with expiry &amp; key-algo audit.</li>
+    <li><strong>Email deliverability</strong> — MX / SPF / DKIM / DMARC / rDNS / open relays / blacklist check.</li>
+  </ul>
+
+  <h3 id="user-certificates"><a href="user/certificates.html">Certificates</a></h3>
+  <p><strong>Summary.</strong> Manage the portal's own TLS cert, watch a list of external certs for expiry, and generate CSRs.</p>
+  <p><strong>Purpose.</strong> Three jobs that usually live in three different tools — consolidated so the cert story for your estate lives in one place.</p>
+  <ul>
+    <li><strong>Portal cert</strong> — current leaf/chain, expiry countdown, upload self-signed or ACME replacement.</li>
+    <li><strong>External watchlist</strong> — add hostname:port pairs; nightly check + expiry notifications.</li>
+    <li><strong>CSR</strong> — generate PKCS#10 requests with SAN, key type, and OU / CN pre-fill from branding.</li>
+  </ul>
+
+  <h3 id="user-runbooks"><a href="user/runbooks.html">Runbooks</a></h3>
+  <p><strong>Summary.</strong> Chain individual tools into repeatable, permission-gated workflows.</p>
+  <p><strong>Purpose.</strong> Codify "the way we investigate X" so it runs the same way every time and is safe to delegate to a junior operator.</p>
+  <ul>
+    <li><strong>Edit / builder</strong> — drag-drop steps, each referencing a tool + inputs + <code>continue_on</code> policy.</li>
+    <li><strong>Run</strong> — executes each step; skips steps the runner lacks permission for and records why.</li>
+    <li><strong>History</strong> — past runs, output, success/fail, and a shareable permalink.</li>
+  </ul>
+
+  <h3 id="user-dhcp"><a href="user/dhcp.html">DHCP</a></h3>
+  <p><strong>Summary.</strong> Unified query interface across external DHCP systems. The portal does not run DHCP itself.</p>
+  <p><strong>Purpose.</strong> Stop logging into Kea / ISC / Infoblox / Windows consoles to answer "which lease does this MAC have?" — ask Meridian instead.</p>
+  <ul>
+    <li><strong>Search</strong> — by IP, MAC, hostname, or client-id across every configured backend.</li>
+    <li><strong>Recent activity</strong> — new leases &amp; conflicts surfaced from backend event streams.</li>
+  </ul>
+
+  <h3 id="user-ipam"><a href="user/ipam.html">IPAM</a></h3>
+  <p><strong>Summary.</strong> Unified query across external IPAM systems (Infoblox, Netbox, …). The portal does not store IPAM records itself.</p>
+  <p><strong>Purpose.</strong> One lookup surface for "what's at this IP / in this subnet / assigned to this VLAN" regardless of which backend owns the record.</p>
+  <ul>
+    <li><strong>Search</strong> — by IP, CIDR, hostname, tag.</li>
+    <li><strong>Subnet view</strong> — utilization bar, conflicts, adjacent free blocks.</li>
+  </ul>
+
+  <h3 id="user-directory"><a href="user/directory.html">Directory</a></h3>
+  <p><strong>Summary.</strong> Active Directory / LDAP lookups — read-only by default. Write actions flow through the <a href="user/approvals.html">Approvals</a> queue.</p>
+  <p><strong>Purpose.</strong> Let the helpdesk answer "who is this user, what groups, when did their password change" without giving them write access to AD.</p>
+  <ul>
+    <li><strong>User search</strong> — sAMAccountName / UPN / display name; shows attributes + group memberships.</li>
+    <li><strong>Group search</strong> — membership browse, nested-group resolution.</li>
+    <li><strong>Computer search</strong> — last-logon, OS, OU, dangling objects.</li>
+  </ul>
+
+  <h3 id="user-files"><a href="user/files.html">File Repo</a></h3>
+  <p><strong>Summary.</strong> Personal storage for scripts, pcaps, exports, and docs. Quota-enforced. Pinned files skip the retention cleanup.</p>
+  <p><strong>Purpose.</strong> A consistent place to stash captures and one-off scripts without dropping them on a shared server — and without shipping them off-box.</p>
+  <ul>
+    <li><strong>My files</strong> — upload, tag, rename, pin.</li>
+    <li><strong>Shared</strong> — files others have published to your groups.</li>
+    <li><strong>Quota</strong> — current usage, retention horizon, pinned-bytes.</li>
+  </ul>
+
+  <h3 id="user-messages"><a href="user/messages.html">Messages</a></h3>
+  <p><strong>Summary.</strong> Direct messages between users · admin broadcasts · group-addressed notices.</p>
+  <p><strong>Purpose.</strong> Keep operational comms inside the audited portal rather than scattered across chat systems that don't tie back to who-did-what.</p>
+  <ul>
+    <li><strong>Inbox</strong> — unread + recent threads.</li>
+    <li><strong>Compose</strong> — to user / group / role / broadcast (admin).</li>
+    <li><strong>Archive</strong> — full history with search.</li>
+  </ul>
+
+  <h3 id="user-approvals"><a href="user/approvals.html">Approvals</a></h3>
+  <p><strong>Summary.</strong> Two-person sign-off queue for destructive or sensitive operations.</p>
+  <p><strong>Purpose.</strong> Enforce the "no operator can destroy data or make a vault change alone" policy. Every write-grade action produces an approval request routed to another admin.</p>
+  <ul>
+    <li><strong>Pending</strong> — requests awaiting your action.</li>
+    <li><strong>Awaiting others</strong> — requests you opened, waiting on someone else.</li>
+    <li><strong>Completed</strong> — decision history with reasoning text.</li>
+  </ul>
+
+  <h3 id="user-settings"><a href="user/settings.html">User Settings</a></h3>
+  <p><strong>Summary.</strong> Your personal profile, sessions, security, and preferences.</p>
+  <p><strong>Purpose.</strong> Self-service for the things operators need to manage about themselves without pulling an admin in.</p>
+  <ul>
+    <li><strong>Profile</strong> — display name, email, timezone, avatar.</li>
+    <li><strong>Password</strong> — change password; shows when it last changed and the policy.</li>
+    <li><strong>Two-factor auth</strong> — TOTP enrollment (authenticator app); scratch codes.</li>
+    <li><strong>Account recovery</strong> — the 5 security questions used by forgot-password; pick 5 / answer 5.</li>
+    <li><strong>Sessions</strong> — every logged-in session across devices; revoke any of them.</li>
+    <li><strong>API tokens</strong> — personal access tokens for CLI / scripts, scoped to your role.</li>
+    <li><strong>Notifications</strong> — per-channel on/off for email, message, webhook.</li>
+    <li><strong>Preferences</strong> — theme, density, default landing tab, locale.</li>
+  </ul>
+
+  <hr>
+
+  <h2>Admin portal — pages</h2>
+  <p>Only visible to users with admin or super-admin role.</p>
+
+  <h3 id="admin-overview"><a href="admin/overview.html">Admin overview</a></h3>
+  <p><strong>Summary.</strong> The admin landing page — at-a-glance numbers plus tab navigation to every admin surface.</p>
+  <p><strong>Purpose.</strong> A single dashboard telling you "is the install healthy, is there admin attention needed anywhere" before drilling into specifics.</p>
+  <ul>
+    <li><strong>Stat grid</strong> — enabled users, active sessions, enabled monitors, 24h audit events, pending approvals.</li>
+    <li><strong>Quick sections</strong> — recent audit · current install metadata · health summary.</li>
+  </ul>
+
+  <h3 id="admin-users"><a href="admin/users.html">Users</a></h3>
+  <p><strong>Summary.</strong> Create, enable, lock, reset. Every change goes to the HMAC-chained audit log.</p>
+  <p><strong>Purpose.</strong> Own the full lifecycle of a portal account — without SSH or direct-DB access — while staying fully auditable for compliance.</p>
+  <ul>
+    <li><strong>List</strong> — search / filter by role / status.</li>
+    <li><strong>Detail drawer</strong> — profile, role, group membership, MFA status, recovery-question status, last login.</li>
+    <li><strong>Actions</strong> — enable / disable, lock, force password reset, revoke sessions, re-invite.</li>
+  </ul>
+
+  <h3 id="admin-scope"><a href="admin/scope.html">Scope Manager</a></h3>
+  <p><strong>Summary.</strong> Override which networks count as internal vs. external, plus a hard deny list. Applies to every probe (ping, traceroute, port scan, SNMP, pcap, HTTP test).</p>
+  <p><strong>Purpose.</strong> Your single kill-switch for "Meridian must never probe X" and the single knob that governs which side of the Internet <em>any</em> tool is allowed to touch.</p>
+  <ul>
+    <li><strong>Mode</strong> — <code>internal</code> / <code>external</code> / <code>both</code>.</li>
+    <li><strong>Allow overrides</strong> — extra CIDRs to treat as internal.</li>
+    <li><strong>Deny list</strong> — hard blocks that no tool and no role can bypass.</li>
+    <li><strong>Test</strong> — paste an IP / hostname, see "allowed / denied + why".</li>
+  </ul>
+
+  <h3 id="admin-integrations"><a href="admin/integrations.html">Integrations</a></h3>
+  <p><strong>Summary.</strong> Configure DHCP / IPAM / Directory backend endpoints and credentials. Secrets are AES-256-GCM encrypted at rest in the vault.</p>
+  <p><strong>Purpose.</strong> The one place credentials for all your external systems live — not scattered across scripts and .env files.</p>
+  <ul>
+    <li><strong>DHCP</strong> — Kea · ISC · Infoblox · Windows DHCP.</li>
+    <li><strong>IPAM</strong> — Infoblox · Netbox · phpIPAM.</li>
+    <li><strong>Directory</strong> — Active Directory · generic LDAP.</li>
+    <li><strong>Test connection</strong> — per-integration "probe now" button; vault secret is never echoed back.</li>
+  </ul>
+
+  <h3 id="admin-devices"><a href="admin/devices.html">Network Devices</a></h3>
+  <p><strong>Summary.</strong> SSH-based config backup with change detection. A new snapshot is only written when the SHA-256 differs from the last — cosmetic refreshes don't pollute history.</p>
+  <p><strong>Purpose.</strong> Keep a safe, versioned copy of the running-config of every switch/router/firewall you care about, and fire a notification when something actually changes.</p>
+  <ul>
+    <li><strong>Devices</strong> — add / edit / disable; per-device poll schedule.</li>
+    <li><strong>Snapshots</strong> — chronological list; diff viewer between any two.</li>
+    <li><strong>Notifications</strong> — wire change events to webhooks / messages / email.</li>
+  </ul>
+
+  <h3 id="admin-vuln"><a href="admin/vulnerabilities.html">Vulnerabilities</a></h3>
+  <p><strong>Summary.</strong> OSV.dev + NVD scan of installed apt + pip components. Multi-select to bulk-suppress or open external advisories.</p>
+  <p><strong>Purpose.</strong> Know your own CVE posture without standing up a separate vuln-mgmt tool — and keep the CVE list small enough that people actually read it.</p>
+  <ul>
+    <li><strong>Findings</strong> — per-CVE severity, fixed-in version, advisory link.</li>
+    <li><strong>Suppress</strong> — temporary or permanent, with reason text.</li>
+    <li><strong>History</strong> — when a finding first appeared / was fixed / was suppressed.</li>
+  </ul>
+
+  <h3 id="admin-health"><a href="admin/health.html">System Health</a></h3>
+  <p><strong>Summary.</strong> Live self-check of services, DB, keys, cert, disk, memory, integrity chain. Destructive repair actions require a second admin.</p>
+  <p><strong>Purpose.</strong> The first place to look when "is something broken on this box" — and a common truth-source so admins don't disagree about service state.</p>
+  <ul>
+    <li><strong>Services</strong> — nginx · app · celery · beat · postgres · valkey · bind9 · fail2ban.</li>
+    <li><strong>Storage</strong> — disk usage per mount; WAL &amp; backup disk headroom.</li>
+    <li><strong>Keys</strong> — master key presence, rotation age, vault integrity.</li>
+    <li><strong>Integrity chain</strong> — HMAC-chain audit verification for the configured retention window.</li>
+    <li><strong>Repair</strong> — rebuild caches, re-pull zones, restart components (audited).</li>
+  </ul>
+
+  <h3 id="admin-updates"><a href="admin/updates.html">Updates</a></h3>
+  <p><strong>Summary.</strong> Pending apt updates, pinned version manifest, drift detection, snapshot + update history. Actual upgrade is CLI-only (<code>meridian-nip upgrade</code>).</p>
+  <p><strong>Purpose.</strong> Let admins <em>prepare</em> upgrades (review what changes, snapshot, schedule) from the portal, without the portal silently upgrading itself under load.</p>
+  <ul>
+    <li><strong>Pending</strong> — apt-updatable packages with security-flag filter.</li>
+    <li><strong>Pinned manifest</strong> — the tested-version list for this Meridian release.</li>
+    <li><strong>Drift</strong> — installed vs. manifest deltas.</li>
+    <li><strong>Snapshot</strong> — take an LVM snapshot + DB dump before upgrading.</li>
+    <li><strong>History</strong> — every upgrade attempt, duration, success/fail.</li>
+  </ul>
+
+  <h3 id="admin-webhooks"><a href="admin/webhooks.html">Webhooks</a></h3>
+  <p><strong>Summary.</strong> HMAC-signed inbound receivers + outbound fan-out. Signing secrets are shown exactly once — store them then, they're vault-only after.</p>
+  <p><strong>Purpose.</strong> The integration edge: bring events in from outside systems (receivers) and push events out to chat / ticketing / SIEM (fan-out).</p>
+  <ul>
+    <li><strong>Inbound receivers</strong> — URL, allowed methods, signing secret, expected content-type.</li>
+    <li><strong>Outbound destinations</strong> — URL, event filter, retry policy, last delivery result.</li>
+    <li><strong>Test</strong> — send a sample payload; confirm signature on the receiver.</li>
+  </ul>
+
+  <h3 id="admin-branding"><a href="admin/branding.html">Branding &amp; identity</a></h3>
+  <p><strong>Summary.</strong> Customer-level personalization — logo, colors, login banner, display name, contact links. Applies site-wide on save.</p>
+  <p><strong>Purpose.</strong> Let MSPs &amp; enterprises reskin the portal so it reads as "their tool" without code changes.</p>
+  <ul>
+    <li><strong>Identity</strong> — display name, logo, favicon, login background.</li>
+    <li><strong>Colors</strong> — accent, warn, danger; previewed live before save.</li>
+    <li><strong>Banners</strong> — pre-login warning, post-login notice, maintenance ribbon.</li>
+    <li><strong>Contact / links</strong> — logo click-url, support URL, AUP link.</li>
+    <li><strong>License security</strong> — current commercial-license key, hardware fingerprint, expiry (see <a href="legal/terms.html">Terms of use</a>).</li>
+  </ul>
+
+  <h3 id="admin-security"><a href="admin/security.html">Database security</a></h3>
+  <p><strong>Summary.</strong> The 4-layer data protection model — LUKS, AES-256-GCM field-level, HMAC hash-chain audit, localhost-only SQL. Master key handling + tamper detection.</p>
+  <p><strong>Purpose.</strong> Reference doc for auditors and for admins preparing backup/restore plans that must preserve the security posture.</p>
+
+  <h3 id="admin-scheduled"><a href="admin/scheduled-jobs.html">Scheduled jobs</a></h3>
+  <p><strong>Summary.</strong> The pre-made job catalog, cron editing, retention policy, CAB freeze windows.</p>
+  <p><strong>Purpose.</strong> Tune what runs when, and how long the results are kept — without editing crontabs on the box.</p>
+
+  <h3 id="admin-backup"><a href="admin/backup-restore.html">Backup &amp; restore</a></h3>
+  <p><strong>Summary.</strong> Full backup bundles · WAL shipping · the include-keys decision · step-by-step restore.</p>
+  <p><strong>Purpose.</strong> The playbook for "we have to move this install to new hardware" or "we have to recover from a bad upgrade."</p>
+
+  <hr>
+
+  <h2>Reference</h2>
+  <table>
+    <tr><td><a href="reference/cli.html"><code>meridian-nip</code> CLI</a></td><td>Every command, flag, and exit code</td></tr>
+  </table>
+
+  <h2>Legal &amp; compliance</h2>
+  <table>
+    <tr><td><a href="legal/terms.html">Terms of use</a></td><td>Meridian's license model (FSL-1.1 → Apache-2.0) and the commercial-use tier for companies that need a formal agreement</td></tr>
+    <tr><td><a href="legal/aup-template.html">Acceptable Use Policy template</a></td><td>Sample policy text; customize in Admin → Branding</td></tr>
+    <tr><td><a href="legal/oss.html">Open-source licenses</a></td><td>How Meridian handles third-party attribution and SBOM export</td></tr>
+  </table>
+</main>
+</div>
+
+<script>
+(function(){
+  const s = document.getElementById('docs-search');
+  if (!s) return;
+  const links = [...document.querySelectorAll('.sidebar a:not(.logo)')];
+  const heads = [...document.querySelectorAll('.sidebar h3')];
+  s.addEventListener('input', () => {
+    const q = s.value.trim().toLowerCase();
+    if (!q) { links.forEach(a => a.classList.remove('hidden')); heads.forEach(h => h.classList.remove('hidden')); return; }
+    links.forEach(a => a.classList.toggle('hidden', !a.textContent.toLowerCase().includes(q)));
+    heads.forEach(h => {
+      let n = h.nextElementSibling, vis = false;
+      while (n && n.tagName === 'A') { if (!n.classList.contains('hidden')) vis = true; n = n.nextElementSibling; }
+      h.classList.toggle('hidden', !vis);
+    });
+  });
+})();
+</script>
+</body>
+</html>

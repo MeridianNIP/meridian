@@ -1,0 +1,131 @@
+# Meridian · Nginx vhost template
+# Rendered by install.sh via envsubst. Variables:
+#   ${PORTAL_DOMAIN}   ${INSTALL_ROOT}
+# TLS paths default to /etc/letsencrypt; install.sh rewrites for
+# cloudflare / self-signed / none modes before placing the file.
+
+# Rate-limit zones (global). Keep keys small; 10 MB → ~160k unique clients.
+limit_req_zone  $binary_remote_addr zone=meridian_login:10m rate=5r/m;
+limit_req_zone  $binary_remote_addr zone=meridian_api:10m   rate=240r/m;
+limit_req_zone  $binary_remote_addr zone=meridian_tools:10m rate=60r/m;
+
+# Cache bust for /static
+map $sent_http_content_type $static_cache {
+    default                          "no-store, must-revalidate";
+    ~*^(image|font|application/font) "public, max-age=31536000, immutable";
+    ~*^text/css                      "public, max-age=31536000, immutable";
+    ~*^application/javascript        "public, max-age=31536000, immutable";
+}
+
+# server_tokens is set off in /etc/nginx/nginx.conf (Debian default).
+
+# HTTP → HTTPS redirect + ACME HTTP-01 challenge location.
+server {
+    listen      80;
+    listen      [::]:80;
+    server_name ${PORTAL_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+
+    access_log /var/log/nginx/meridian-access.log combined;
+    error_log  /var/log/nginx/meridian-error.log  warn;
+}
+
+# Primary vhost.
+server {
+    listen       443 ssl http2;
+    listen       [::]:443 ssl http2;
+    server_name  ${PORTAL_DOMAIN};
+
+    # --- TLS ---
+    ssl_certificate           /etc/letsencrypt/live/${PORTAL_DOMAIN}/fullchain.pem;
+    ssl_certificate_key       /etc/letsencrypt/live/${PORTAL_DOMAIN}/privkey.pem;
+    ssl_trusted_certificate   /etc/letsencrypt/live/${PORTAL_DOMAIN}/chain.pem;
+    ssl_session_cache         shared:MERIDIAN_TLS:20m;
+    ssl_session_timeout       1d;
+    ssl_session_tickets       off;
+    ssl_protocols             TLSv1.2 TLSv1.3;
+    ssl_ciphers               'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256';
+    ssl_prefer_server_ciphers off;
+
+    # Portal-managed TLS overrides (System Health → "Repair" buttons write
+    # snippets like ocsp-stapling.conf into this directory). The base
+    # template intentionally does NOT also set ssl_stapling /
+    # ssl_stapling_verify / resolver — duplicating them here would make
+    # nginx refuse to load with "directive is duplicate". install.sh
+    # seeds the default ocsp-stapling.conf on fresh installs.
+    include /etc/meridian/nginx-overrides/*.conf;
+
+    # --- Security headers ---
+    add_header Strict-Transport-Security   "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Frame-Options             DENY                                          always;
+    add_header X-Content-Type-Options      nosniff                                        always;
+    add_header Referrer-Policy             strict-origin-when-cross-origin               always;
+    add_header Permissions-Policy          "camera=(), microphone=(), geolocation=()"    always;
+    add_header Content-Security-Policy     "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" always;
+    add_header X-Meridian-Node             "${PORTAL_DOMAIN}"                             always;
+
+    # --- Body + timeouts ---
+    client_max_body_size 20m;
+    client_body_timeout  30s;
+    client_header_timeout 20s;
+    send_timeout         30s;
+    keepalive_timeout    65s;
+
+    # --- Static assets (cached) ---
+    location /static/ {
+        alias ${INSTALL_ROOT}/app/static/;
+        access_log off;
+        add_header Cache-Control $static_cache always;
+        try_files $uri =404;
+    }
+
+    # --- Operator-facing docs (HTML + assets shipped in the tarball) ---
+    location /docs/ {
+        alias ${INSTALL_ROOT}/docs/;
+        access_log off;
+        try_files $uri $uri/index.html =404;
+    }
+
+    # --- ACME challenge persistence (still valid after redirect) ---
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    # --- Rate-limited login endpoint ---
+    location = /auth/login {
+        limit_req zone=meridian_login burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        include    /etc/nginx/snippets/meridian_proxy.conf;
+    }
+
+    # --- API ---
+    location /api/ {
+        limit_req zone=meridian_api burst=60 nodelay;
+        proxy_pass http://127.0.0.1:8000;
+        include    /etc/nginx/snippets/meridian_proxy.conf;
+    }
+
+    # --- Sandboxed tool runs are a little more restrictive ---
+    location /tools/ {
+        limit_req zone=meridian_tools burst=20 nodelay;
+        proxy_pass http://127.0.0.1:8000;
+        include    /etc/nginx/snippets/meridian_proxy.conf;
+    }
+
+    # --- App (everything else) ---
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        include    /etc/nginx/snippets/meridian_proxy.conf;
+    }
+
+    access_log /var/log/nginx/meridian-access.log combined buffer=16k flush=5s;
+    error_log  /var/log/nginx/meridian-error.log  warn;
+}

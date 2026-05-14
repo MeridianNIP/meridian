@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backup &amp; restore · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">ADMIN · BACKUP &amp; RESTORE</div>
+<h1>Backup &amp; restore</h1>
+<div class="page-sub">How Meridian's backup model works, what's in a bundle, and how to restore onto a fresh host.</div>
+
+<h2>What gets backed up</h2>
+<p><code>scripts/backup.sh</code> produces a zstd-compressed tarball with:</p>
+<ul>
+<li><code>db.dump</code> — <code>pg_dump -Fc -Z 6</code> of the whole database</li>
+<li><code>etc-meridian/</code> — the config tree at <code>/etc/meridian</code></li>
+<li><code>uploads/</code> — the file repo (<code>/var/lib/meridian/uploads</code>)</li>
+<li><code>branding/</code> — uploaded logos and AUP assets</li>
+<li><code>MANIFEST</code> — metadata: timestamp, host, DB name, includes-keys flag, component list</li>
+<li><code>secrets/</code> — only if <code>--include-keys</code> was passed</li>
+</ul>
+
+<h2>The <code>--include-keys</code> decision</h2>
+<div class="callout warn"><span class="lbl">TRADE-OFF</span><div>
+<strong>Without keys:</strong> smaller, safer bundle. Can only be restored onto a host that already has the same master keys (i.e., the same box after a config rollback).<br>
+<strong>With keys:</strong> full DR bundle. Can be restored onto any fresh host. But the bundle now contains the crown jewels — store it with the same care as the source.</div></div>
+<p>Policy recommendation: take routine backups <em>without</em> keys for operational rollback, and take one <em>with</em>-keys backup per significant-change event (license install, master-key rotation, major upgrade). Keep the with-keys bundles offline in secured storage.</p>
+
+<h2>Manual backup</h2>
+<pre><code># Routine (no keys):
+sudo /opt/meridian/scripts/backup.sh
+
+# DR-grade (with keys) — keep this offline:
+sudo /opt/meridian/scripts/backup.sh --include-keys
+
+# Custom output location:
+sudo /opt/meridian/scripts/backup.sh --output /mnt/offsite/</code></pre>
+
+<h2>Automatic backups</h2>
+<p>Three jobs run without intervention:</p>
+<ul>
+<li><code>db-full-backup</code> — daily 02:00, routine (no keys)</li>
+<li><code>db-wal-ship</code> — every 15 minutes, for point-in-time recovery</li>
+<li><code>backup-rotation</code> — daily 02:00, keeps 7 daily + 4 weekly + 3 monthly snapshots</li>
+</ul>
+<p>WAL archive lives at <code>/var/lib/meridian/backups/wal/</code> (gzipped per-segment). Adjust retention in Admin → Scheduled Jobs.</p>
+
+<h2>Restore</h2>
+<h3>Verify the bundle first (no changes made)</h3>
+<pre><code>sudo /opt/meridian/scripts/restore.sh --dry-run /path/to/bundle.tar.zst</code></pre>
+
+<h3>Full restore</h3>
+<pre><code>sudo /opt/meridian/scripts/restore.sh /path/to/bundle.tar.zst</code></pre>
+<p>The script:</p>
+<ol>
+<li>Extracts + verifies the <code>MANIFEST</code>.</li>
+<li>Shows what it's about to replace.</li>
+<li>Requires you to type <code>RESTORE</code> exactly to confirm.</li>
+<li>Stops <code>meridian-app</code>, <code>meridian-celery</code>, <code>meridian-beat</code>.</li>
+<li>Drops + recreates the DB, <code>pg_restore</code>s with <code>--no-owner --role meridian</code>.</li>
+<li>rsyncs <code>etc-meridian/</code>, <code>uploads/</code>, <code>branding/</code>, and (if present) <code>secrets/</code> back into place.</li>
+<li>Starts services and verifies all three stay up.</li>
+</ol>
+
+<h2>Restoring onto a fresh host</h2>
+<p>You need a <code>--include-keys</code> bundle for this. Workflow:</p>
+<ol>
+<li>Stand up a new Debian 13 (or 12) host.</li>
+<li>Run <code>install.sh</code>. Use the same portal domain as the source host if you hold a domain-bound commercial-use key. Leave the license prompt blank (FSL mode) or paste a throwaway key — it'll be overwritten when you restore the DB.</li>
+<li>Copy the bundle onto the host.</li>
+<li><code>sudo /opt/meridian/scripts/restore.sh /path/to/bundle.tar.zst</code></li>
+<li>Log in. The old license, users, audit history, and branding are all back.</li>
+</ol>
+<div class="callout info"><span class="lbl">LICENSE BINDING</span><div>If the new host has a different hardware fingerprint, the license will refuse to activate after restore. Use the vendor portal to request reactivation with the new fingerprint, or (for airgapped installs) contact support to re-issue the signed license against the new fingerprint.</div></div>
+
+<h2>Point-in-time recovery (PITR)</h2>
+<p>The <code>db-wal-ship</code> job archives WAL segments every 15 minutes. To recover to a specific point:</p>
+<ol>
+<li>Identify the target recovery time.</li>
+<li>Extract the most-recent full backup from before that time.</li>
+<li>Restore the backup normally.</li>
+<li>Replay WAL from <code>/var/lib/meridian/backups/wal/</code> up to the target time using <code>restore_command</code> in <code>recovery.conf</code>.</li>
+</ol>
+<p>This is a PostgreSQL-level operation; see the PG docs for specifics. Meridian does not ship a PITR wizard in 1.0.0.</p>
+
+<h2>Verifying backup integrity</h2>
+<p>A bundle that won't restore is worse than useless. Verify monthly:</p>
+<pre><code># Dry-run a random recent bundle:
+sudo /opt/meridian/scripts/restore.sh --dry-run \
+     /var/lib/meridian/backups/full/meridian-backup-*.tar.zst</code></pre>
+<p>For extra confidence, spin up a throwaway test host periodically and perform a full restore onto it.</p>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

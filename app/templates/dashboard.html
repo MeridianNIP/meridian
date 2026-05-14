@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% set active = 'dashboard' %}
+{% block title %}Dashboard · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Welcome back, {{ user.display_name or user.username }}</div>
+    <div class="page-sub">{{ now_local }} · all systems operational</div>
+</div>
+  {% with docs_path="user/dashboard.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% if backup_codes_low %}
+<div class="alert alert-warn" style="margin:0 0 14px;padding:10px 14px;border-left:3px solid var(--warn);background:rgba(234,179,8,.07);font-size:12px;line-height:1.5;color:var(--text);display:flex;align-items:center;gap:12px;">
+  <span style="font-size:16px;line-height:1;">⚠</span>
+  <div style="flex:1;">
+    <strong>MFA backup codes running low.</strong>
+    You have <strong>{{ backup_codes_remaining }}</strong> backup code{{ '' if backup_codes_remaining == 1 else 's' }} left.
+    If you lose your authenticator now, an admin will need to reset your MFA.
+    <a href="/ui/settings#mfa" style="color:var(--accent);text-decoration:underline;">Regenerate codes</a>.
+  </div>
+</div>
+{% endif %}
+
+{# Each tile is a whole-card link. Destinations are role-aware: admin lands
+   on the admin-scoped detail page (sees everyone); non-admin lands on the
+   personal view (their own sessions). #}
+{% set is_admin = user.role in ('admin', 'super_admin') %}
+<div class="stat-grid">
+  <a class="stat" href="/ui/monitors" style="text-decoration:none;color:inherit;display:block;"
+     title="Open the Monitors / query log page">
+    <div class="stat-label">Queries today</div>
+    <div class="stat-value">{{ stats.queries_today }}</div>
+    <div class="stat-delta">{{ stats.query_delta }}</div>
+  </a>
+  <a class="stat" href="{{ '/ui/admin/users' if is_admin else '/ui/settings#sessions' }}"
+     style="text-decoration:none;color:inherit;display:block;"
+     title="{{ 'All active sessions across users (admin view)' if is_admin else 'Your active sessions' }}">
+    <div class="stat-label">Active sessions</div>
+    <div class="stat-value">{{ stats.sessions }}</div>
+    <div class="stat-delta">
+      {% if is_admin %}all users · last 24h{% else %}across your devices{% endif %}
+    </div>
+  </a>
+  <a class="stat" href="/ui/monitors#alerts" style="text-decoration:none;color:inherit;display:block;"
+     title="Recent monitor alerts">
+    <div class="stat-label">Recent alerts</div>
+    <div class="stat-value">{{ stats.alerts }}</div>
+    <div class="stat-delta">last 24h</div>
+  </a>
+  <a class="stat" href="/ui/settings"
+     style="text-decoration:none;color:inherit;display:block;"
+     title="Your account settings + sessions">
+    <div class="stat-label">Account</div>
+    <div class="stat-value" style="font-size:18px;">{{ user.role|upper }}</div>
+    <div class="stat-delta">{{ user.username }}</div>
+  </a>
+</div>
+
+<div class="two-col">
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Pinned tools</div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-ghost" id="pinned-edit" style="padding:4px 10px;font-size:10px;">Edit pins</button>
+      </div>
+    </div>
+    <div class="tile-grid" id="pinned-grid">
+      <div style="color:var(--text-dimmer);font-size:11px;padding:10px;">loading pinned tools…</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Recent activity</div></div>
+    {% if recent_audit %}
+      <ul style="list-style:none;padding:0;font-size:12px;color:var(--text-dim);line-height:1.8;">
+        {% for ev in recent_audit %}
+          <li><span style="font-family:var(--mono);color:var(--text-faint);">{{ ev.ts.strftime('%H:%M') }}</span>
+              &nbsp; <span style="color:var(--text);font-weight:500;">{{ ev.actor }}</span>
+              &nbsp; <strong style="color:var(--text);font-weight:500;">{{ ev.action }}</strong>
+              {% if ev.target %} · {{ ev.target }}{% endif %}
+              {% if ev.outcome and ev.outcome != 'ok' %} · <span style="color:var(--warn);">{{ ev.outcome }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div style="color:var(--text-dimmer);font-size:12px;font-style:italic;">No activity yet.</div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function(){
+  // Catalog of pinnable tools. Keys here are stable across deploys —
+  // the user's `preferences.pinned_tools` stores a list of these keys.
+  const CATALOG = [
+    // DNS sub-tabs
+    {key:'dns-dig',         label:'Dig sandbox',        meta:'DNS',          href:'/ui/dns-tools#dig'},
+    {key:'dns-propagation', label:'Propagation',        meta:'DNS · 16 resolvers', href:'/ui/dns-tools#propagation'},
+    {key:'dns-dnssec',      label:'DNSSEC',             meta:'DNS',          href:'/ui/dns-tools#dnssec'},
+    {key:'dns-reverse',     label:'Reverse DNS',        meta:'DNS',          href:'/ui/dns-tools#reverse'},
+    {key:'dns-zonehealth',  label:'Zone Health',        meta:'DNS',          href:'/ui/dns-tools#zonehealth'},
+    {key:'dns-axfr',        label:'AXFR',               meta:'DNS',          href:'/ui/dns-tools#axfr'},
+    {key:'dns-crtsh',       label:'CT / crt.sh',        meta:'DNS',          href:'/ui/dns-tools#crtsh'},
+    {key:'dns-whois',       label:'WHOIS',              meta:'DNS',          href:'/ui/dns-tools#whois'},
+    {key:'dns-bulkwhois',   label:'Bulk WHOIS',         meta:'DNS',          href:'/ui/dns-tools#bulkwhois'},
+    {key:'dns-typosquat',   label:'Typosquat',          meta:'DNS',          href:'/ui/dns-tools#typosquat'},
+    {key:'dns-resolvers',   label:'Resolvers',          meta:'DNS',          href:'/ui/dns-tools#resolvers'},
+    {key:'dns-hoptrace',    label:'Hop Trace',          meta:'DNS',          href:'/ui/dns-tools#hoptrace'},
+    // Network Tools
+    {key:'net-ping',        label:'Ping',               meta:'NETWORK',      href:'/ui/network-tools#ping'},
+    {key:'net-trace',       label:'Traceroute',         meta:'NETWORK',      href:'/ui/network-tools#trace'},
+    {key:'net-httptest',    label:'HTTP test',          meta:'NETWORK',      href:'/ui/network-tools#httptest'},
+    {key:'net-portscan',    label:'Port scan',          meta:'NETWORK',      href:'/ui/network-tools#portscan'},
+    {key:'net-snmp',        label:'SNMP walk',          meta:'NETWORK',      href:'/ui/network-tools#snmp'},
+    {key:'net-pcap',        label:'Packet capture',     meta:'NETWORK',      href:'/ui/network-tools#pcap'},
+    {key:'net-asn',         label:'ASN lookup',         meta:'NETWORK',      href:'/ui/network-tools#asn'},
+    {key:'net-bgp',         label:'BGP LG',             meta:'NETWORK',      href:'/ui/network-tools#bgp'},
+    {key:'net-geoip',       label:'Geolocation',        meta:'NETWORK',      href:'/ui/network-tools#geoip'},
+    {key:'net-headers',     label:'Header audit',       meta:'NETWORK',      href:'/ui/network-tools#headers'},
+    {key:'net-devices',     label:'Network devices',    meta:'NETWORK',      href:'/ui/network-tools#devices'},
+    // Threat Intel sub-tabs
+    {key:'ti-cve',          label:'CVE (NVD)',          meta:'THREAT',       href:'/ui/threat-intel#cve'},
+    {key:'ti-kev',          label:'CISA KEV',           meta:'THREAT',       href:'/ui/threat-intel#kev'},
+    {key:'ti-epss',         label:'EPSS',               meta:'THREAT',       href:'/ui/threat-intel#epss'},
+    {key:'ti-circl',        label:'CIRCL',              meta:'THREAT',       href:'/ui/threat-intel#circl'},
+    {key:'ti-reputation',   label:'IP rep (DNSBL)',     meta:'THREAT',       href:'/ui/threat-intel#reputation'},
+    {key:'ti-dshield',      label:'DShield',            meta:'THREAT',       href:'/ui/threat-intel#dshield'},
+    {key:'ti-abuseipdb',    label:'AbuseIPDB',          meta:'THREAT · keyed',href:'/ui/threat-intel#abuseipdb'},
+    {key:'ti-greynoise',    label:'GreyNoise',          meta:'THREAT · keyed',href:'/ui/threat-intel#greynoise'},
+    {key:'ti-virustotal',   label:'VirusTotal',         meta:'THREAT · keyed',href:'/ui/threat-intel#virustotal'},
+    {key:'ti-urlscan',      label:'URLScan.io',         meta:'THREAT · keyed',href:'/ui/threat-intel#urlscan'},
+    {key:'ti-shodan',       label:'Shodan',             meta:'THREAT · keyed',href:'/ui/threat-intel#shodan'},
+    {key:'ti-censys',       label:'Censys',             meta:'THREAT · keyed',href:'/ui/threat-intel#censys'},
+    // Wizards — landing + each of the 11 shipped flows
+    {key:'wiz',             label:'Wizards',            meta:'guided flows', href:'/ui/wizards'},
+    {key:'wiz-dns-resolve', label:'DNS — why not resolving',             meta:'WIZARD', href:'/ui/wizards?wizard_key=dns.resolve_fail'},
+    {key:'wiz-mail',        label:'Mail — delivery troubleshoot',         meta:'WIZARD', href:'/ui/wizards?wizard_key=mail.delivery'},
+    {key:'wiz-ssl',         label:'SSL/TLS deep inspect',                 meta:'WIZARD', href:'/ui/wizards?wizard_key=ssl.deep_inspect'},
+    {key:'wiz-dnssec',      label:'DNSSEC chain walker',                  meta:'WIZARD', href:'/ui/wizards?wizard_key=dnssec.chain'},
+    {key:'wiz-zone-health', label:'Zone health',                          meta:'WIZARD', href:'/ui/wizards?wizard_key=zone.health'},
+    {key:'wiz-registrar',   label:'Registrar vs auth NS',                 meta:'WIZARD', href:'/ui/wizards?wizard_key=registrar.mismatch'},
+    {key:'wiz-bringup',     label:'New domain bring-up',                  meta:'WIZARD', href:'/ui/wizards?wizard_key=domain.bringup'},
+    {key:'wiz-dmarc',       label:'DMARC tuning',                         meta:'WIZARD', href:'/ui/wizards?wizard_key=dmarc.tuning'},
+    {key:'wiz-typosquat',   label:'Typosquat sweep',                      meta:'WIZARD', href:'/ui/wizards?wizard_key=typosquat.sweep'},
+    {key:'wiz-cloudflare',  label:'Cloudflare validator',                 meta:'WIZARD', href:'/ui/wizards?wizard_key=cloudflare.validator'},
+    {key:'wiz-mailflow',    label:'Mail flow validator',                  meta:'WIZARD', href:'/ui/wizards?wizard_key=mail.flow_validator'},
+    // Everything else
+    {key:'monitors',        label:'Monitors',           meta:'UPTIME',       href:'/ui/monitors'},
+    {key:'certs',           label:'Certificates',       meta:'TLS',          href:'/ui/certificates'},
+    {key:'runbooks',        label:'Runbooks',           meta:'automation',   href:'/ui/runbooks'},
+    {key:'directory',       label:'Directory',          meta:'AD',           href:'/ui/directory'},
+    {key:'files',           label:'File Repo',          meta:'storage',      href:'/ui/files'},
+    {key:'links',           label:'Important Links',    meta:'bookmarks',    href:'/ui/links'},
+    {key:'messages',        label:'Messages',           meta:'inbox',        href:'/ui/messages'},
+    {key:'approvals',       label:'Approvals',          meta:'CAB',          href:'/ui/approvals'},
+    // Admin
+    {key:'admin',           label:'Admin overview',     meta:'ADMIN',        href:'/ui/admin'},
+    {key:'admin-users',     label:'Admin · Users',      meta:'ADMIN',        href:'/ui/admin/users'},
+    {key:'admin-health',    label:'Admin · Health',     meta:'ADMIN',        href:'/ui/admin/health'},
+    {key:'admin-updates',   label:'Admin · Updates',    meta:'ADMIN',        href:'/ui/admin/updates'},
+    {key:'admin-integrations', label:'Admin · Integrations', meta:'ADMIN',   href:'/ui/admin/integrations'},
+    {key:'admin-settings',  label:'Global Settings',    meta:'ADMIN',        href:'/ui/admin/settings'},
+  ];
+  const DEFAULTS = ['dns-dig','dns-propagation','net-ping','wiz','certs','directory'];
+  function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+  async function load() {
+    const r = await fetch('/api/v1/settings/preferences?key=pinned_tools',
+                          {credentials:'same-origin'});
+    let pins = DEFAULTS;
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data.value) && data.value.length) pins = data.value;
+    }
+    render(pins);
+  }
+  function render(pins) {
+    const grid = document.getElementById('pinned-grid');
+    const byKey = new Map(CATALOG.map(t => [t.key, t]));
+    const tiles = pins.map(k => byKey.get(k)).filter(Boolean);
+    if (!tiles.length) {
+      grid.innerHTML = `<div style="color:var(--text-dimmer);font-size:11px;padding:10px;">No tools pinned. Click Edit pins to choose your favourites.</div>`;
+      return;
+    }
+    grid.innerHTML = tiles.map(t => `
+      <a class="tile" href="${esc(t.href)}"><div class="tile-ic"></div><div class="tile-name">${esc(t.label)}</div><div class="tile-meta">${esc(t.meta)}</div></a>
+    `).join('');
+  }
+
+  async function openEditor() {
+    const r = await fetch('/api/v1/settings/preferences?key=pinned_tools',
+                          {credentials:'same-origin'});
+    let current = DEFAULTS;
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data.value) && data.value.length) current = data.value;
+    }
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto;';
+
+    // Two panes: pinned (draggable to reorder) on the left, available
+    // (grouped by category) on the right. Clicking a row toggles it
+    // between panes.
+    const byKey = new Map(CATALOG.map(t => [t.key, t]));
+    const pinnedKeys = current.filter(k => byKey.has(k));
+    // Group the available catalog by the first word of meta.
+    const groupOrder = ['DNS','NETWORK','THREAT','WIZARD','UPTIME','TLS','ADMIN','bookmarks','storage','inbox','CAB','automation','AD','guided flows'];
+    function groupOf(t) {
+      const head = (t.meta || '').split(' ')[0].split('·')[0].trim();
+      return head || 'OTHER';
+    }
+
+    function rowHtml(t, pinned) {
+      return `
+        <div class="pin-row" data-key="${esc(t.key)}" data-pinned="${pinned}"
+             ${pinned ? 'draggable="true"' : ''}
+             style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:3px 0;border:1px solid var(--border);border-radius:6px;background:rgba(255,255,255,.02);cursor:${pinned ? 'grab' : 'pointer'};">
+          ${pinned ? '<span style="font-family:var(--mono);color:var(--text-dimmer);padding:0 4px;" title="drag to reorder">☰</span>' : ''}
+          <div style="flex:1;min-width:0;">
+            <div style="color:var(--text);font-size:12px;">${esc(t.label)}</div>
+            <div style="color:var(--text-dim);font-size:10px;">${esc(t.meta)} · ${esc(t.href)}</div>
+          </div>
+          <button type="button" class="btn btn-ghost pin-toggle" style="padding:2px 10px;font-size:10px;">${pinned ? '× remove' : '+ pin'}</button>
+        </div>`;
+    }
+
+    function render() {
+      const pinnedPane = overlay.querySelector('[data-pane="pinned"]');
+      const availPane  = overlay.querySelector('[data-pane="available"]');
+      pinnedPane.innerHTML = pinnedKeys.length
+        ? pinnedKeys.map(k => rowHtml(byKey.get(k), true)).join('')
+        : '<div style="color:var(--text-dimmer);font-size:11px;padding:8px;font-style:italic;">No pins yet — click + pin on the right to add.</div>';
+      // Available = catalog minus pinned, grouped.
+      const avail = CATALOG.filter(t => !pinnedKeys.includes(t.key));
+      const groups = {};
+      for (const t of avail) (groups[groupOf(t)] ||= []).push(t);
+      const sortedGroups = Object.keys(groups).sort((a,b) => {
+        const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
+      availPane.innerHTML = sortedGroups.map(g => `
+        <div style="margin-top:10px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);letter-spacing:.06em;text-transform:uppercase;padding:0 8px 4px;">${esc(g)}</div>
+          ${groups[g].map(t => rowHtml(t, false)).join('')}
+        </div>`).join('');
+      wire();
+    }
+
+    function wire() {
+      overlay.querySelectorAll('.pin-toggle').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const row = btn.closest('.pin-row');
+          const key = row.dataset.key;
+          if (pinnedKeys.includes(key)) {
+            pinnedKeys.splice(pinnedKeys.indexOf(key), 1);
+          } else {
+            pinnedKeys.push(key);
+          }
+          render();
+        });
+      });
+      // Drag reorder within pinned pane
+      let dragged = null;
+      overlay.querySelectorAll('[data-pane="pinned"] .pin-row').forEach(el => {
+        el.addEventListener('dragstart', (e) => {
+          dragged = el; el.style.opacity = '0.5';
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', el.dataset.key);
+        });
+        el.addEventListener('dragend', () => {
+          if (dragged) dragged.style.opacity = '';
+          dragged = null;
+        });
+        el.addEventListener('dragover', e => { if (dragged) e.preventDefault(); });
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          if (!dragged || dragged === el) return;
+          const pinnedPane = overlay.querySelector('[data-pane="pinned"]');
+          const all = [...pinnedPane.querySelectorAll('.pin-row')];
+          const srcIdx = all.indexOf(dragged);
+          const dstIdx = all.indexOf(el);
+          if (srcIdx < dstIdx) pinnedPane.insertBefore(dragged, el.nextSibling);
+          else                 pinnedPane.insertBefore(dragged, el);
+          pinnedKeys.length = 0;
+          pinnedPane.querySelectorAll('.pin-row').forEach(r => pinnedKeys.push(r.dataset.key));
+        });
+      });
+    }
+
+    overlay.innerHTML = `
+      <div class="card" style="max-width:980px;width:100%;background:var(--bg-card,#13181f);">
+        <div class="card-head">
+          <div class="card-title">Pin tools to your dashboard</div>
+          <button class="btn btn-ghost" data-close style="padding:4px 10px;font-size:10px;">close</button>
+        </div>
+        <div style="padding:10px 14px;font-size:12px;color:var(--text-dim);">
+          Left = your pinned tools (drag ☰ to reorder, × to unpin). Right = everything available (click + pin to add).
+          Your layout is private.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:6px 14px 12px;">
+          <div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.06em;text-transform:uppercase;padding:0 6px 6px;">Pinned (drag to reorder)</div>
+            <div data-pane="pinned" style="min-height:100px;border:1px dashed var(--border);border-radius:6px;padding:6px;"></div>
+          </div>
+          <div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;padding:0 6px 6px;">Available — click + pin</div>
+            <div data-pane="available" style="max-height:60vh;overflow:auto;padding:0 6px;"></div>
+          </div>
+        </div>
+        <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
+          <button class="btn btn-ghost" data-close style="padding:6px 14px;">Cancel</button>
+          <button class="btn btn-primary" data-save style="padding:6px 14px;">Save pins</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    render();
+    overlay.querySelectorAll('[data-close]').forEach(b =>
+      b.addEventListener('click', () => overlay.remove()));
+    overlay.querySelector('[data-save]').addEventListener('click', async () => {
+      await fetch('/api/v1/settings/preferences', {
+        method:'PUT', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({key:'pinned_tools', value: pinnedKeys}),
+      });
+      overlay.remove();
+      load();
+    });
+  }
+  document.getElementById('pinned-edit').addEventListener('click', openEditor);
+
+  load();
+})();
+</script>
+{% endblock %}

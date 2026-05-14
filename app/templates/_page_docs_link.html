@@ -1,0 +1,19 @@
+{#
+Renders a small "Docs ↗" button that opens the corresponding doc page in a
+new tab. Keeps the Docs link visually identical across the whole portal so
+users learn "top-right of every page" as the docs entry point.
+
+Usage:
+    {% include "_page_docs_link.html" with context %}
+with the caller setting `docs_path = 'user/dns-tools.html'` (or admin/…).
+#}
+{% if docs_path %}
+<a class="btn btn-ghost"
+   href="/docs/{{ docs_path }}"
+   target="_blank"
+   rel="noopener"
+   title="Open documentation for this page"
+   style="font-family:var(--mono);font-size:11px;padding:5px 10px;text-decoration:none;">
+  Docs &#8599;
+</a>
+{% endif %}

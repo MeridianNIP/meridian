@@ -1,0 +1,91 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scope Manager · Meridian Docs</title>
+    <link rel="stylesheet" href="../css/docs.css">
+    </head>
+    <body>
+    <div class="grid-bg"></div>
+    <div class="frame">
+    <aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+    <main class="content">
+    <div class="page-meta">ADMIN · SCOPE MANAGER</div>
+    <h1>Scope Manager</h1>
+    <div class="page-sub">Override which networks count as internal/external, plus a hard deny list. Applies to every probe.</div>
+    <h2>Default scope</h2>
+<p>Set at install: <code>internal</code>, <code>external</code>, or <code>both</code>. Meridian uses it to prevent accidentally scanning a public address from an internal-only deployment (or vice versa).</p>
+
+<h2>Per-network overrides</h2>
+<ul>
+<li>Add a CIDR + label. Example: <code>10.0.0.0/8</code> &rarr; <strong>internal</strong>; <code>203.0.113.0/24</code> &rarr; <strong>external</strong>.</li>
+<li>Overlapping rules: most-specific prefix wins.</li>
+</ul>
+
+<h2>Deny list</h2>
+<p>A second layer: CIDRs that are <em>always</em> rejected regardless of scope. Use for things you should never probe — link-local, cloud metadata endpoints (<code>169.254.169.254</code>), broadcast addresses, your own management VLAN.</p>
+
+<h2>What enforces this</h2>
+<p>Every tool in <a href="../user/network-tools.html">Network Tools</a> and <a href="../user/dns-tools.html">DNS Tools</a> calls <code>enforce_scope(host, scope)</code> before invoking the sandbox. Bypassing it requires code changes — not a config.</p>
+
+<h2>Gotchas</h2>
+<ul>
+<li>Changing your install's default scope from <code>internal</code> to <code>both</code> is a policy change worth advertising to users — internal-tooling expectations may have developed.</li>
+</ul>
+    </main>
+    </div>
+    </body>
+    </html>

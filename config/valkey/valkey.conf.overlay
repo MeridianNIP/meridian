@@ -1,0 +1,34 @@
+# Meridian · Valkey overlay applied by install.sh on Debian 13.
+# Valkey is the BSD-licensed fork of Redis; config format is unchanged.
+#
+# Appended to /etc/valkey/valkey.conf (values below override earlier defaults).
+# Role: Celery broker + result backend + session cache.
+# Not exposed outside localhost.
+
+bind 127.0.0.1 -::1
+protected-mode yes
+port 6379
+unixsocket /run/valkey/valkey.sock
+unixsocketperm 770
+
+# requirepass is injected at install time with a 32-char random password.
+# Do NOT commit a real password here.
+# requirepass MERIDIAN_INJECTED_AT_INSTALL
+
+# Memory + eviction
+maxmemory 512mb
+maxmemory-policy allkeys-lru
+
+# Persistence: AOF every second for Celery state durability
+appendonly yes
+appendfsync everysec
+auto-aof-rewrite-percentage 100
+auto-aof-rewrite-min-size 64mb
+
+# Logging
+loglevel notice
+logfile /var/log/valkey/valkey-server.log
+
+# Slow-log threshold: warn if anything takes > 50ms
+slowlog-log-slower-than 50000
+slowlog-max-len 256

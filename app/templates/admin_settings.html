@@ -1,0 +1,750 @@
+{% extends "base.html" %}
+{% set active = 'global-settings' %}
+{% block title %}Global Settings · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Global Settings</div>
+    <div class="page-sub">
+      Super-admin-only · portal-wide policy root · changes apply to all users / groups immediately
+      and are recorded to the tamper-evident audit log.
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;padding:12px 14px;background:rgba(32,200,150,.06);border-left:3px solid var(--accent);">
+  <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+    <strong>Why this page matters:</strong>
+    Commercial / regulated deployments (SOC 2, HIPAA, ISO 27001, PCI-DSS) require a single,
+    documented source of portal-wide security policy. Settings here <em>cap</em> what admins
+    and users can do -- sub-roles can tighten (opt into a shorter idle timeout, stronger MFA)
+    but cannot loosen beyond what a super-admin sets here.
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;padding:12px 14px;background:rgba(234,179,8,.08);border-left:3px solid var(--warn,#eab308);">
+  <div style="font-size:12px;color:var(--text-dim);line-height:1.7;">
+    <strong style="color:var(--warn,#eab308);">Preview / design surface — most controls are not yet editable.</strong>
+    The underlying policy schemas (<code>roles</code>, <code>role_permissions</code>,
+    <code>audit_retention</code>, <code>compliance_baselines</code>) haven't shipped yet.
+    In the meantime, edit live policies from their current home:
+    <ul style="margin:8px 0 2px;padding-left:18px;">
+      <li><strong>Session idle timeout, password policy, MFA requirement, lockout</strong> —
+          <a href="/ui/admin/branding" style="color:var(--accent);">Admin → Branding</a>
+          (these live on the branding row for now)</li>
+      <li><strong>Roles assigned to users</strong> —
+          <a href="/ui/admin/users" style="color:var(--accent);">Admin → Users</a></li>
+      <li><strong>Audit retention / compliance baselines</strong> — no edit surface yet; pending schema work.</li>
+    </ul>
+    The Save buttons below are intentionally disabled with a per-control tooltip explaining what's blocked.
+  </div>
+</div>
+
+<!-- --------------- Sessions / idle timeout (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Sessions &amp; idle timeout</div></div>
+  <form class="policy-form" data-policy="session" style="padding:14px 16px;">
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">
+      Global default + maximum idle timeout (in minutes) for every user. A user may set their
+      own value lower via <em>Settings → Session</em>, but never higher than the maximum below.
+      <span style="color:var(--warn);">Setting the default to 0 disables idle logout entirely
+      (not recommended for regulated environments).</span>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Default idle timeout (minutes)</label>
+        <input class="input mono" type="number" min="0" max="1440" name="session_idle_timeout_default_min" value="{{ branding_row.session_idle_timeout_default_min if branding_row else 30 }}"></div>
+      <div class="field"><label>Maximum allowed override (minutes)</label>
+        <input class="input mono" type="number" min="1" max="1440" name="session_idle_timeout_max_min" value="{{ branding_row.session_idle_timeout_max_min if branding_row else 1440 }}"></div>
+      <div class="field">
+        <label>Allow "Never" as a user choice</label>
+        <div style="padding-top:8px;"><label style="font-size:12px;"><input type="checkbox" name="session_idle_never_allowed" {% if branding_row and branding_row.session_idle_never_allowed %}checked{% endif %}> permit disable-idle</label></div>
+      </div>
+    </div>
+    <button class="btn btn-primary policy-save" type="submit" style="margin-top:8px;font-size:11px;">Save</button>
+    <span class="policy-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<!-- --------------- Roles + permissions --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Roles &amp; permissions</div>
+    <span id="roles-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <div style="padding:14px 16px;">
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">
+      The six built-in roles grant the permission sets below. <strong>Scope Manager</strong>
+      is a separate, unrelated system — it controls which targets (domains / IPs / CIDRs)
+      sandboxed tools may query, not what actions a user can perform.
+      For <strong>AD auth</strong>, map each AD group to exactly one built-in role under
+      <a href="/ui/admin/integrations#directory" style="color:var(--accent);">Admin → Integrations → Directory → [role map]</a>;
+      the user inherits whichever role is highest-privilege among their AD groups on every login.
+    </div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">Role</th>
+        <th style="padding:6px 8px;">Intent</th>
+        <th style="padding:6px 8px;text-align:right;">Users (local)</th>
+      </tr></thead>
+      <tbody id="roles-rows"></tbody>
+    </table>
+    <div style="margin-top:10px;padding:10px 12px;background:rgba(255,255,255,.02);border-radius:4px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);line-height:1.7;">
+      Custom role definitions + editable permission matrix are a future schema change
+      (will go into <code>roles</code> + <code>role_permissions</code> tables). The
+      built-in set covers the common tiers — ask for a custom role to be added in a code
+      release if your org needs an extra split.
+    </div>
+  </div>
+</div>
+
+<!-- --------------- Password policy (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Password policy</div></div>
+  <form class="policy-form" data-policy="password" style="padding:14px 16px;">
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">
+      Minimum strength requirements enforced on every password change. The portal uses argon2id
+      for hashing and always rejects the NIST-blocklist common passwords on top of whatever is
+      configured here.
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Minimum length</label><input class="input mono" type="number" min="8" max="128" name="password_min_length" value="{{ branding_row.password_min_length if branding_row else 12 }}"></div>
+      <div class="field"><label>Require classes (a-z / A-Z / digit / symbol)</label><input class="input mono" type="number" min="1" max="4" name="password_required_classes" value="{{ branding_row.password_required_classes if branding_row else 3 }}"></div>
+      <div class="field"><label>Max age (days, 0 = never)</label><input class="input mono" type="number" min="0" max="3650" name="password_max_age_days" value="{{ branding_row.password_max_age_days if branding_row else 0 }}"></div>
+      <div class="field"><label>History depth (reuse blocked)</label><input class="input mono" type="number" min="0" max="24" name="password_history_depth" value="{{ branding_row.password_history_depth if branding_row else 5 }}"></div>
+    </div>
+    <button class="btn btn-primary policy-save" type="submit" style="margin-top:8px;font-size:11px;">Save</button>
+    <span class="policy-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<!-- --------------- MFA policy (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">MFA policy</div></div>
+  <form class="policy-form" data-policy="mfa" style="padding:14px 16px;">
+    <div class="form-row">
+      <div class="field"><label>MFA required for</label>
+        <select class="select" name="mfa_requirement">
+          <option value="all" {% if branding_row and branding_row.mfa_requirement == 'all' %}selected{% endif %}>All users</option>
+          <option value="admins_only" {% if (branding_row and branding_row.mfa_requirement == 'admins_only') or not branding_row %}selected{% endif %}>Admin + super_admin only</option>
+          <option value="optional" {% if branding_row and branding_row.mfa_requirement == 'optional' %}selected{% endif %}>Optional (per-user)</option>
+        </select></div>
+      <div class="field"><label>Recovery codes per user</label><input class="input mono" type="number" min="0" max="20" name="mfa_backup_codes_count" value="{{ branding_row.mfa_backup_codes_count if branding_row else 10 }}"></div>
+    </div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-top:6px;">
+      TOTP (authenticator app) is always allowed. WebAuthn/FIDO2 is on the roadmap (server flow not wired yet).
+    </div>
+    <button class="btn btn-primary policy-save" type="submit" style="margin-top:8px;font-size:11px;">Save</button>
+    <span class="policy-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<!-- --------------- Lockout policy (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Account lockout</div></div>
+  <form class="policy-form" data-policy="lockout" style="padding:14px 16px;">
+    <div class="form-row">
+      <div class="field"><label>Failed attempts before lock</label><input class="input mono" type="number" min="3" max="50" name="lockout_threshold" value="{{ branding_row.lockout_threshold if branding_row else 5 }}"></div>
+      <div class="field"><label>Lockout duration (minutes)</label><input class="input mono" type="number" min="1" max="1440" name="lockout_duration_min" value="{{ branding_row.lockout_duration_min if branding_row else 30 }}"></div>
+      <div class="field"><label>Unlock mode</label>
+        <select class="select" name="lockout_unlock_mode" id="lockout-unlock-mode">
+          <option value="admin_or_time" {% if (branding_row and branding_row.lockout_unlock_mode == 'admin_or_time') or not branding_row %}selected{% endif %}>Admin reset + time-only</option>
+          <option value="admin" {% if branding_row and branding_row.lockout_unlock_mode == 'admin' %}selected{% endif %}>Admin reset only</option>
+          <option value="time" {% if branding_row and branding_row.lockout_unlock_mode == 'time' %}selected{% endif %}>Time-only</option>
+        </select></div>
+    </div>
+    <div id="lockout-unlock-desc" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-top:6px;line-height:1.55;"></div>
+    <button class="btn btn-primary policy-save" type="submit" style="margin-top:8px;font-size:11px;">Save</button>
+    <span class="policy-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<!-- --------------- Audit retention (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Audit retention</div></div>
+  <form class="policy-form" data-policy="audit" style="padding:14px 16px;">
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">
+      Audit events are HMAC-chained (tamper-evident). Retention applies to the
+      <span class="mono">audit_events</span> table; chained hashes survive the archive so
+      integrity can still be verified on archived batches.
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Online retention (days before archive)</label><input class="input mono" type="number" min="30" max="3650" name="audit_online_days" value="{{ branding_row.audit_online_days if branding_row else 365 }}"></div>
+      <div class="field"><label>Archive retention (days before purge)</label><input class="input mono" type="number" min="90" max="3650" name="audit_archive_days" value="{{ branding_row.audit_archive_days if branding_row else 2555 }}" title="~7 years"></div>
+      <div class="field"><label>Archive target</label>
+        <select class="select" name="audit_archive_target">
+          <option value="local" selected>Local /var/lib/meridian/audit-archive</option>
+        </select></div>
+    </div>
+    <button class="btn btn-primary policy-save" type="submit" style="margin-top:8px;font-size:11px;">Save</button>
+    <span class="policy-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<!-- --------------- Retention policies (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Retention policies</div>
+    <span id="ret-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <div style="padding:10px 14px 4px;font-size:11px;color:var(--text-dim);line-height:1.55;">
+    Per-scope trim rules. Nightly jobs delete rows older than <strong>keep_days</strong> and trim each partition to the newest <strong>keep_count</strong>. Defaults favour 365 days for most scopes — adjust for shorter / longer regulatory windows.
+  </div>
+  <table style="width:100%;font-size:12px;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Scope</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Description</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Keep days</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Keep count</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Enabled</th>
+      <th style="text-align:right;padding:8px;"></th>
+    </tr></thead>
+    <tbody id="ret-rows"></tbody>
+  </table>
+</div>
+
+<!-- --------------- Log shipping (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Log shipping destinations</div>
+    <span id="logship-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <div style="padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.55;">
+    Ship the tamper-evident audit log to an external collector. Up to three destinations. Supports <strong>syslog (RFC 5424, TCP/UDP/TLS)</strong>, <strong>Splunk HEC</strong>, <strong>Elastic <code>_bulk</code></strong>, and <strong>CEF-over-syslog</strong> (ArcSight/QRadar). Auth secrets live in the vault. A beat task flushes new events every 30s (per-destination cursor so a downed collector doesn't drop events — they resume when it comes back).
+  </div>
+  <form id="logship-form" style="padding:10px 14px 14px;border-bottom:1px solid var(--border);">
+    <div class="form-row">
+      <div class="field"><label>Kind</label>
+        <select class="select" name="kind" id="logship-kind">
+          <optgroup label="Open / on-prem">
+            <option value="syslog">Syslog (RFC 5424)</option>
+            <option value="cef">CEF-over-syslog (ArcSight / QRadar)</option>
+            <option value="graylog_gelf">Graylog (GELF 1.1)</option>
+            <option value="elastic">Elasticsearch _bulk</option>
+            <option value="splunk_hec">Splunk HEC</option>
+          </optgroup>
+          <optgroup label="SaaS">
+            <option value="datadog">Datadog Logs</option>
+            <option value="sumo_logic">Sumo Logic HTTP Source</option>
+            <option value="aws_cloudwatch">AWS CloudWatch Logs</option>
+            <option value="gcp_logging">Google Cloud Logging</option>
+            <option value="azure_sentinel">Azure Sentinel / Monitor (DCR)</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field" style="flex:2;"><label>Display name</label><input class="input mono" name="name" placeholder="corp-siem" required></div>
+      <div class="field"><label>Enabled</label>
+        <select class="select" name="enabled">
+          <option value="true" selected>yes</option>
+          <option value="false">no</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:3;"><label id="logship-endpoint-label">Endpoint</label>
+        <input class="input mono" name="endpoint" id="logship-endpoint" required>
+      </div>
+      <div class="field"><label>Transport</label>
+        <select class="select" name="transport" id="logship-transport">
+          <option value="tcp">TCP</option>
+          <option value="udp">UDP</option>
+          <option value="tls">TLS</option>
+          <option value="https">HTTPS</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" id="logship-syslog-row">
+      <div class="field"><label>Facility (syslog / CEF)</label>
+        <select class="select" name="facility">
+          <option value="local0" selected>local0</option>
+          <option value="local1">local1</option>
+          <option value="local2">local2</option>
+          <option value="local3">local3</option>
+          <option value="local4">local4</option>
+          <option value="local5">local5</option>
+          <option value="local6">local6</option>
+          <option value="local7">local7</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" id="logship-index-row" style="display:none;">
+      <div class="field" style="flex:2;"><label id="logship-index-label">Splunk index / sourcetype</label>
+        <input class="input mono" name="index_or_sourcetype" placeholder="meridian">
+      </div>
+      <div class="field" style="flex:3;"><label id="logship-secret-label">Auth token</label>
+        <input class="input mono" name="auth_secret" type="password" placeholder="keep blank to leave unchanged">
+      </div>
+    </div>
+    <div style="padding:6px 0 4px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);line-height:1.6;" id="logship-hint"></div>
+    <button class="btn btn-primary" type="submit" style="margin-top:4px;font-size:11px;">+ Add destination</button>
+    <span id="logship-form-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+  <table style="width:100%;font-size:12px;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Name</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Kind</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Endpoint</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Transport</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last ship / shipped total</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Enabled</th>
+      <th style="text-align:right;padding:8px;"></th>
+    </tr></thead>
+    <tbody id="logship-rows"></tbody>
+  </table>
+</div>
+
+<!-- --------------- SNMP communities (ACTIVE) --------------- -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">SNMP communities</div>
+    <span id="snmp-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <div style="padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.55;">
+    Community strings + allowed source CIDRs for external monitoring systems polling Meridian's health.
+    <strong>RO</strong> exposes read-only stats (recommended); <strong>RW</strong> is reserved for future write actions — leave disabled unless a specific tool needs it.
+    v3 user/auth/priv fields are stubbed for a later SNMPv3 upgrade.
+    <br><br>
+    <strong>Meridian MIB</strong> (download &amp; feed to your SNMP tool so OIDs resolve to names):
+    <a href="/api/v1/admin/snmp/mib" target="_blank" style="color:var(--accent);margin-left:6px;">MERIDIAN-NIP-MIB.txt ↗</a>
+    — exposes uptime, service states, host NIC / CPU / mem / disk, monitor summary, cert expiry summary, and audit-chain scan status.
+    Enterprise arc: <code>1.3.6.1.4.1.60022</code>.
+  </div>
+  <form id="snmp-form" style="padding:10px 14px 14px;border-bottom:1px solid var(--border);">
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Display name</label><input class="input mono" name="name" placeholder="e.g. zabbix-ro" required></div>
+      <div class="field"><label>Access</label>
+        <select class="select" name="access">
+          <option value="ro" selected>RO · read-only (recommended)</option>
+          <option value="rw">RW · read + write (reserved)</option>
+        </select>
+      </div>
+      <div class="field"><label>Enabled</label>
+        <select class="select" name="enabled">
+          <option value="true" selected>yes</option>
+          <option value="false">no</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Community string</label><input class="input mono" name="community" minlength="4" maxlength="256" required placeholder="4+ chars"></div>
+      <div class="field" style="flex:3;"><label>Allowed source CIDRs (comma-separated)</label><input class="input mono" name="allowed_sources" placeholder="10.0.0.0/8, 192.168.50.0/24"></div>
+    </div>
+    <button class="btn btn-primary" type="submit" style="margin-top:8px;font-size:11px;">+ Add community</button>
+    <span id="snmp-form-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+  <table style="width:100%;font-size:12px;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Name</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Access</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Community</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Allowed sources</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Enabled</th>
+      <th style="text-align:right;padding:8px;"></th>
+    </tr></thead>
+    <tbody id="snmp-rows"></tbody>
+  </table>
+</div>
+
+<div class="card" style="padding:12px 14px;background:rgba(234,179,8,.06);border-left:3px solid var(--warn,#eab308);">
+  <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+    <strong>This page is a scaffold.</strong> The sections above reflect the final layout; the
+    save buttons will come online as each sub-system migrates off the branding row / code enum
+    onto a dedicated <span class="mono">policy_settings</span> / <span class="mono">role_permissions</span>
+    schema. Design + implementation tracked in
+    <span class="mono">docs/walkthrough-findings.md → "Super-Admin Global Settings page"</span>.
+    Edits made in the meantime still work via Admin → Branding and Admin → Users.
+  </div>
+</div>
+
+<script>
+(function(){
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials: 'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, status: r.status, data};
+  }
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // ---------------- Retention rules ----------------
+  async function loadRetention() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/retention/rules');
+    const tbody = document.getElementById('ret-rows');
+    const count = document.getElementById('ret-count');
+    if (!ok) { count.textContent = 'error'; return; }
+    count.textContent = `${data.length} scope${data.length===1?'':'s'}`;
+    tbody.innerHTML = data.map(r => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;font-family:var(--mono);color:var(--accent);">${esc(r.scope)}</td>
+        <td style="padding:8px;font-size:11px;color:var(--text-dim);">${esc(r.description || '')}</td>
+        <td style="padding:8px;"><input class="input mono" type="number" min="1" max="3650" value="${r.keep_days ?? ''}" data-ret-field="keep_days" data-id="${r.id}" style="width:90px;font-size:11px;padding:3px 6px;"></td>
+        <td style="padding:8px;"><input class="input mono" type="number" min="1" max="1000000" value="${r.keep_count ?? ''}" data-ret-field="keep_count" data-id="${r.id}" style="width:100px;font-size:11px;padding:3px 6px;"></td>
+        <td style="padding:8px;"><input type="checkbox" data-ret-field="enabled" data-id="${r.id}" ${r.enabled ? 'checked' : ''}></td>
+        <td style="padding:8px;text-align:right;"><button class="btn btn-ghost" data-ret-save="${r.id}" style="padding:4px 10px;font-size:10px;">Save</button></td>
+      </tr>`).join('');
+    tbody.querySelectorAll('[data-ret-save]').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.retSave;
+      const body = {};
+      tbody.querySelectorAll(`[data-id="${id}"]`).forEach(el => {
+        const f = el.dataset.retField;
+        if (el.type === 'checkbox') body[f] = el.checked;
+        else if (el.value !== '') body[f] = Number(el.value);
+      });
+      const {ok, data} = await jfetch('PATCH', `/api/v1/admin/retention/rules/${id}`, body);
+      b.textContent = ok ? '✓ saved' : `✗ ${data.error||data.detail}`;
+      setTimeout(() => b.textContent = 'Save', 1500);
+    }));
+  }
+
+  // ---------------- Log shipping ----------------
+  async function loadLogShipping() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/log-shipping');
+    const tbody = document.getElementById('logship-rows');
+    const count = document.getElementById('logship-count');
+    const addBtn = document.getElementById('logship-new');
+    if (!ok) { count.textContent = 'error'; return; }
+    count.textContent = `${data.length} of 3`;
+    if (addBtn) addBtn.disabled = data.length >= 3;
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:14px;color:var(--text-dimmer);font-size:12px;font-style:italic;">No destinations yet — add one above.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(d => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);" data-ls="${d.id}">
+        <td style="padding:8px;color:var(--text);">${esc(d.name)}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--accent);font-size:11px;">${esc(d.kind)}</td>
+        <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);word-break:break-all;max-width:240px;">${esc(d.endpoint)}</td>
+        <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${esc(d.transport)}</td>
+        <td style="padding:8px;font-family:var(--mono);font-size:10px;color:${d.last_error ? 'var(--danger)' : 'var(--text-dim)'};">
+          ${d.last_shipped_at ? (new Date(d.last_shipped_at).toLocaleString() + ' · ' + d.events_shipped_total) : 'never'}
+          ${d.last_error ? `<div style="color:var(--danger);">${esc(d.last_error).slice(0,80)}</div>` : ''}
+        </td>
+        <td style="padding:8px;font-family:var(--mono);font-size:10px;color:${d.enabled ? 'var(--accent)' : 'var(--text-dimmer)'};">${d.enabled ? 'yes' : 'no'}</td>
+        <td style="padding:8px;text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost" data-ls-test="${d.id}" style="padding:4px 10px;font-size:10px;">Test</button>
+          <button class="btn btn-ghost" data-ls-toggle="${d.id}" data-enabled="${d.enabled}" style="padding:4px 10px;font-size:10px;">${d.enabled?'Disable':'Enable'}</button>
+          <button class="btn btn-ghost" data-ls-del="${d.id}" style="padding:4px 10px;font-size:10px;color:var(--danger);">Delete</button>
+        </td>
+      </tr>`).join('');
+    tbody.querySelectorAll('[data-ls-test]').forEach(b => b.addEventListener('click', async () => {
+      const prev = b.textContent; b.disabled = true; b.textContent = 'testing…';
+      const {ok, data} = await jfetch('POST', `/api/v1/admin/log-shipping/${b.dataset.lsTest}/test`);
+      b.disabled = false; b.textContent = prev;
+      if (ok && data.ok) alert(`✓ shipped test event · ${data.latency_ms}ms`);
+      else alert(`✗ ${(data && (data.error || data.detail)) || 'failed'}`);
+    }));
+    tbody.querySelectorAll('[data-ls-toggle]').forEach(b => b.addEventListener('click', async () => {
+      const enabled = b.dataset.enabled === 'true';
+      await jfetch('PATCH', `/api/v1/admin/log-shipping/${b.dataset.lsToggle}`, {enabled: !enabled});
+      loadLogShipping();
+    }));
+    tbody.querySelectorAll('[data-ls-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Delete this log destination? Any stored secret is wiped.')) return;
+      await fetch(`/api/v1/admin/log-shipping/${b.dataset.lsDel}`, {method:'DELETE', credentials:'same-origin'});
+      loadLogShipping();
+    }));
+  }
+
+  // Sensible defaults per transport — user can override in the Endpoint /
+  // Transport fields if their collector lives on a non-standard port.
+  const LOGSHIP_DEFAULTS = {
+    syslog: {
+      endpoint: 'syslog.example.com:514',
+      transport: 'tcp',
+      endpoint_label: 'Host:port',
+      hint: 'RFC 5424 over TCP/UDP/TLS. Default port: 514 (TCP/UDP), 6514 (TLS). Pick TLS for SIEMs on a public path.',
+      show_facility: true, show_index: false,
+    },
+    splunk_hec: {
+      endpoint: 'https://splunk.example.com:8088',
+      transport: 'https',
+      endpoint_label: 'HEC base URL',
+      index_label: 'Splunk index (or sourcetype)', index_default: 'meridian',
+      secret_label: 'HEC token',
+      hint: 'Splunk HTTP Event Collector. Endpoint is the base URL — Meridian appends /services/collector/event. Paste the HEC token below; Meridian stores it in the vault.',
+      show_facility: false, show_index: true,
+    },
+    elastic: {
+      endpoint: 'https://elastic.example.com:9200',
+      transport: 'https',
+      endpoint_label: 'Elastic base URL',
+      index_label: 'Index pattern', index_default: 'meridian-audit-*',
+      secret_label: 'API key',
+      hint: 'Elasticsearch bulk endpoint. Paste a Base64 API key (id:secret format supported upstream). Meridian sends Authorization: ApiKey <token>.',
+      show_facility: false, show_index: true,
+    },
+    cef: {
+      endpoint: 'arcsight-connector.example.com:514',
+      transport: 'tcp',
+      endpoint_label: 'Host:port',
+      hint: 'Common Event Format over syslog — works with ArcSight, QRadar, and other CEF-aware SIEMs.',
+      show_facility: true, show_index: false,
+    },
+    graylog_gelf: {
+      endpoint: 'graylog.example.com:12201',
+      transport: 'tcp',
+      endpoint_label: 'Host:port',
+      hint: 'Graylog GELF 1.1 — JSON frames over TCP/UDP/TLS. Default port 12201. Null-terminated on TCP; no framing change needed on UDP.',
+      show_facility: false, show_index: false,
+    },
+    datadog: {
+      endpoint: 'https://http-intake.logs.datadoghq.com',
+      transport: 'https',
+      endpoint_label: 'Intake URL (regional)',
+      index_label: 'ddtags / service override', index_default: '',
+      secret_label: 'DD-API-KEY',
+      hint: 'Datadog Logs v2. Endpoint varies by region: http-intake.logs.datadoghq.com (US1), .datadoghq.eu (EU1), .us3.datadoghq.com, .us5…, .ap1…. Paste the API key below.',
+      show_facility: false, show_index: true,
+    },
+    sumo_logic: {
+      endpoint: 'https://endpoint.collection.sumologic.com/receiver/v1/http/<token>',
+      transport: 'https',
+      endpoint_label: 'HTTP Source URL (contains collector token)',
+      index_label: 'X-Sumo-Category', index_default: 'meridian/audit',
+      secret_label: '(not used — token is in the URL)',
+      hint: 'Sumo Logic HTTP Source — the token is encoded in the URL, so no separate auth field. Create a HTTP Source in Sumo, paste the full URL.',
+      show_facility: false, show_index: true,
+    },
+    aws_cloudwatch: {
+      endpoint: 'meridian-audit::default',
+      transport: 'https',
+      endpoint_label: 'log-group::log-stream',
+      index_label: 'unused', index_default: '',
+      secret_label: 'AWS creds JSON: {"access_key":"…","secret_key":"…","region":"us-east-1"}',
+      hint: 'AWS CloudWatch Logs. Requires boto3 on the portal host. Endpoint is "GROUP::STREAM" (double-colon separator). Paste IAM creds as a JSON object — Meridian stores them encrypted in the vault.',
+      show_facility: false, show_index: true,
+    },
+    gcp_logging: {
+      endpoint: 'projects/PROJECT-ID/logs/meridian-audit',
+      transport: 'https',
+      endpoint_label: 'logName (projects/<id>/logs/<name>)',
+      index_label: 'unused', index_default: '',
+      secret_label: 'Service account JSON',
+      hint: 'Google Cloud Logging (logging.googleapis.com). Paste the full service-account JSON key below — requires the roles/logging.logWriter role on the GCP side.',
+      show_facility: false, show_index: true,
+    },
+    azure_sentinel: {
+      endpoint: 'https://<dce>.ingest.monitor.azure.com/dataCollectionRules/<dcr-id>/streams/<stream-name>?api-version=2023-01-01',
+      transport: 'https',
+      endpoint_label: 'DCR ingestion URL',
+      index_label: 'unused', index_default: '',
+      secret_label: 'OAuth2 bearer token (rotate per TTL)',
+      hint: 'Azure Monitor Log Ingestion API via a Data Collection Rule. Requires a pre-obtained OAuth2 bearer — auth refresh is operator-managed (the token expires hourly by default).',
+      show_facility: false, show_index: true,
+    },
+  };
+  function refreshLogshipForm() {
+    const kind = document.getElementById('logship-kind').value;
+    const d = LOGSHIP_DEFAULTS[kind];
+    if (!d) return;
+    document.getElementById('logship-endpoint-label').textContent = d.endpoint_label;
+    document.getElementById('logship-endpoint').placeholder = d.endpoint;
+    if (!document.getElementById('logship-endpoint').value.trim()) {
+      document.getElementById('logship-endpoint').value = d.endpoint;
+    }
+    document.getElementById('logship-transport').value = d.transport;
+    document.getElementById('logship-syslog-row').style.display = d.show_facility ? '' : 'none';
+    document.getElementById('logship-index-row').style.display = d.show_index ? '' : 'none';
+    if (d.show_index) {
+      document.getElementById('logship-index-label').textContent = d.index_label;
+      document.getElementById('logship-secret-label').textContent = d.secret_label;
+      document.querySelector('#logship-index-row [name="index_or_sourcetype"]').placeholder = d.index_default || '';
+    }
+    document.getElementById('logship-hint').textContent = d.hint;
+  }
+  const logshipKindSel = document.getElementById('logship-kind');
+  if (logshipKindSel) { logshipKindSel.addEventListener('change', refreshLogshipForm); refreshLogshipForm(); }
+
+  const logshipForm = document.getElementById('logship-form');
+  if (logshipForm) logshipForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(logshipForm);
+    const status = document.getElementById('logship-form-status');
+    status.textContent = 'saving…'; status.style.color = 'var(--text-dim)';
+    const kind = fd.get('kind');
+    const body = {
+      name: fd.get('name'),
+      kind,
+      endpoint: fd.get('endpoint'),
+      transport: fd.get('transport'),
+      enabled: fd.get('enabled') === 'true',
+    };
+    if (kind === 'syslog' || kind === 'cef') {
+      body.facility = fd.get('facility') || 'local0';
+    }
+    if (kind === 'splunk_hec' || kind === 'elastic') {
+      const idx = (fd.get('index_or_sourcetype') || '').trim();
+      if (idx) body.index_or_sourcetype = idx;
+    }
+    const secret = (fd.get('auth_secret') || '').trim();
+    if (secret) body.auth_secret = secret;
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/log-shipping', body);
+    if (!ok) {
+      status.textContent = `✗ ${data.error || data.detail}`;
+      status.style.color = 'var(--danger)';
+      return;
+    }
+    status.textContent = '✓ added'; status.style.color = 'var(--accent)';
+    logshipForm.reset();
+    refreshLogshipForm();
+    loadLogShipping();
+  });
+
+  // ---------------- SNMP communities ----------------
+  async function loadSnmp() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/snmp/communities');
+    const tbody = document.getElementById('snmp-rows');
+    const count = document.getElementById('snmp-count');
+    if (!ok) { count.textContent = 'error'; return; }
+    count.textContent = `${data.length} communit${data.length === 1 ? 'y' : 'ies'}`;
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:14px;color:var(--text-dimmer);font-size:12px;font-style:italic;">No communities yet — add one above.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(c => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;color:var(--text);font-family:var(--mono);">${esc(c.name)}</td>
+        <td style="padding:8px;font-family:var(--mono);font-size:11px;color:${c.access==='rw' ? 'var(--warn)' : 'var(--accent)'};">${c.access.toUpperCase()}</td>
+        <td style="padding:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+          <span data-snmp-mask="${c.id}">•••••••</span>
+          <button class="btn btn-ghost" data-snmp-show="${c.id}" data-plain="${esc(c.community)}" style="padding:2px 6px;font-size:9px;margin-left:4px;">reveal</button>
+        </td>
+        <td style="padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">${(c.allowed_sources||[]).length ? esc((c.allowed_sources||[]).join(', ')) : '<em style="color:var(--warn);">ANY (insecure)</em>'}</td>
+        <td style="padding:8px;font-family:var(--mono);font-size:10px;color:${c.enabled?'var(--accent)':'var(--text-dimmer)'};">${c.enabled?'yes':'no'}</td>
+        <td style="padding:8px;text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost" data-snmp-toggle="${c.id}" data-enabled="${c.enabled}" style="padding:4px 10px;font-size:10px;">${c.enabled?'Disable':'Enable'}</button>
+          <button class="btn btn-ghost" data-snmp-del="${c.id}" style="padding:4px 10px;font-size:10px;color:var(--danger);">Delete</button>
+        </td>
+      </tr>`).join('');
+    tbody.querySelectorAll('[data-snmp-show]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.snmpShow;
+      const span = tbody.querySelector(`[data-snmp-mask="${id}"]`);
+      if (!span) return;
+      if (span.textContent === '•••••••') {
+        span.textContent = b.dataset.plain;
+        b.textContent = 'hide';
+        setTimeout(() => { span.textContent = '•••••••'; b.textContent = 'reveal'; }, 10_000);
+      } else {
+        span.textContent = '•••••••'; b.textContent = 'reveal';
+      }
+    }));
+    tbody.querySelectorAll('[data-snmp-toggle]').forEach(b => b.addEventListener('click', async () => {
+      await jfetch('PATCH', `/api/v1/admin/snmp/communities/${b.dataset.snmpToggle}`,
+                   {enabled: b.dataset.enabled !== 'true'});
+      loadSnmp();
+    }));
+    tbody.querySelectorAll('[data-snmp-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Delete this SNMP community?')) return;
+      await fetch(`/api/v1/admin/snmp/communities/${b.dataset.snmpDel}`,
+                  {method:'DELETE', credentials:'same-origin'});
+      loadSnmp();
+    }));
+  }
+  const snmpForm = document.getElementById('snmp-form');
+  if (snmpForm) snmpForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(snmpForm);
+    const status = document.getElementById('snmp-form-status');
+    status.textContent = 'saving…'; status.style.color = 'var(--text-dim)';
+    const body = {
+      name: fd.get('name'),
+      access: fd.get('access'),
+      community: fd.get('community'),
+      enabled: fd.get('enabled') === 'true',
+      allowed_sources: (fd.get('allowed_sources') || '').split(',')
+        .map(s => s.trim()).filter(Boolean),
+    };
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/snmp/communities', body);
+    if (!ok) {
+      status.textContent = `✗ ${data.error || data.detail}`;
+      status.style.color = 'var(--danger)';
+      return;
+    }
+    status.textContent = '✓ added'; status.style.color = 'var(--accent)';
+    snmpForm.reset();
+    loadSnmp();
+  });
+
+  // ---------------- Built-in roles table ----------------
+  const _ROLE_META = {
+    super_admin: {intent: 'Unrestricted. Only role that can edit Global Settings / Global Roles.'},
+    admin:       {intent: 'Run ops, manage integrations, edit devices, trigger update+reboot, reset passwords.'},
+    auditor:     {intent: 'Read-only including the full audit log. Sees everything, changes nothing.'},
+    analyst:     {intent: 'Day-to-day ops: DNS / network / threat-intel tools, run wizards + runbooks, view monitors.'},
+    viewer:      {intent: 'Read-only on dashboards + monitors. Cannot run sandboxed tools or see audit.'},
+    api_service: {intent: 'Non-interactive. Cannot log into the UI. For integration tokens + service accounts.'},
+  };
+  async function loadRoles() {
+    const tbody = document.getElementById('roles-rows');
+    const count = document.getElementById('roles-count');
+    const r = await fetch('/api/v1/admin/users/role-counts', {credentials:'same-origin'});
+    let counts = {};
+    if (r.ok) counts = await r.json();
+    const order = ['super_admin','admin','auditor','analyst','viewer','api_service'];
+    tbody.innerHTML = order.map(role => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:6px 8px;font-family:var(--mono);color:var(--accent);">${role}</td>
+        <td style="padding:6px 8px;color:var(--text-dim);">${_ROLE_META[role].intent}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:var(--mono);color:var(--text);">${counts[role] ?? 0}</td>
+      </tr>`).join('');
+    count.textContent = `${order.length} built-in roles`;
+  }
+
+  loadRetention();
+  loadLogShipping();
+  loadSnmp();
+  loadRoles();
+
+  // Lockout mode descriptions
+  const _UNLOCK_DESC = {
+    admin_or_time: 'Either an admin resets the account OR the lockout timer elapses — recommended for most deployments.',
+    admin: 'Admin reset only. Safest for regulated environments where a locked account must be investigated before coming back online. Users cannot self-recover.',
+    time: 'Time-only. Account unlocks automatically after the duration above. Fastest for users but lets a brute-force attempt resume after the timer expires.',
+  };
+  const lockoutSel = document.getElementById('lockout-unlock-mode');
+  const lockoutDesc = document.getElementById('lockout-unlock-desc');
+  function refreshLockoutDesc() {
+    if (lockoutSel && lockoutDesc) lockoutDesc.textContent = _UNLOCK_DESC[lockoutSel.value] || '';
+  }
+  if (lockoutSel) { lockoutSel.addEventListener('change', refreshLockoutDesc); refreshLockoutDesc(); }
+
+  // ---------------- Universal Save handler for policy cards ----------------
+  // Each .policy-form collects only its own named inputs and PATCHes the
+  // combined branding row. Per-domain schemas will replace this.
+  const _INT_FIELDS = new Set([
+    'session_idle_timeout_default_min', 'session_idle_timeout_max_min',
+    'password_min_length', 'password_required_classes',
+    'password_max_age_days', 'password_history_depth',
+    'mfa_backup_codes_count',
+    'lockout_threshold', 'lockout_duration_min',
+    'audit_online_days', 'audit_archive_days',
+  ]);
+  const _BOOL_FIELDS = new Set(['session_idle_never_allowed']);
+
+  document.querySelectorAll('.policy-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const status = form.querySelector('.policy-status');
+      status.textContent = 'saving…'; status.style.color = 'var(--text-dim)';
+      const body = {};
+      form.querySelectorAll('[name]').forEach(el => {
+        const n = el.name;
+        if (_BOOL_FIELDS.has(n))    body[n] = el.checked;
+        else if (_INT_FIELDS.has(n)) body[n] = el.value === '' ? null : Number(el.value);
+        else                         body[n] = el.value;
+      });
+      // Drop nulls so omitted fields stay at their current value.
+      Object.keys(body).forEach(k => { if (body[k] === null || body[k] === undefined) delete body[k]; });
+      const {ok, data} = await jfetch('PATCH', '/api/v1/admin/policy', body);
+      if (ok) { status.textContent = '✓ saved'; status.style.color = 'var(--accent)'; }
+      else    { status.textContent = `✗ ${data.error || data.detail}`; status.style.color = 'var(--danger)'; }
+      setTimeout(() => status.textContent = '', 3000);
+    });
+  });
+})();
+</script>
+{% endblock %}

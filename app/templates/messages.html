@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% set active = 'messages' %}
+{% block title %}Messages · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Messages</div>
+    <div class="page-sub">Direct messages between users · admin broadcasts · group-addressed notices</div>
+</div>
+  <div class="page-actions">
+    <button class="btn btn-ghost" id="mark-all-read">Mark all read</button>
+    <button class="btn btn-primary" id="open-compose">+ Compose</button>
+  </div>
+  {% with docs_path="user/messages.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="tabs" data-tabs="msg">
+  <button class="tab active" data-tab="inbox">Inbox <span id="unread-badge" class="nav-badge warn hidden" style="margin-left:6px;">0</span></button>
+  <button class="tab"        data-tab="sent">Sent</button>
+  <button class="tab"        data-tab="compose">Compose</button>
+</div>
+
+<div data-panel="inbox" data-group="msg">
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Inbox</div>
+      <label style="font-family:var(--mono);font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="unread-only"> unread only
+      </label>
+    </div>
+    <div id="inbox-out" style="font-size:12px;color:var(--text-dim);font-style:italic;">Loading…</div>
+  </div>
+</div>
+
+<div data-panel="sent" data-group="msg" class="hidden">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Sent</div></div>
+    <div id="sent-out" style="font-size:12px;color:var(--text-dim);font-style:italic;">Loading…</div>
+  </div>
+</div>
+
+<div data-panel="compose" data-group="msg" class="hidden">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Compose new message</div></div>
+    <form id="compose-form">
+      <div class="form-row">
+        <div class="field">
+          <label>Recipient type</label>
+          <select class="select" name="mode">
+            <option value="direct" selected>Direct (to username)</option>
+            {% if user.role in ('admin','super_admin') %}
+              <option value="broadcast">Broadcast (all users)</option>
+            {% endif %}
+          </select>
+        </div>
+        <div class="field" id="to-user-field">
+          <label>To username</label>
+          <input class="input mono" name="to_username" placeholder="jsmith">
+        </div>
+        <div class="field">
+          <label>Priority</label>
+          <select class="select" name="priority">
+            <option value="normal" selected>normal</option>
+            <option value="low">low</option>
+            <option value="high">high</option>
+            <option value="urgent">urgent</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Subject</label>
+        <input class="input" name="subject" maxlength="256">
+      </div>
+      <div class="field" style="margin-bottom:14px;">
+        <label>Body</label>
+        <textarea class="input" name="body" rows="8" required minlength="1" maxlength="10000"></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Send</button>
+      <span id="send-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+</div>
+
+<script>
+(function(){
+  const prioColor = {low:'var(--text-dimmer)', normal:'var(--text-dim)', high:'var(--warn)', urgent:'var(--danger)'};
+
+  function renderMsgList(msgs, opts) {
+    if (!msgs.length) return '<div style="font-style:italic;color:var(--text-dimmer);padding:6px 0;">No messages.</div>';
+    return msgs.map(m => {
+      const unread = !m.read_at;
+      const isBroadcast = m.channel === 'broadcast';
+      return `<div data-msg-id="${m.id}" style="padding:10px 6px;border-bottom:1px solid rgba(255,255,255,.04);${unread && opts.canMarkRead ? 'background:rgba(32,200,150,.03);' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
+          <div style="color:var(--text);font-weight:${unread ? '600' : '400'};font-size:13px;">
+            ${unread && opts.canMarkRead ? '<span style="color:var(--accent);font-family:var(--mono);font-size:9px;">●</span> ' : ''}
+            ${m.subject || '(no subject)'}
+            ${isBroadcast ? '<span style="font-family:var(--mono);font-size:9px;color:#a78bfa;background:rgba(139,92,246,.12);padding:1px 6px;border-radius:8px;margin-left:4px;">BROADCAST</span>' : ''}
+          </div>
+          <div style="font-family:var(--mono);font-size:10px;color:${prioColor[m.priority] || 'var(--text-dimmer)'};white-space:nowrap;display:flex;gap:10px;align-items:center;">
+            <span>${m.priority} · ${(m.created_at || '').replace('T',' ').slice(0,16)}</span>
+            <button data-del="${m.id}" title="Delete (sender or admin only)" style="background:none;border:none;color:var(--text-dimmer);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 6px;">✕</button>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-dimmer);margin-top:3px;">
+          ${opts.showSender ? `from ${m.from_username || 'system'}` : `to ${m.to_user || m.to_group || 'broadcast'}`}
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:6px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(m.body).slice(0, 600)}${m.body.length > 600 ? '…' : ''}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]));
+  }
+
+  async function deleteMessage(id) {
+    if (!confirm('Delete this message?')) return;
+    const r = await fetch(`/api/v1/messages/${id}`, {method: 'DELETE', credentials: 'same-origin'});
+    if (!r.ok && r.status !== 204) {
+      const data = await r.json().catch(() => ({}));
+      alert(`Delete failed: ${data.error || r.statusText}`);
+      return;
+    }
+    loadInbox(); loadSent();
+  }
+
+  function wireDeleteButtons(scope) {
+    scope.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();   // don't trigger the row's mark-read handler
+        deleteMessage(btn.dataset.del);
+      });
+    });
+  }
+
+  async function loadInbox() {
+    const unreadOnly = document.getElementById('unread-only').checked;
+    const r = await fetch(`/api/v1/messages/inbox${unreadOnly ? '?unread_only=true' : ''}`, {credentials: 'same-origin'});
+    if (!r.ok) { document.getElementById('inbox-out').textContent = 'load failed'; return; }
+    const data = await r.json();
+    const badge = document.getElementById('unread-badge');
+    if (data.unread_count > 0) { badge.textContent = data.unread_count; badge.classList.remove('hidden'); }
+    else { badge.classList.add('hidden'); }
+    const inboxOut = document.getElementById('inbox-out');
+    inboxOut.innerHTML = renderMsgList(data.messages, {showSender: true, canMarkRead: true});
+    // wire click-to-read
+    inboxOut.querySelectorAll('[data-msg-id]').forEach(row => {
+      row.addEventListener('click', async () => {
+        await fetch(`/api/v1/messages/${row.dataset.msgId}/read`, {method: 'POST', credentials: 'same-origin'});
+        loadInbox();
+      });
+    });
+    wireDeleteButtons(inboxOut);
+  }
+
+  async function loadSent() {
+    const r = await fetch('/api/v1/messages/sent', {credentials: 'same-origin'});
+    if (!r.ok) { document.getElementById('sent-out').textContent = 'load failed'; return; }
+    const data = await r.json();
+    const sentOut = document.getElementById('sent-out');
+    sentOut.innerHTML = renderMsgList(data.messages, {showSender: false, canMarkRead: false});
+    wireDeleteButtons(sentOut);
+  }
+
+  document.getElementById('unread-only').addEventListener('change', loadInbox);
+  document.getElementById('mark-all-read').addEventListener('click', async () => {
+    const r = await fetch('/api/v1/messages/read-all', {method: 'POST', credentials: 'same-origin'});
+    if (r.ok) loadInbox();
+  });
+  document.getElementById('open-compose').addEventListener('click', () => {
+    document.querySelector('.tab[data-tab="compose"]').click();
+  });
+
+  const form = document.getElementById('compose-form');
+  const modeSel = form.querySelector('[name=mode]');
+  const toUserField = document.getElementById('to-user-field');
+  modeSel.addEventListener('change', () => {
+    toUserField.style.display = modeSel.value === 'direct' ? '' : 'none';
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const mode = fd.get('mode');
+    const body = {
+      subject: fd.get('subject') || null,
+      body: fd.get('body'),
+      priority: fd.get('priority'),
+    };
+    if (mode === 'direct') body.to_username = fd.get('to_username');
+    if (mode === 'broadcast') body.broadcast = true;
+
+    const s = document.getElementById('send-status');
+    const r = await fetch('/api/v1/messages/send', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    if (r.ok) {
+      s.textContent = '✓ sent'; s.style.color = 'var(--accent)';
+      form.reset();
+      loadSent();
+    } else {
+      s.textContent = `✗ ${data.error || data.detail || r.statusText}`;
+      s.style.color = 'var(--danger)';
+    }
+  });
+
+  loadInbox();
+  loadSent();
+  // Live-ish inbox: poll while the page is visible so new messages appear
+  // without a manual refresh. Pause when the tab is hidden.
+  setInterval(() => {
+    if (document.visibilityState === 'visible') { loadInbox(); }
+  }, 20000);
+})();
+</script>
+{% endblock %}

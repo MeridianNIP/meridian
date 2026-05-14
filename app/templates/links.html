@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% set active = 'links' %}
+{% block title %}Important Links · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Important Links</div>
+    <div class="page-sub">Bookmarks you (or an admin) can pin for quick access. Drag to reorder in your own view — your ordering is private.</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Add a link</div>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">Global links require admin role</span>
+  </div>
+  <form id="link-form" style="padding:12px 14px;">
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Name</label><input class="input" name="name" required maxlength="120" placeholder="e.g. Internal wiki"></div>
+      <div class="field" style="flex:3;"><label>URL</label><input class="input mono" name="url" required maxlength="2048" placeholder="https://wiki.example.com"></div>
+      <div class="field"><label>Category (optional)</label>
+        <input class="input" name="category" id="link-category-input" list="link-categories" maxlength="64" placeholder="docs, runbooks, …" autocomplete="off">
+        <datalist id="link-categories"></datalist>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:6px;">
+      <div class="field" style="flex:4;"><label>Description (optional)</label><input class="input" name="description" maxlength="512" placeholder="What this link is for"></div>
+      <div class="field"><label>Scope</label>
+        <select class="select" name="scope" id="link-scope">
+          <option value="user" selected>Personal — only you see it</option>
+          <option value="global" id="link-scope-global">Global — visible to everyone</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit" style="margin-top:8px;">+ Add link</button>
+    <span id="link-form-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Your links</div>
+    <span id="link-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <div id="link-hint" style="padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.6;">
+    Drag the ☰ handle to reorder. Your ordering is saved automatically and only affects your view.
+    Global links are marked <span style="color:var(--accent);">◆</span>; personal links are marked <span style="color:var(--warn);">●</span>.
+  </div>
+  <div id="link-rows" style="padding:6px 14px 14px;"></div>
+</div>
+
+<script>
+(function(){
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data, status: r.status};
+  }
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  let state = {links: [], user_ordering: [], can_manage_global: false};
+
+  async function load() {
+    const {ok, data} = await jfetch('GET', '/api/v1/links');
+    if (!ok) return;
+    state = data;
+    // If the user can't manage globals, hide that option on the add form.
+    document.getElementById('link-scope-global').disabled = !data.can_manage_global;
+    render();
+  }
+
+  function renderOrder() {
+    // Apply the user's saved ordering first; any link not in the
+    // ordering array lands at the bottom in its default sort_order.
+    const byId = new Map(state.links.map(l => [l.id, l]));
+    const seen = new Set();
+    const ordered = [];
+    for (const id of (state.user_ordering || [])) {
+      const l = byId.get(id);
+      if (l) { ordered.push(l); seen.add(id); }
+    }
+    for (const l of state.links) {
+      if (!seen.has(l.id)) ordered.push(l);
+    }
+    return ordered;
+  }
+
+  function render() {
+    const rows = renderOrder();
+    document.getElementById('link-count').textContent =
+      `${rows.length} link${rows.length === 1 ? '' : 's'}`;
+    const host = document.getElementById('link-rows');
+    if (!rows.length) {
+      host.innerHTML = `<div style="padding:12px;color:var(--text-dimmer);font-size:12px;font-style:italic;">No links yet — add one above.</div>`;
+      return;
+    }
+    host.innerHTML = rows.map(l => {
+      const scopeIcon = l.scope === 'global'
+        ? '<span style="color:var(--accent);" title="Global — visible to everyone">◆</span>'
+        : '<span style="color:var(--warn);" title="Personal — only you see this">●</span>';
+      const canEdit = l.scope === 'user' || state.can_manage_global;
+      // draggable is on the handle ONLY so regular clicks on the link
+      // text + edit / delete buttons aren't swallowed by the HTML5 drag
+      // system. Drag handlers delegate up to the row via the handle.
+      // Whole middle band (icon + name + description + URL) is one
+      // clickable <a> so the previously-dead padding is now the primary
+      // click target. Drag handle stays a tight strip on the left; edit
+      // buttons sit in their own strip on the right.
+      return `
+        <div data-link="${l.id}" style="display:flex;align-items:stretch;margin:4px 0;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+          <span class="link-drag" draggable="true" title="drag to reorder"
+                style="display:flex;align-items:center;font-family:var(--mono);color:var(--text-dimmer);padding:0 12px;cursor:grab;border-right:1px solid var(--border);background:rgba(255,255,255,.02);">☰</span>
+          <a href="${esc(l.url)}" target="_blank" rel="noopener" class="link-body"
+             style="flex:1;min-width:0;display:flex;align-items:center;gap:14px;padding:10px 14px;color:inherit;text-decoration:none;cursor:pointer;">
+            <span style="font-family:var(--mono);font-size:14px;flex-shrink:0;">${scopeIcon}</span>
+            <div style="flex:0 0 auto;min-width:140px;max-width:260px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+              <span style="color:var(--accent);font-weight:500;white-space:nowrap;">${esc(l.name)} ↗</span>
+              ${l.category ? `<span class="chip" style="font-size:10px;">${esc(l.category)}</span>` : ''}
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px;">
+              ${l.description ? `<div style="color:var(--text-dim);font-size:11px;line-height:1.4;">${esc(l.description)}</div>` : ''}
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);word-break:break-all;line-height:1.4;">${esc(l.url)}</div>
+            </div>
+          </a>
+          ${canEdit ? `
+            <div style="display:flex;align-items:center;gap:4px;padding:0 8px;border-left:1px solid var(--border);background:rgba(255,255,255,.02);">
+              <button class="btn btn-ghost" data-edit="${l.id}" style="padding:4px 10px;font-size:10px;">Edit</button>
+              <button class="btn btn-ghost" data-del="${l.id}" style="padding:4px 10px;font-size:10px;color:var(--danger);">Delete</button>
+            </div>
+          ` : ''}
+        </div>`;
+    }).join('');
+
+    // Auto-suggest categories — datalist built from existing links.
+    const cats = [...new Set(rows.map(l => l.category).filter(Boolean))].sort();
+    const dl = document.getElementById('link-categories');
+    if (dl) dl.innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+
+    // Drag & drop: draggable is on the .link-drag handle, events bubble
+    // up to re-order the parent row element.
+    let dragged = null;
+    host.querySelectorAll('.link-drag').forEach(handle => {
+      const row = handle.closest('[data-link]');
+      handle.addEventListener('dragstart', (e) => {
+        dragged = row;
+        row.style.opacity = '0.5';
+        // Firefox needs dataTransfer set to start a drag.
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', row.dataset.link);
+      });
+      handle.addEventListener('dragend', () => {
+        if (dragged) dragged.style.opacity = '';
+        dragged = null;
+      });
+    });
+    host.querySelectorAll('[data-link]').forEach(el => {
+      el.addEventListener('dragover', e => { if (dragged) e.preventDefault(); });
+      el.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        if (!dragged || dragged === el) return;
+        const all = [...host.querySelectorAll('[data-link]')];
+        const srcIdx = all.indexOf(dragged);
+        const dstIdx = all.indexOf(el);
+        if (srcIdx < dstIdx) host.insertBefore(dragged, el.nextSibling);
+        else                 host.insertBefore(dragged, el);
+        const newOrder = [...host.querySelectorAll('[data-link]')].map(e2 => e2.dataset.link);
+        await jfetch('POST', '/api/v1/links/reorder', {ordered_ids: newOrder});
+      });
+    });
+
+    host.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Delete this link?')) return;
+      await fetch(`/api/v1/links/${b.dataset.del}`, {method:'DELETE', credentials:'same-origin'});
+      load();
+    }));
+    host.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', async () => {
+      const l = state.links.find(x => x.id === b.dataset.edit);
+      if (!l) return;
+      const name = prompt('Name:', l.name); if (name === null) return;
+      const url = prompt('URL:', l.url); if (url === null) return;
+      const description = prompt('Description:', l.description || '');
+      if (description === null) return;
+      const category = prompt('Category:', l.category || '');
+      if (category === null) return;
+      const {ok, data} = await jfetch('PATCH', `/api/v1/links/${l.id}`, {
+        name, url, description: description || null, category: category || null,
+      });
+      if (!ok) alert(`error: ${data.error || data.detail}`);
+      load();
+    }));
+  }
+
+  document.getElementById('link-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const status = document.getElementById('link-form-status');
+    status.textContent = 'saving…'; status.style.color = 'var(--text-dim)';
+    const body = {
+      name: fd.get('name'), url: fd.get('url'),
+      description: fd.get('description') || null,
+      category: fd.get('category') || null,
+      scope: fd.get('scope'),
+    };
+    const {ok, data} = await jfetch('POST', '/api/v1/links', body);
+    if (ok) { status.textContent = '✓ added'; status.style.color = 'var(--accent)'; e.target.reset(); load(); }
+    else    { status.textContent = `✗ ${data.error || data.detail}`; status.style.color = 'var(--danger)'; }
+    setTimeout(() => status.textContent = '', 3000);
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

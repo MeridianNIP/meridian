@@ -1,0 +1,6 @@
+# Dev / test dependencies. Not shipped to production VMs.
+# Install on top of requirements.txt:
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+pytest==8.1.1
+pytest-asyncio==0.23.5

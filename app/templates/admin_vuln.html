@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Vulnerabilities · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Vulnerabilities</div>
+    <div class="page-sub">OSV.dev + NVD scan of installed apt + pip components. Multi-select to bulk-suppress or open external advisories.</div>
+</div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <span id="last-scan" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);"></span>
+    <button class="btn btn-primary" id="btn-rescan" style="font-size:11px;">▸ Rescan now</button>
+  </div>
+  {% with docs_path="admin/vulnerabilities.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="stat-grid" id="sev-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px;"></div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div style="padding:10px 14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+    <div class="field" style="min-width:160px;">
+      <label>Severity</label>
+      <div class="chip-row" id="sev-filters">
+        {% for s in ['critical','high','medium','low','info'] %}
+          <span class="chip{% if s in ['critical','high'] %} active{% endif %}" data-sev="{{ s }}">{{ s }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="field" style="min-width:160px;">
+      <label>Status</label>
+      <div class="chip-row" id="status-filters">
+        {% for s in ['open','suppressed','accepted_risk','false_positive','fixed'] %}
+          <span class="chip{% if s == 'open' %} active{% endif %}" data-status="{{ s }}">{{ s }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="field" style="flex:1;min-width:180px;">
+      <label>Component filter</label>
+      <input class="input mono" id="comp-filter" placeholder="openssl, bind9, urllib3…">
+    </div>
+    <div class="field" style="min-width:130px;">
+      <label>Source</label>
+      <select class="select" id="src-filter">
+        <option value="">any</option>
+        <option value="apt">apt (OS)</option>
+        <option value="pip">pip (Python)</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="btn-apply" style="font-size:11px;">▸ Apply</button>
+  </div>
+</div>
+
+<div class="card" id="bulk-bar" style="margin-bottom:14px;display:none;">
+  <div style="padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <span id="bulk-count" style="font-family:var(--mono);font-size:11px;color:var(--accent);">0 selected</span>
+    <button class="btn" data-bulk="suppressed" style="font-size:11px;color:var(--warn);">suppress</button>
+    <button class="btn" data-bulk="accepted_risk" style="font-size:11px;color:var(--warn);">accept risk</button>
+    <button class="btn" data-bulk="false_positive" style="font-size:11px;color:var(--text-dim);">false positive</button>
+    <button class="btn" data-bulk="open" style="font-size:11px;color:var(--accent);">reopen</button>
+    <span style="flex:1;"></span>
+    <span style="font-size:10px;color:var(--text-dimmer);font-family:var(--mono);">Links open in new tabs:</span>
+    <button class="btn" data-openlinks="nvd" style="font-size:10px;">NVD</button>
+    <button class="btn" data-openlinks="mitre" style="font-size:10px;">MITRE</button>
+    <button class="btn" data-openlinks="ghsa" style="font-size:10px;">GHSA</button>
+    <button class="btn" data-openlinks="vulners" style="font-size:10px;">Vulners</button>
+    <button class="btn" data-openlinks="debian" style="font-size:10px;">Debian</button>
+    <button class="btn" data-openlinks="ubuntu" style="font-size:10px;">Ubuntu</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Findings</div>
+    <span id="row-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <table style="width:100%;font-size:12px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border);">
+        <th style="padding:8px;width:28px;"><input type="checkbox" id="sel-all"></th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Severity</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">CVE</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Component</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Installed</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Fixed in</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Status</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Discovered</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<script>
+(function(){
+  const sevColor = {critical:'var(--danger)', high:'var(--danger)', medium:'var(--warn)', low:'var(--text-dim)', info:'var(--text-dimmer)'};
+  const statusColor = {open:'var(--danger)', fixed:'var(--accent)', suppressed:'var(--warn)', accepted_risk:'var(--warn)', false_positive:'var(--text-dimmer)'};
+  let findings = [];
+  let selected = new Set();
+
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+
+  function renderSevGrid(counts) {
+    const el = document.getElementById('sev-grid');
+    el.innerHTML = ['critical','high','medium','low','info'].map(s => `
+      <div class="stat">
+        <div class="stat-label" style="color:${sevColor[s]};">${s.toUpperCase()}</div>
+        <div class="stat-value">${counts[s] || 0}</div>
+        <div class="stat-delta">open</div>
+      </div>`).join('');
+  }
+
+  function renderRows() {
+    const tbody = document.getElementById('rows');
+    const rc = document.getElementById('row-count');
+    rc.textContent = `${findings.length} finding${findings.length === 1 ? '' : 's'}`;
+    tbody.innerHTML = findings.map(f => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;text-align:center;"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''}></td>
+        <td style="padding:8px;">
+          <span style="font-family:var(--mono);color:${sevColor[f.severity]};font-weight:600;font-size:11px;">${f.severity}</span>
+          ${f.cvss_score != null ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">CVSS ${f.cvss_score}</div>` : ''}
+        </td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);"><a href="https://nvd.nist.gov/vuln/detail/${f.cve_id}" target="_blank" style="color:var(--accent);text-decoration:none;">${f.cve_id}</a></td>
+        <td style="padding:8px;color:var(--text);">${f.component} <span style="color:var(--text-dimmer);font-size:10px;">(${f.source})</span></td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);">${f.installed_version}</td>
+        <td style="padding:8px;font-family:var(--mono);color:${f.fixed_version ? 'var(--accent)' : 'var(--text-dimmer)'};">${f.fixed_version || '—'}</td>
+        <td style="padding:8px;font-family:var(--mono);color:${statusColor[f.status]};font-weight:600;">${f.status}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${(f.discovered_at || '').slice(0,10)}</td>
+      </tr>
+      ${f.description ? `<tr><td></td><td colspan="7" style="padding:0 8px 8px;color:var(--text-dim);font-size:11px;">${f.description}</td></tr>` : ''}
+    `).join('');
+    tbody.querySelectorAll('[data-sel]').forEach(el => {
+      el.addEventListener('change', () => {
+        if (el.checked) selected.add(el.dataset.sel);
+        else selected.delete(el.dataset.sel);
+        renderBulkBar();
+      });
+    });
+  }
+
+  function renderBulkBar() {
+    const bar = document.getElementById('bulk-bar');
+    const count = document.getElementById('bulk-count');
+    bar.style.display = selected.size > 0 ? 'block' : 'none';
+    count.textContent = `${selected.size} selected`;
+  }
+
+  async function load() {
+    const sev = [...document.querySelectorAll('#sev-filters .chip.active')].map(c => c.dataset.sev);
+    const st = [...document.querySelectorAll('#status-filters .chip.active')].map(c => c.dataset.status);
+    const comp = document.getElementById('comp-filter').value;
+    const src = document.getElementById('src-filter').value;
+    const params = new URLSearchParams();
+    sev.forEach(s => params.append('severity', s));
+    st.forEach(s => params.append('status', s));
+    if (comp) params.append('component', comp);
+    if (src) params.append('source', src);
+    params.append('limit', '500');
+    const {ok, data} = await jfetch('GET', `/api/v1/admin/vuln/findings?${params}`);
+    if (!ok) { document.getElementById('row-count').textContent = `error: ${data.error || data.detail}`; return; }
+    findings = data.findings;
+    renderSevGrid(data.counts_open_by_severity);
+    selected = new Set([...selected].filter(id => findings.some(f => f.id === id)));
+    renderRows();
+    renderBulkBar();
+  }
+
+  async function loadScans() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/vuln/scans?limit=1');
+    if (!ok || !data.length) return;
+    const s = data[0];
+    document.getElementById('last-scan').textContent =
+      `Last scan: ${s.status} · ${s.findings_count} new · ${(s.started_at || '').slice(0,16).replace('T',' ')}`;
+  }
+
+  // Filter chip toggles
+  document.querySelectorAll('#sev-filters .chip, #status-filters .chip').forEach(c => {
+    c.addEventListener('click', () => { c.classList.toggle('active'); });
+  });
+  document.getElementById('btn-apply').addEventListener('click', load);
+
+  // Select-all
+  document.getElementById('sel-all').addEventListener('change', (e) => {
+    if (e.target.checked) findings.forEach(f => selected.add(f.id));
+    else selected.clear();
+    renderRows();
+    renderBulkBar();
+  });
+
+  // Bulk status
+  document.querySelectorAll('[data-bulk]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ids = [...selected];
+      if (ids.length === 0) return;
+      let note = null;
+      if (btn.dataset.bulk !== 'open') {
+        note = prompt(`Optional note for '${btn.dataset.bulk}' (reason, ticket, decision):`, '');
+        if (note === null) return;
+      }
+      const {ok, data} = await jfetch('POST', '/api/v1/admin/vuln/findings/bulk-status', {
+        finding_ids: ids, status: btn.dataset.bulk,
+        suppression_note: note || null,
+      });
+      if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+      selected.clear();
+      load();
+    });
+  });
+
+  // Open links across selection
+  document.querySelectorAll('[data-openlinks]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const provider = btn.dataset.openlinks;
+      const picked = findings.filter(f => selected.has(f.id) && f.ext_refs && f.ext_refs[provider]);
+      if (picked.length === 0) { alert('No selected rows have a usable CVE for that provider.'); return; }
+      if (picked.length > 12 && !confirm(`Open ${picked.length} tabs for ${provider.toUpperCase()}?`)) return;
+      picked.forEach(f => window.open(f.ext_refs[provider], '_blank', 'noopener'));
+    });
+  });
+
+  document.getElementById('btn-rescan').addEventListener('click', async () => {
+    document.getElementById('last-scan').textContent = 'Rescan queued…';
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/vuln/scan');
+    if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    document.getElementById('last-scan').textContent = `Rescan task ${data.task_id} queued`;
+    setTimeout(loadScans, 3000);
+  });
+
+  load();
+  loadScans();
+})();
+</script>
+{% endblock %}

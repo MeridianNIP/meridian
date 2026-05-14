@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AUP template · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">LEGAL · AUP TEMPLATE</div>
+<h1>Acceptable Use Policy · template</h1>
+<div class="page-sub">Starter text for your organization's AUP. Edit in Admin → Branding. Users will be required to click-through accept this text on first login and again whenever it's updated.</div>
+
+<div class="callout warn"><span class="lbl">NOT LEGAL ADVICE</span><div>This template is a reasonable starting point. Your legal / compliance team should review and adapt it for your jurisdiction, industry, and risk posture before publishing. Meridian does not assume responsibility for the adequacy of any AUP you publish.</div></div>
+
+<h2>Sample AUP</h2>
+
+<pre><code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  &lt;YOUR ORGANIZATION&gt; · ACCEPTABLE USE POLICY
+                             Meridian NIP · v1.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. AUTHORIZATION
+   This system is the property of &lt;YOUR ORGANIZATION&gt;. Access is granted
+   only to named individuals by &lt;YOUR ORGANIZATION&gt;'s network-operations
+   leadership. Credentials are personal and non-transferable. Shared
+   logins are prohibited; a credential used from multiple devices or by
+   multiple people is grounds for immediate revocation.
+
+2. PURPOSE &amp; SCOPE
+   Meridian is an operational platform for DNS, network, directory, and
+   certificate diagnostics. You may use it only for work relating to
+   &lt;YOUR ORGANIZATION&gt;'s networks and those networks expressly under
+   your management responsibility.
+
+3. AUDIT &amp; MONITORING
+   All queries, sandboxed commands, privileged actions, and data exports
+   are audit-logged. Audit records are cryptographically tamper-evident
+   and retained per corporate retention policy. You have no expectation
+   of privacy when using this system.
+
+4. EXTERNAL TESTING
+   Use of diagnostic tools (ping, dig, port scan, certificate inspection,
+   packet capture, etc.) against systems OUTSIDE &lt;YOUR ORGANIZATION&gt;'s
+   administrative control must comply with:
+   (a) the Computer Fraud and Abuse Act (18 U.S.C. § 1030) or local
+       equivalent;
+   (b) any written Rules of Engagement for the target system;
+   (c) &lt;YOUR ORGANIZATION&gt;'s Third-Party Engagement Policy.
+   When in doubt, do not proceed.
+
+5. PRIVILEGED ACTIONS
+   Certain actions — packet capture, service restart, AD password reset,
+   Infoblox writes, certificate revocation — require approvals logged to
+   the audit trail. You must provide a clear written justification for
+   each privileged action.
+
+6. DATA HANDLING
+   Exported query results, packet captures, and PDF reports may contain
+   information subject to &lt;YOUR ORGANIZATION&gt;'s data-classification
+   policies. Handle exports as you would any other sensitive internal
+   document. Do not disclose exports to parties outside
+   &lt;YOUR ORGANIZATION&gt; without written authorization.
+
+7. CREDENTIALS
+   You must enroll multi-factor authentication within 7 days of first
+   login. API tokens are personal; you are responsible for any action
+   taken with a token you created.
+
+8. PROHIBITED CONDUCT
+   The following are prohibited and grounds for immediate revocation and
+   disciplinary action:
+    - Sharing your credentials with any other person
+    - Attempting to circumvent audit logging, permission checks, or
+      license enforcement
+    - Using the platform for personal or commercial activities unrelated
+      to &lt;YOUR ORGANIZATION&gt;'s operations
+    - Testing systems you do not have written authorization to test
+    - Exfiltrating credentials, API keys, certificates, or audit records
+    - Disabling security controls (AppArmor, fail2ban, integrity scans)
+
+9. SESSIONS &amp; TIMEOUT
+   The portal signs you out after a configured period of inactivity.
+   One active session per user by default; signing in on a new device
+   signs you out of the previous one and is recorded to the audit log.
+
+10. ACCEPTANCE
+    By logging in and clicking "I accept", you affirm that you have
+    read, understood, and agree to this policy. &lt;YOUR ORGANIZATION&gt;
+    may update this policy with reasonable notice; continued use after
+    an update constitutes acceptance of the revised policy.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Questions or concerns: &lt;SUPPORT EMAIL&gt;
+Policy owner: &lt;POLICY OWNER NAME / TITLE&gt;
+Effective: &lt;DATE&gt;
+Revision: 1.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code></pre>
+
+<h2>How click-through works</h2>
+<p>Each revision of the AUP is stored in the <code>aup_versions</code> table with a version number. On every login the portal checks whether the user has an <code>aup_acceptances</code> row for the currently-active version. If not, the full text is shown with an "I accept" checkbox and a submit button. Acceptance is recorded with timestamp, IP, and user-agent.</p>
+
+<h2>Toggles</h2>
+<p>In Admin → Branding → Login page text:</p>
+<ul>
+<li><strong>Require click-through AUP accept on first login</strong> — if disabled, new users bypass acceptance (not recommended)</li>
+<li><strong>Re-prompt on AUP version change</strong> — if disabled, existing users don't re-accept when you publish new text</li>
+<li><strong>Show AUP link in footer</strong> — adds "Acceptable Use Policy" to every page footer for easy reference</li>
+</ul>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

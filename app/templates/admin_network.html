@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Network Configuration · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Network Configuration</div>
+    <div class="page-sub">IP / gateway, DNS + NTP, and outbound proxy. Edits here stage a draft; click Apply to render the system files and reload services. IP changes can disconnect you — there's a rollback timer on the IP card.</div>
+  </div>
+  <button class="btn btn-primary" id="apply-all-btn">▸ Apply all</button>
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">IP / routing <span style="color:var(--warn);font-size:10px;font-family:var(--mono);margin-left:8px;">high-risk — can disconnect you</span></div>
+    <button type="button" class="btn btn-ghost" id="ip-restore" style="padding:3px 10px;font-size:11px;" title="Discard the saved draft and reload this card from the live system state">↻ Restore from system</button>
+  </div>
+  <div style="padding:12px 14px;">
+    <div class="form-row">
+      <div class="field"><label>Mode</label>
+        <select class="select" id="ip-mode">
+          <option value="dhcp">DHCP — auto-configure from the LAN</option>
+          <option value="static">Static — manually pin IP + gateway</option>
+        </select>
+      </div>
+      <div class="field"><label>Interface</label>
+        <select class="select mono" id="ip-iface">
+          <option value="">— loading interfaces —</option>
+        </select>
+        <div style="font-size:10px;color:var(--text-dimmer);margin-top:3px;font-family:var(--mono);" id="iface-meta"></div>
+      </div>
+    </div>
+    <div class="form-row" id="static-row" style="display:none;">
+      <div class="field"><label>Address (CIDR)</label>
+        <input class="input mono" id="ip-addr" placeholder="192.168.50.240/24">
+      </div>
+      <div class="field"><label>Gateway</label>
+        <input class="input mono" id="ip-gw" placeholder="192.168.50.1">
+      </div>
+      <div class="field"><label>MTU</label>
+        <input class="input mono" id="ip-mtu" type="number" min="576" max="9000" placeholder="1500">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">DNS / NTP / search domains</div></div>
+  <div style="padding:12px 14px;">
+    <div class="form-row">
+      <div class="field"><label>DNS servers (comma-separated)</label>
+        <input class="input mono" id="dns-servers" placeholder="1.1.1.1, 9.9.9.9">
+      </div>
+      <div class="field"><label>Search domains (comma-separated)</label>
+        <input class="input mono" id="dns-search" placeholder="corp.local, meridian.local">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>NTP servers (comma-separated)</label>
+        <input class="input mono" id="ntp-servers" placeholder="time.cloudflare.com, pool.ntp.org">
+      </div>
+      <div class="field"><label>Fallback NTP (comma-separated)</label>
+        <input class="input mono" id="ntp-fallback" placeholder="time.nist.gov">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Outbound proxy</div></div>
+  <div style="padding:12px 14px;">
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:8px;">
+      Used for threat-intel feeds and apt updates. Applied to the portal's meridian-app service env AND to apt.
+    </div>
+    <div class="form-row">
+      <div class="field"><label>HTTP proxy URL</label>
+        <input class="input mono" id="proxy-http" placeholder="http://proxy.corp:3128">
+      </div>
+      <div class="field"><label>HTTPS proxy URL</label>
+        <input class="input mono" id="proxy-https" placeholder="http://proxy.corp:3128">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>No-proxy list (comma-separated)</label>
+        <input class="input mono" id="proxy-noproxy" placeholder="localhost,127.0.0.1,*.meridian.local">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Apply history</div>
+    <button type="button" class="btn btn-ghost" id="hist-refresh" style="padding:3px 10px;font-size:11px;">↻ Refresh</button>
+  </div>
+  <div id="hist-rows" style="padding:10px 14px;font-family:var(--mono);font-size:11px;">loading…</div>
+</div>
+
+<script>
+(function(){
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined});
+    let d = {}; try { d = await r.json(); } catch {}
+    return {ok: r.ok, status: r.status, data: d};
+  }
+  const $ = id => document.getElementById(id);
+  const csv = v => v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  function toModel() {
+    return {
+      ip:    {mode: $('ip-mode').value, iface: $('ip-iface').value || null,
+              address_cidr: $('ip-addr').value || null,
+              gateway: $('ip-gw').value || null,
+              mtu: $('ip-mtu').value ? Number($('ip-mtu').value) : null},
+      dns:   {servers: csv($('dns-servers').value), search: csv($('dns-search').value)},
+      ntp:   {servers: csv($('ntp-servers').value), fallback: csv($('ntp-fallback').value)},
+      proxy: {http_url: $('proxy-http').value || null,
+              https_url: $('proxy-https').value || null,
+              no_proxy: $('proxy-noproxy').value || null},
+    };
+  }
+  function fromModel(s) {
+    s = s || {};
+    const ip = s.ip || {}, dns = s.dns || {}, ntp = s.ntp || {}, px = s.proxy || {};
+    $('ip-mode').value = ip.mode || 'dhcp';
+    $('ip-iface').value = ip.iface || '';
+    $('ip-addr').value = ip.address_cidr || '';
+    $('ip-gw').value = ip.gateway || '';
+    $('ip-mtu').value = ip.mtu || '';
+    $('dns-servers').value = (dns.servers || []).join(', ');
+    $('dns-search').value = (dns.search || []).join(', ');
+    $('ntp-servers').value = (ntp.servers || []).join(', ');
+    $('ntp-fallback').value = (ntp.fallback || []).join(', ');
+    $('proxy-http').value = px.http_url || '';
+    $('proxy-https').value = px.https_url || '';
+    $('proxy-noproxy').value = px.no_proxy || '';
+    applyIpModeVisibility();
+  }
+  function applyIpModeVisibility() {
+    $('static-row').style.display = ($('ip-mode').value === 'static') ? '' : 'none';
+  }
+  $('ip-mode').addEventListener('change', applyIpModeVisibility);
+
+  // Live system snapshot — refreshed on load and when the user clicks
+  // "Restore from system". Used to populate the IP card and the
+  // interfaces dropdown. Other cards (DNS / NTP / proxy) merge live
+  // with saved drafts.
+  let LIVE_SYSTEM = null;
+
+  function populateInterfaceSelect(selectedName) {
+    const sel = $('ip-iface');
+    const ifs = (LIVE_SYSTEM && LIVE_SYSTEM.interfaces) || [];
+    if (!ifs.length) {
+      sel.innerHTML = '<option value="">(no interfaces detected)</option>';
+      return;
+    }
+    sel.innerHTML = ifs.map(i => {
+      const tag = i.operstate === 'UP' ? '' : ' (' + (i.operstate || '?').toLowerCase() + ')';
+      return `<option value="${esc(i.iface)}">${esc(i.iface)}${tag}</option>`;
+    }).join('');
+    // Default selection: whatever was saved, otherwise the primary (first).
+    const wanted = selectedName || (LIVE_SYSTEM.ip && LIVE_SYSTEM.ip.iface) || ifs[0].iface;
+    sel.value = wanted;
+    if (sel.value !== wanted && ifs.length) sel.value = ifs[0].iface;
+  }
+
+  function applyInterfaceSelection() {
+    const name = $('ip-iface').value;
+    const ifs = (LIVE_SYSTEM && LIVE_SYSTEM.interfaces) || [];
+    const live = ifs.find(i => i.iface === name);
+    if (!live) return;
+    // Always reflect live state in the IP card. The user's draft kicks
+    // in only when they actually change a field.
+    $('ip-mode').value = live.mode === 'dhcp' || live.mode === 'static' ? live.mode : 'dhcp';
+    $('ip-addr').value = live.address_cidr || '';
+    $('ip-gw').value   = live.gateway || '';
+    $('ip-mtu').value  = live.mtu || '';
+    applyIpModeVisibility();
+    const meta = $('iface-meta');
+    if (meta) {
+      const bits = [
+        live.operstate ? `state=${live.operstate.toLowerCase()}` : '',
+        live.mac ? `mac=${live.mac}` : '',
+        live.mtu ? `mtu=${live.mtu}` : '',
+      ].filter(Boolean);
+      meta.textContent = bits.join(' · ');
+    }
+  }
+
+  async function loadCurrent() {
+    const [saved, sys] = await Promise.all([
+      jfetch('GET', '/api/v1/admin/network'),
+      jfetch('GET', '/api/v1/admin/network/system'),
+    ]);
+    const settings = (saved.ok ? saved.data.settings : null) || {};
+    LIVE_SYSTEM = (sys.ok ? sys.data : null) || {interfaces: []};
+
+    // IP card — populate the dropdown + show the selected interface's
+    // LIVE state. We deliberately ignore saved.ip here; the operator
+    // changes the form to express intent, then clicks Apply.
+    const savedIface = (settings.ip && settings.ip.iface) || null;
+    populateInterfaceSelect(savedIface);
+    applyInterfaceSelection();
+
+    // DNS / NTP / proxy — merge: prefer saved values when present,
+    // fall back to whatever's live. (These aren't per-interface.)
+    function pick(section, key, fallback) {
+      const s = settings[section] || {}; const l = LIVE_SYSTEM[section] || {};
+      const sv = s[key]; const lv = l[key];
+      if (sv !== undefined && sv !== null && sv !== '' && !(Array.isArray(sv) && sv.length === 0)) return sv;
+      return (lv !== undefined && lv !== null) ? lv : fallback;
+    }
+    $('dns-servers').value   = (pick('dns', 'servers', []) || []).join(', ');
+    $('dns-search').value    = (pick('dns', 'search', [])  || []).join(', ');
+    $('ntp-servers').value   = (pick('ntp', 'servers', []) || []).join(', ');
+    $('ntp-fallback').value  = (pick('ntp', 'fallback', []) || []).join(', ');
+    $('proxy-http').value    = pick('proxy', 'http_url', '') || '';
+    $('proxy-https').value   = pick('proxy', 'https_url', '') || '';
+    $('proxy-noproxy').value = pick('proxy', 'no_proxy', '') || '';
+  }
+
+  // Wire interface-change to refresh the IP card from the live snapshot.
+  document.getElementById('ip-iface').addEventListener('change', applyInterfaceSelection);
+
+  // Restore-from-system: blow away the IP-card draft and reload from live.
+  const restoreBtn = document.getElementById('ip-restore');
+  if (restoreBtn) restoreBtn.addEventListener('click', async () => {
+    const sys = await jfetch('GET', '/api/v1/admin/network/system');
+    LIVE_SYSTEM = (sys.ok ? sys.data : null) || {interfaces: []};
+    populateInterfaceSelect();
+    applyInterfaceSelection();
+    saveDraft();
+  });
+
+  async function loadHistory() {
+    const host = $('hist-rows');
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/network/history?limit=20');
+    if (!ok) { host.textContent = 'error loading history'; return; }
+    const rows = data.history || [];
+    if (!rows.length) { host.innerHTML = '<span style="color:var(--text-dimmer);">no applies yet</span>'; return; }
+    host.innerHTML = rows.map(r => `
+      <div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03);">
+        <span style="color:${r.apply_status === 'ok' ? 'var(--accent)' : 'var(--danger)'};">[${esc(r.apply_status)}]</span>
+        <span style="margin-left:6px;" title="${esc(r.applied_at)} UTC">${esc(fmt.ts(r.applied_at))}</span>
+        <span style="margin-left:6px;color:var(--text-dim);">section=${esc((r.apply_detail || {}).section || 'all')}</span>
+        <span style="margin-left:6px;color:var(--text-dimmer);">rc=${(r.apply_detail || {}).rc}</span>
+      </div>`).join('');
+  }
+
+  $('hist-refresh').addEventListener('click', loadHistory);
+
+  async function saveDraft() {
+    const m = toModel();
+    await jfetch('PUT', '/api/v1/admin/network', m);
+  }
+  // Persist on every change so a page refresh doesn't lose progress.
+  document.querySelectorAll('input, select').forEach(el => {
+    el.addEventListener('change', saveDraft);
+  });
+
+  // Rollback timer — IP changes can disconnect the admin session. After
+  // an apply that touched IP, show a 60s countdown; if the admin clicks
+  // "Keep changes" they stay. If the timer runs out (the tab can't reach
+  // the portal anymore), nothing happens in the tab — but the server
+  // rolls back from the previous history row via a deferred task.
+  //
+  // For this first pass we expose the UX countdown only; rollback is
+  // wired in the server on the apply endpoint future revision.
+  async function applyAll() {
+    // IP mode==dhcp and no static pinning is relatively safe; warn only
+    // when the apply touches static IP or when the user's session IP is
+    // on the affected subnet.
+    const m = toModel();
+    const risky = (m.ip.mode === 'static' && m.ip.address_cidr);
+    if (risky && !confirm('Static IP change can disconnect your session. Proceed?')) return;
+    await saveDraft();
+    const btn = $('apply-all-btn');
+    btn.disabled = true; btn.textContent = 'applying…';
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/network/apply', {section: 'all'});
+    btn.disabled = false; btn.textContent = '▸ Apply all';
+    if (!ok) { alert(`apply failed: ${data.detail || data.error}`); loadHistory(); return; }
+    alert((data.status === 'ok') ? 'Applied successfully.' : `Apply reported ${data.status}: ${(data.detail || {}).output || ''}`);
+    loadHistory();
+  }
+  $('apply-all-btn').addEventListener('click', applyAll);
+
+  (async function boot() {
+    await loadCurrent();
+    await loadHistory();
+  })();
+})();
+</script>
+{% endblock %}

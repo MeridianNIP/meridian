@@ -1,0 +1,196 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>API Reference · Meridian NIP</title>
+<link rel="stylesheet" href="/static/css/docs.css">
+<body class="docs">
+<div class="docs-wrap">
+  <h1>API Reference</h1>
+  <p class="lede">Meridian exposes a bearer-token authenticated REST API at
+  <code>/api/v1/</code>. Every UI action in the portal is a thin wrapper
+  over this API — anything you can do with a browser session, you can
+  automate with an API token. The full machine-readable spec is served
+  at <a href="/openapi.json"><code>/openapi.json</code></a> (Swagger/OpenAPI 3.1),
+  and an interactive browser is available at <a href="/docs">/docs</a>.</p>
+
+  <h2>1. Minting an API token</h2>
+  <p>In the portal: <strong>Settings → API tokens → Create token</strong>.
+  The plaintext token is shown once; store it immediately. Its SHA-256
+  hash is persisted server-side — Meridian cannot recover the original.
+  Tokens carry:</p>
+  <ul>
+    <li><strong>Name</strong> — admin-visible label. Unique per user.</li>
+    <li><strong>Scopes</strong> — the subset of the minter's permissions
+      the token may exercise. A leaked token cannot expand beyond its
+      scopes even if the user gains more permissions later.</li>
+    <li><strong>Expiry</strong> — optional (0 = never expires).</li>
+    <li><strong>Rate limit</strong> — per-token requests/minute.</li>
+  </ul>
+
+  <h2>2. Authenticating a request</h2>
+  <p>Send the token in the <code>Authorization</code> header with a
+  <code>Bearer</code> prefix. Meridian recognises tokens by the
+  <code>mrd_</code> prefix; anything else on that header is treated as a
+  session ID (legacy).</p>
+<pre><code>curl -sS https://meridian.example.com/api/v1/monitors/ \
+  -H "Authorization: Bearer mrd_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
+  <p>For POST/PATCH/PUT/DELETE on routes that normally require a CSRF
+  header, API-token requests are exempt — the bearer header itself proves
+  intent. Add <code>Content-Type: application/json</code> for JSON
+  bodies.</p>
+
+  <h2>3. Permissions and scopes</h2>
+  <p>Every route is guarded by a named permission (e.g.
+  <code>dns.sandbox</code>, <code>cert.request</code>,
+  <code>admin.devices.manage</code>). When a token is used, Meridian
+  checks BOTH the user's current permissions AND the token's stored
+  scopes — the required permission must appear in both. Rotate or
+  revoke a token under <strong>Settings → API tokens</strong> if its
+  scopes drift out of date.</p>
+
+  <h2>4. Common endpoints</h2>
+
+  <h3>DNS diagnostics</h3>
+<pre><code># Dig against an explicit resolver
+curl -sS -X POST /api/v1/dns/dig \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"target":"example.com","record_type":"A","resolver":"1.1.1.1"}'
+
+# Propagation across 16 public resolvers
+curl -sS -X POST /api/v1/dns/propagation \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"target":"example.com","record_type":"A"}'
+
+# Hop-trace recursion through a named resolver group
+curl -sS -X POST /api/v1/dns/trace \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"target":"example.com","record_type":"A","group_tag":"corp"}'</code></pre>
+
+  <h3>Network tools</h3>
+<pre><code>POST /api/v1/network/ping               {"target":"1.1.1.1","count":4}
+POST /api/v1/network/traceroute         {"target":"1.1.1.1"}
+POST /api/v1/network/http-test          {"url":"https://example.com"}
+POST /api/v1/network/port-scan          {"target":"1.1.1.1","ports":"22,80,443"}
+POST /api/v1/network/ip-geolocate       {"ip":"8.8.8.8"}
+POST /api/v1/network/header-audit       {"url":"https://example.com"}
+GET  /api/v1/network/interfaces</code></pre>
+
+  <h3>Threat intel (vulnerability + reputation)</h3>
+<pre><code>POST /api/v1/network/cve-lookup         {"cve":"CVE-2021-44228"}
+POST /api/v1/network/kev-lookup         {"cve":"CVE-2021-44228"}
+POST /api/v1/network/kev-search         {"query":"log4j"}
+POST /api/v1/network/epss-lookup        {"cve":"CVE-2021-44228"}
+POST /api/v1/network/circl-lookup       {"cve":"CVE-2021-44228"}
+POST /api/v1/network/ip-reputation      {"ip":"203.0.113.42"}
+POST /api/v1/network/dshield-lookup     {"ip":"203.0.113.42"}
+# API-key required:
+POST /api/v1/network/abuseipdb-lookup   {"ip":"203.0.113.42"}
+POST /api/v1/network/greynoise-lookup   {"ip":"203.0.113.42"}
+POST /api/v1/network/virustotal-lookup  {"target":"example.com"}
+POST /api/v1/network/urlscan-search     {"query":"domain:example.com"}
+POST /api/v1/network/shodan-lookup      {"ip":"203.0.113.42"}
+POST /api/v1/network/censys-lookup      {"ip":"203.0.113.42"}</code></pre>
+
+  <h3>Certificates</h3>
+<pre><code>GET    /api/v1/certs/                   # list all (portal + monitored)
+POST   /api/v1/certs/watchlist          {"host":"example.com","port":443,
+                                         "notify_channels":["uuid…"],
+                                         "renew_before_days":30}
+POST   /api/v1/certs/{id}/refresh       # re-fetch + threshold + fp-change
+PATCH  /api/v1/certs/{id}               {"notify_channels":[…],
+                                         "renew_before_days":14,
+                                         "auto_renew":true}
+POST   /api/v1/certs/upload             {"leaf_pem":"…","chain_pem":"…",
+                                         "cert_type":"internal"}
+POST   /api/v1/certs/csr                {"subject_cn":"…","sans":[],
+                                         "key_type":"ecdsa_p256"}
+DELETE /api/v1/certs/{id}</code></pre>
+
+  <h3>Monitors</h3>
+<pre><code>GET    /api/v1/monitors/                # list
+POST   /api/v1/monitors/                {"name":"…","kind":"https",
+                                         "target":"api.example.com",
+                                         "interval_seconds":300,
+                                         "timeout_seconds":10}
+PATCH  /api/v1/monitors/{id}            # edit any field
+POST   /api/v1/monitors/{id}/toggle     # flip enabled
+DELETE /api/v1/monitors/{id}
+GET    /api/v1/monitors/{id}/samples    # recent samples
+GET    /api/v1/monitors/{id}/incidents  # open + closed incidents</code></pre>
+
+  <h3>Directory (LDAP / AD / Entra)</h3>
+<pre><code>POST /api/v1/directory/user/search      {"query":"jsmith","limit":25}
+POST /api/v1/directory/group/search     {"query":"Domain Admins","limit":25}
+POST /api/v1/directory/integrations/{id}/test</code></pre>
+
+  <h3>Wizards</h3>
+<pre><code>POST /api/v1/wizards/run                {"wizard_key":"ssl.deep_inspect",
+                                         "target":"example.com"}</code></pre>
+  <p>Returns: <code>wizard_key · target · outcome · steps[] · suggestions[]</code>.
+  Each step has <code>name · outcome · message · detail</code>.</p>
+
+  <h3>Runbooks</h3>
+<pre><code>GET    /api/v1/runbooks                 # list
+GET    /api/v1/runbooks/{id}            # detail + steps
+POST   /api/v1/runbooks                 {"name":"…","steps":[…]}
+POST   /api/v1/runbooks/{id}/run        # execute all steps
+GET    /api/v1/runbooks/{id}/runs       # run history
+GET    /api/v1/runbooks/{id}/runs/{rid} # full step_results</code></pre>
+
+  <h3>Admin — integrations</h3>
+<pre><code># Directory
+GET    /api/v1/admin/integrations/directory
+POST   /api/v1/admin/integrations/directory
+PATCH  /api/v1/admin/integrations/directory/{id}
+DELETE /api/v1/admin/integrations/directory/{id}
+
+# Threat Intel — keys + source toggles
+GET    /api/v1/admin/integrations/threat-intel
+POST   /api/v1/admin/integrations/threat-intel
+PATCH  /api/v1/admin/integrations/threat-intel/{id}
+DELETE /api/v1/admin/integrations/threat-intel/{id}
+GET    /api/v1/admin/integrations/threat-intel-sources
+PATCH  /api/v1/admin/integrations/threat-intel-sources/{source_key}</code></pre>
+
+  <h3>Admin — network devices</h3>
+<pre><code>GET    /api/v1/admin/devices
+POST   /api/v1/admin/devices
+PATCH  /api/v1/admin/devices/{id}
+DELETE /api/v1/admin/devices/{id}
+POST   /api/v1/admin/devices/{id}/backup      # trigger on-demand backup
+GET    /api/v1/admin/devices/{id}/snapshots
+GET    /api/v1/admin/devices/{id}/snapshots/{sid}
+GET    /api/v1/admin/devices/{id}/snapshots/{a}/diff/{b}</code></pre>
+
+  <h2>5. Rate limits</h2>
+  <p>Each token has a per-minute cap (default 120). Exceeding it returns
+  <code>429 Too Many Requests</code>. The UI session path is unlimited.</p>
+
+  <h2>6. Error envelope</h2>
+  <p>Errors follow the FastAPI default shape:</p>
+<pre><code>HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
+{"detail":"API token is missing required scope(s): dns.sandbox"}</code></pre>
+  <p>Validation failures from Pydantic surface <code>422 Unprocessable
+  Entity</code> with a <code>detail</code> array of field errors.
+  Upstream-provider failures on Threat Intel routes surface
+  <code>502 Bad Gateway</code>. A missing Threat Intel key surfaces
+  <code>412 Precondition Failed</code>.</p>
+
+  <h2>7. Revoking and rotating</h2>
+  <p>Under <strong>Settings → API tokens</strong>, each row has
+  <strong>Revoke</strong> (sets <code>revoked_at</code>; the token no
+  longer authenticates) and <strong>Delete</strong> (removes the row;
+  equivalent for auth purposes but cleans the list). Minting a new token
+  with the same name as a revoked one is allowed.</p>
+
+  <h2>8. Interactive browser</h2>
+  <p>The raw OpenAPI 3.1 document is served at
+  <a href="/openapi.json"><code>/openapi.json</code></a> — feed it into
+  Postman, Bruno, or an API-client generator. On airgapped deployments
+  (installer flag <code>--airgapped</code>) an interactive Swagger UI is
+  also mounted at <a href="/api-docs"><code>/api-docs</code></a>.</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,77 @@
+# Meridian · Application service (Gunicorn + Uvicorn workers)
+# Rendered by install.sh via envsubst. Variables:
+#   ${INSTALL_ROOT} ${CONFIG_ROOT} ${DATA_ROOT} ${LOG_ROOT} ${SVC_USER} ${SVC_GROUP}
+
+[Unit]
+Description=Meridian NIP · FastAPI application
+Documentation=https://meridiannip.com/docs
+After=network-online.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=${SVC_USER}
+Group=${SVC_GROUP}
+WorkingDirectory=${INSTALL_ROOT}
+Environment="MERIDIAN_CONFIG=${CONFIG_ROOT}/meridian.conf"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="PYTHONUNBUFFERED=1"
+UMask=0027
+
+# Leading `-` makes the pre-check non-fatal: on first boot the license table
+# is empty, which doctor treats as an error. The app enforces licensing at
+# request time; no need to hard-block startup on it.
+ExecStartPre=-${INSTALL_ROOT}/venv/bin/python -m app.cli doctor
+ExecStart=${INSTALL_ROOT}/venv/bin/gunicorn \
+  -k uvicorn.workers.UvicornWorker \
+  -w 4 -b 127.0.0.1:8000 \
+  --timeout 60 --graceful-timeout 30 \
+  --access-logfile ${LOG_ROOT}/app-access.log \
+  --error-logfile ${LOG_ROOT}/app-error.log \
+  --log-level info \
+  app.main:app
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+# Grant raw-socket caps to the packet-capture sandbox. NoNewPrivileges=true
+# (above) blocks file-cap gains, so we lift the caps ambiently for the service
+# and rely on the sandbox allowlist + AppArmor profile to keep the Python code
+# itself away from them. The only user-reachable consumer is tcpdump via the
+# /api/v1/network/pcap route.
+# cap_setuid/setgid let `sudo` escalate; cap_chown/fowner let the
+# credential-rotation + network-config wrapper scripts re-own the files
+# they generate (without these, chown silently no-ops on systemd-managed
+# children even when EUID is 0 — capabilities trump uid). cap_dac_override
+# is needed for the cert renew + nginx test paths to read root-owned files.
+# cap_audit_write keeps PAM happy when sudo logs to the audit subsystem.
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_AUDIT_WRITE CAP_CHOWN CAP_FOWNER
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+
+ReadWritePaths=${DATA_ROOT} ${LOG_ROOT} ${CONFIG_ROOT}
+# Repair actions (cert:renew) shell out to certbot which writes state here.
+# Prefixed with `-` so the unit still loads on hosts that never ran certbot.
+ReadWritePaths=-/etc/letsencrypt
+ReadWritePaths=-/var/log/letsencrypt
+ReadWritePaths=-/var/lib/letsencrypt
+
+[Install]
+WantedBy=multi-user.target

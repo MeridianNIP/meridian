@@ -1,0 +1,170 @@
+MERIDIAN-NIP-MIB DEFINITIONS ::= BEGIN
+
+-- Meridian Network Intelligence Platform — private MIB.
+-- Provides OIDs for monitoring portal health, service counts,
+-- certificate expiry summary, monitor outcomes, and host metrics.
+--
+-- The enterprise arc 1.3.6.1.4.1.60022 is a self-assigned placeholder
+-- until a PEN is registered; replace with the issued number once
+-- IANA allocates. All OIDs are read-only; the RW community does not
+-- expose writable scalars in this release.
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Counter64, Gauge32,
+    enterprises                        FROM SNMPv2-SMI
+    DisplayString                       FROM SNMPv2-TC;
+
+meridianNip MODULE-IDENTITY
+    LAST-UPDATED "202604220000Z"
+    ORGANIZATION "Meridian NIP Project"
+    CONTACT-INFO "https://meridiannip.com"
+    DESCRIPTION  "Meridian Network Intelligence Platform metrics"
+    ::= { enterprises 60022 }
+
+meridianCore        OBJECT IDENTIFIER ::= { meridianNip 1 }
+meridianServices    OBJECT IDENTIFIER ::= { meridianNip 2 }
+meridianHost        OBJECT IDENTIFIER ::= { meridianNip 3 }
+meridianMonitors    OBJECT IDENTIFIER ::= { meridianNip 4 }
+meridianCerts       OBJECT IDENTIFIER ::= { meridianNip 5 }
+meridianAudit       OBJECT IDENTIFIER ::= { meridianNip 6 }
+
+-- =========================================================================
+-- 1. Core portal metrics
+-- =========================================================================
+meridianUptimeSeconds OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Seconds since meridian-app.service started."
+    ::= { meridianCore 1 }
+
+meridianVersion OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..64))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Running Meridian version (e.g. 1.4.2)."
+    ::= { meridianCore 2 }
+
+meridianActiveSessions OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Active (non-revoked, non-expired) user sessions."
+    ::= { meridianCore 3 }
+
+meridianLicensed OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "1 = license present + valid. 0 = unlicensed / expired."
+    ::= { meridianCore 4 }
+
+-- =========================================================================
+-- 2. Managed service states (0=active, 1=inactive, 2=failed, 3=unknown)
+-- =========================================================================
+meridianSvcPostgres OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "postgresql.service is-active code." ::= { meridianServices 1 }
+meridianSvcNginx OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "nginx.service is-active code." ::= { meridianServices 2 }
+meridianSvcBind OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "bind9/named.service is-active code." ::= { meridianServices 3 }
+meridianSvcApp OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "meridian-app.service is-active code." ::= { meridianServices 4 }
+meridianSvcCelery OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "meridian-celery.service is-active code." ::= { meridianServices 5 }
+meridianSvcBeat OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "meridian-beat.service is-active code." ::= { meridianServices 6 }
+meridianSvcRedis OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "redis/valkey-server.service is-active code." ::= { meridianServices 7 }
+
+-- =========================================================================
+-- 3. Host metrics (pulled from /proc and /sys/class/net at poll time)
+-- =========================================================================
+meridianHostUptimeSeconds OBJECT-TYPE
+    SYNTAX Counter64 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Host uptime (kernel boot time to now)."
+    ::= { meridianHost 1 }
+
+meridianHostLoad1 OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "1-minute load average * 100."
+    ::= { meridianHost 2 }
+
+meridianHostMemUsedPct OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Memory used as percentage (0..100)."
+    ::= { meridianHost 3 }
+
+meridianHostDiskUsedPct OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Root filesystem used as percentage."
+    ::= { meridianHost 4 }
+
+meridianHostNicTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF MeridianHostNicEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Per-NIC counters: name, operstate, MTU, RX/TX bytes."
+    ::= { meridianHost 5 }
+
+MeridianHostNicEntry ::= SEQUENCE {
+    nicIndex       Integer32,
+    nicName        DisplayString,
+    nicOperstate   DisplayString,
+    nicMtu         Integer32,
+    nicRxBytes     Counter64,
+    nicTxBytes     Counter64,
+    nicRxPackets   Counter64,
+    nicTxPackets   Counter64
+}
+
+-- =========================================================================
+-- 4. Monitor summary
+-- =========================================================================
+meridianMonitorsOk OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Enabled monitors whose last_status = 'ok'."
+    ::= { meridianMonitors 1 }
+
+meridianMonitorsFailing OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Enabled monitors whose last_status is warn/down/unknown."
+    ::= { meridianMonitors 2 }
+
+meridianMonitorsOpenIncidents OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Currently-open monitor incidents (closed_at IS NULL)."
+    ::= { meridianMonitors 3 }
+
+-- =========================================================================
+-- 5. Certificate expiry summary
+-- =========================================================================
+meridianCertsTracked OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Total cert rows (portal + monitored + uploaded)."
+    ::= { meridianCerts 1 }
+
+meridianCertsMinDaysRemaining OBJECT-TYPE
+    SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Minimum days_remaining across all non-revoked certs. -1 if none."
+    ::= { meridianCerts 2 }
+
+meridianCertsExpiringSoon OBJECT-TYPE
+    SYNTAX Gauge32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Count of certs with days_remaining <= 30."
+    ::= { meridianCerts 3 }
+
+-- =========================================================================
+-- 6. Audit chain
+-- =========================================================================
+meridianAuditLastScanOk OBJECT-TYPE
+    SYNTAX Integer32 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "1 = last db_integrity_scan found 0 mismatches. 0 = mismatches found."
+    ::= { meridianAudit 1 }
+
+meridianAuditLastScanAgoSeconds OBJECT-TYPE
+    SYNTAX Counter64 MAX-ACCESS read-only STATUS current
+    DESCRIPTION "Seconds since the last integrity scan ran."
+    ::= { meridianAudit 2 }
+
+END

@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% set active = 'approvals' %}
+{% block title %}Approvals · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Approvals</div>
+    <div class="page-sub">Two-person sign-off for destructive or sensitive operations</div>
+  </div>
+  {% with docs_path="user/approvals.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="tabs" data-tabs="appr">
+  <button class="tab active" data-tab="pending">Pending ({{ pending|length }})</button>
+  <button class="tab"        data-tab="mine">My requests</button>
+</div>
+
+<div data-panel="pending" data-group="appr">
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Awaiting approval</div>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">you cannot approve your own requests</span>
+    </div>
+    {% if pending %}
+      {% for a in pending %}
+        <div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:14px;">
+          <div style="flex:1;">
+            <div style="font-weight:600;color:var(--text);font-size:13px;">
+              <code style="font-family:var(--mono);font-size:12px;">{{ a.action }}</code>
+              {% if a.target_key %}· <span style="color:var(--text-dim);font-family:var(--mono);">{{ a.target_key }}</span>{% endif %}
+            </div>
+            <div style="font-size:11px;color:var(--text-dimmer);font-family:var(--mono);margin:4px 0;">
+              requested by {{ a.requested_by }} · expires {{ a.expires_at.strftime('%b %d %H:%M') }}
+            </div>
+            <div style="font-size:12px;color:var(--text-dim);line-height:1.5;font-style:italic;">
+              "{{ a.justification }}"
+            </div>
+          </div>
+          {% if a.requested_by != user.id %}
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+            <button class="btn btn-primary" data-decide="approved" data-id="{{ a.id }}" style="padding:5px 12px;font-size:11px;">Approve</button>
+            <button class="btn btn-danger"  data-decide="denied"   data-id="{{ a.id }}" style="padding:5px 12px;font-size:11px;">Deny</button>
+          </div>
+          {% else %}
+          <div style="align-self:center;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">
+            your request
+          </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div style="color:var(--text-dimmer);font-size:12px;font-style:italic;padding:8px 0;">No pending approvals.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div data-panel="mine" data-group="appr" class="hidden">
+  <div class="card">
+    <div class="card-head"><div class="card-title">My recent requests</div></div>
+    {% if mine %}
+      <table style="width:100%;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Requested</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Action</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Target</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">State</th>
+            <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in mine %}
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+              <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:11px;">{{ a.requested_at.strftime('%b %d %H:%M') }}</td>
+              <td style="padding:8px;font-family:var(--mono);color:var(--text);">{{ a.action }}</td>
+              <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;">{{ a.target_key or '—' }}</td>
+              <td style="padding:8px;font-family:var(--mono);color:{% if a.state == 'approved' %}var(--accent){% elif a.state == 'pending' %}var(--warn){% elif a.state == 'denied' %}var(--danger){% else %}var(--text-dimmer){% endif %};">
+                {{ a.state }}
+              </td>
+              <td style="padding:8px;text-align:right;">
+                {% if a.state == 'pending' %}
+                  <button class="btn btn-ghost" data-cancel="{{ a.id }}" style="padding:4px 10px;font-size:10px;">Cancel</button>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div style="color:var(--text-dimmer);font-size:12px;font-style:italic;padding:8px 0;">No requests yet.</div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function(){
+  async function post(url, body) {
+    const r = await fetch(url, {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body || {}),
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+
+  document.querySelectorAll('[data-decide]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const decision = btn.dataset.decide;
+      const note = prompt(`Optional note for ${decision}:`) || null;
+      const {ok, data} = await post(`/api/v1/approvals/${btn.dataset.id}/${decision}`,
+                                    {decision_note: note});
+      if (ok) location.reload();
+      else alert(`${decision} failed: ${data.error || data.detail}`);
+    });
+  });
+
+  document.querySelectorAll('[data-cancel]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Cancel this request?')) return;
+      const {ok, data} = await post(`/api/v1/approvals/${btn.dataset.cancel}/cancel`, {});
+      if (ok) location.reload();
+      else alert(`cancel failed: ${data.error || data.detail}`);
+    });
+  });
+})();
+</script>
+{% endblock %}

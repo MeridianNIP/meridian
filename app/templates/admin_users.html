@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Users · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Users</div>
+    <div class="page-sub">Create, enable, lock, reset — every change audit-logged with the HMAC chain</div>
+</div>
+  <div class="page-actions">
+    <button class="btn btn-primary" id="new-user-btn">+ New user</button>
+  </div>
+  {% with docs_path="admin/users.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">User directory</div>
+    <label style="font-family:var(--mono);font-size:10px;color:var(--text-dim);display:flex;gap:6px;align-items:center;cursor:pointer;">
+      <input type="checkbox" id="show-disabled" checked> show disabled
+    </label>
+  </div>
+  <div id="users-out">Loading…</div>
+</div>
+
+<!-- Create user form -->
+<div class="card" id="new-user-card" style="display:none;margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">New user</div></div>
+  <form id="new-user-form">
+    <div class="form-row">
+      <div class="field"><label>Username</label><input class="input mono" name="username" pattern="[A-Za-z0-9._-]+" minlength="2" maxlength="64" required></div>
+      <div class="field"><label>Email</label><input class="input mono" name="email" type="email" required></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Display name</label><input class="input" name="display_name"></div>
+      <div class="field"><label>Role</label>
+        <select class="select" name="role">
+          <option value="viewer">viewer</option>
+          <option value="analyst" selected>analyst</option>
+          <option value="admin">admin</option>
+          <option value="auditor">auditor</option>
+          <option value="api_service">api_service</option>
+          {% if user.role == 'super_admin' %}
+            <option value="super_admin">super_admin</option>
+          {% endif %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>Temporary password (leave blank to auto-generate · 12+ chars)</label>
+        <input class="input mono" name="temp_password" minlength="12">
+      </div>
+      <div class="field" style="flex:2;">
+        <label>Force password change on first login</label>
+        <div style="padding-top:8px;">
+          <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+            <input type="checkbox" name="force_change_password" checked>
+            require a new password before any other action
+          </label>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">Create</button>
+    <button class="btn btn-ghost" type="button" id="cancel-new-user">Cancel</button>
+    <span id="new-user-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<script>
+(function(){
+  const myRole = {{ user.role | tojson }};
+  const myId = {{ user.id | tojson }};
+
+  function rolePill(role) {
+    const c = {super_admin:'#f87171', admin:'#a78bfa', analyst:'#60a5fa', viewer:'#94a3b8'}[role] || '#94a3b8';
+    return `<span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,.08);color:${c};letter-spacing:.05em;text-transform:uppercase;">${role}</span>`;
+  }
+  function stateBadge(u) {
+    if (u.deleted_at) return '<span style="color:var(--text-faint);font-family:var(--mono);font-size:10px;">DELETED</span>';
+    if (!u.enabled)    return '<span style="color:var(--text-dimmer);font-family:var(--mono);font-size:10px;">DISABLED</span>';
+    if (u.locked)      return '<span style="color:var(--danger);font-family:var(--mono);font-size:10px;">LOCKED</span>';
+    return '<span style="color:var(--accent);font-family:var(--mono);font-size:10px;">✓ active</span>';
+  }
+
+  async function jfetch(url, opts) {
+    const r = await fetch(url, {credentials: 'same-origin', ...(opts || {})});
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+
+  async function load() {
+    const inc = document.getElementById('show-disabled').checked;
+    const {ok, data} = await jfetch(`/api/v1/admin/users/?include_disabled=${inc}`);
+    if (!ok) { document.getElementById('users-out').textContent = 'load failed'; return; }
+    if (!data.users.length) {
+      document.getElementById('users-out').innerHTML = '<div style="font-style:italic;color:var(--text-dimmer);padding:8px 0;">No users.</div>';
+      return;
+    }
+    document.getElementById('users-out').innerHTML = `<table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Username</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Email</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Role</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">State</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last login</th>
+        <th style="text-align:right;padding:8px;"></th>
+      </tr></thead>
+      <tbody>${data.users.map(u => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:8px;font-family:var(--mono);color:var(--text);">${u.username}${u.id === myId ? '<span style="color:var(--text-dimmer);font-size:10px;margin-left:6px;">(you)</span>' : ''}</td>
+          <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;">${u.email}</td>
+          <td style="padding:8px;">${rolePill(u.role)}</td>
+          <td style="padding:8px;">${stateBadge(u)}</td>
+          <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${(u.last_login_at || '—').replace('T',' ').slice(0,16)}</td>
+          <td style="padding:8px;text-align:right;white-space:nowrap;">
+            ${u.locked    ? `<button class="btn btn-ghost" data-unlock="${u.id}" style="padding:4px 8px;font-size:10px;">Unlock</button>` : ''}
+            <button class="btn btn-ghost" data-reset="${u.id}"  style="padding:4px 8px;font-size:10px;">Reset pw</button>
+            ${u.mfa_enrolled ? `<button class="btn btn-ghost" data-reset-mfa="${u.id}" data-username="${u.username}" style="padding:4px 8px;font-size:10px;color:var(--warn);" title="Wipe TOTP + backup codes; user must re-enroll">Reset MFA</button>` : ''}
+            <button class="btn btn-ghost" data-toggle="${u.id}" data-enabled="${u.enabled}" style="padding:4px 8px;font-size:10px;${u.id === myId ? 'opacity:.3;pointer-events:none;' : ''}">${u.enabled ? 'Disable' : 'Enable'}</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+
+    document.querySelectorAll('[data-unlock]').forEach(b => b.addEventListener('click', async () => {
+      const {ok} = await jfetch(`/api/v1/admin/users/${b.dataset.unlock}/unlock`, {method:'POST'});
+      if (ok) load();
+    }));
+    document.querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Reset this user\'s password to a new random value?')) return;
+      const {ok, data} = await jfetch(`/api/v1/admin/users/${b.dataset.reset}/reset-password`, {method:'POST'});
+      if (ok) {
+        prompt('New temp password (shown once):', data.temp_password);
+        load();
+      }
+    }));
+    document.querySelectorAll('[data-reset-mfa]').forEach(b => b.addEventListener('click', async () => {
+      const uname = b.dataset.username;
+      if (!confirm(`Reset MFA for "${uname}"?\n\nThis wipes their TOTP authenticator and all backup codes, and force-revokes any active sessions. The user must re-enroll on next login.`)) return;
+      const {ok, data} = await jfetch(`/api/v1/admin/users/${b.dataset.resetMfa}/reset-mfa`, {method:'POST'});
+      if (ok) { alert(data.message || 'MFA cleared.'); load(); }
+      else alert(data.error || data.detail || 'reset failed');
+    }));
+    document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => {
+      const newVal = b.dataset.enabled !== 'true';
+      const {ok, data} = await jfetch(`/api/v1/admin/users/${b.dataset.toggle}`, {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({enabled: newVal}),
+      });
+      if (ok) load();
+      else alert(data.error || data.detail);
+    }));
+  }
+
+  document.getElementById('show-disabled').addEventListener('change', load);
+  document.getElementById('new-user-btn').addEventListener('click', () => {
+    document.getElementById('new-user-card').style.display = '';
+  });
+  document.getElementById('cancel-new-user').addEventListener('click', () => {
+    document.getElementById('new-user-card').style.display = 'none';
+    document.getElementById('new-user-form').reset();
+    document.getElementById('new-user-status').textContent = '';
+  });
+  document.getElementById('new-user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+      username: fd.get('username'),
+      email: fd.get('email'),
+      display_name: fd.get('display_name') || null,
+      role: fd.get('role'),
+      temp_password: fd.get('temp_password') || null,
+      force_change_password: fd.get('force_change_password') === 'on',
+    };
+    const s = document.getElementById('new-user-status');
+    const {ok, data} = await jfetch('/api/v1/admin/users/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (ok) {
+      s.textContent = '✓ created'; s.style.color = 'var(--accent)';
+      prompt(`Created ${data.user.username}. Temp password (shown once):`, data.temp_password);
+      e.target.reset();
+      document.getElementById('new-user-card').style.display = 'none';
+      load();
+    } else {
+      s.textContent = `✗ ${data.error || data.detail}`;
+      s.style.color = 'var(--danger)';
+    }
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

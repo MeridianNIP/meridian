@@ -1,0 +1,664 @@
+{% extends "base.html" %}
+{% set active = 'settings' %}
+{% block title %}Settings · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">User Settings</div>
+    <div class="page-sub">Your profile, sessions, and preferences</div>
+  </div>
+  {% with docs_path="user/settings.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="tabs" data-tabs="settings">
+  <button class="tab active" data-tab="profile">Profile</button>
+  <button class="tab"        data-tab="sessions">Sessions</button>
+  <button class="tab"        data-tab="password">Password</button>
+  <button class="tab"        data-tab="mfa">Two-factor auth</button>
+  <button class="tab"        data-tab="recovery">Account recovery</button>
+  <button class="tab"        data-tab="tokens">API tokens</button>
+  <button class="tab"        data-tab="privacy">Privacy &amp; data</button>
+</div>
+
+<div data-panel="profile" data-group="settings">
+  <div class="card">
+    <form id="profile-form">
+      <div class="form-row">
+        <div class="field">
+          <label>Display name</label>
+          <input class="input" name="display_name" value="{{ user.display_name or '' }}">
+        </div>
+        <div class="field">
+          <label>Time zone</label>
+          <select class="select mono" name="timezone" id="tz-select" data-current="{{ user.timezone or 'UTC' }}"></select>
+          <div style="font-size:10px;color:var(--text-dimmer);margin-top:3px;font-family:var(--mono);">
+            Timestamps throughout the portal render in this zone. Storage stays UTC.
+            System default: <span id="tz-system">{{ effective_tz }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Phone (E.164)</label>
+          <input class="input mono" name="phone_e164" value="{{ user.phone_e164 or '' }}" placeholder="+15550104242">
+        </div>
+        <div class="field">
+          <label>SMS carrier gateway</label>
+          <input class="input mono" name="sms_carrier_gateway" value="{{ user.sms_carrier_gateway or '' }}" placeholder="txt.att.net">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Idle timeout override (minutes · 0 = follow global default)</label>
+          <input class="input mono" name="idle_timeout_override_min" type="number" min="0" max="1440" value="{{ user.idle_timeout_override_min or '' }}">
+        </div>
+      </div>
+      <fieldset style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-top:6px;">
+        <legend style="padding:0 6px;font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;">Recovery contacts</legend>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">
+          Used only when the primary email or phone above is unreachable — typically during a lockout (lost laptop + dead corporate mailbox). Leave blank if not applicable.
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Recovery email</label>
+            <input class="input" name="recovery_email" type="email" value="{{ user.recovery_email or '' }}" placeholder="you@personal.example">
+          </div>
+          <div class="field">
+            <label>Recovery phone (E.164)</label>
+            <input class="input mono" name="recovery_phone" value="{{ user.recovery_phone or '' }}" placeholder="+15550104242">
+          </div>
+        </div>
+      </fieldset>
+      <button class="btn btn-primary" type="submit">Save profile</button>
+      <span id="profile-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;color:var(--accent);"></span>
+    </form>
+  </div>
+</div>
+
+<div data-panel="sessions" data-group="settings" class="hidden">
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Active sessions · limit {{ user.max_concurrent_sessions }}</div>
+      <button class="btn btn-danger" id="revoke-others" style="padding:5px 10px;font-size:11px;">Revoke all others</button>
+    </div>
+    {% for s in sessions %}
+      <div style="display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.04);">
+        <div style="width:32px;height:32px;border:1.5px solid var(--border-hi);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;color:var(--text-dim);">
+          {{ (s.device_label or 'UA')[:3]|upper }}
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:13px;color:var(--text);">
+            {{ s.device_label or 'Unknown device' }}
+            {% if s.id == current_session_id %}
+              <span style="font-family:var(--mono);font-size:9px;background:var(--accent-soft);color:var(--accent);padding:2px 6px;border-radius:8px;letter-spacing:.06em;margin-left:4px;">THIS SESSION</span>
+            {% endif %}
+          </div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">
+            {{ s.ip or 'ip unknown' }} · signed in {{ s.created_at.strftime('%b %d %H:%M') }} · last active {{ s.last_active_at.strftime('%b %d %H:%M') }}
+          </div>
+        </div>
+        {% if s.id != current_session_id %}
+          <button class="btn btn-ghost" data-revoke="{{ s.id }}" style="padding:5px 10px;font-size:11px;">Revoke</button>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div data-panel="password" data-group="settings" class="hidden">
+  <div class="card">
+    <form id="password-form">
+      <div class="field" style="margin-bottom:10px;"><label>Current password</label><input class="input" type="password" name="current" required></div>
+      <div class="field" style="margin-bottom:10px;"><label>New password (min 12 chars)</label><input class="input" type="password" name="new" minlength="12" required></div>
+      <div class="field" style="margin-bottom:14px;"><label>Confirm new password</label><input class="input" type="password" name="confirm" minlength="12" required></div>
+      <button class="btn btn-primary" type="submit">Change password</button>
+      <span id="password-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+</div>
+
+<div data-panel="mfa" data-group="settings" class="hidden">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Two-factor authentication (TOTP)</div>
+      <span style="font-family:var(--mono);font-size:10px;color:{% if user.mfa_enrolled %}var(--accent){% else %}var(--warn){% endif %};">
+        {{ 'ENROLLED' if user.mfa_enrolled else 'NOT ENROLLED' }}
+      </span>
+    </div>
+    <div style="padding:12px 14px;font-size:12px;color:var(--text-dim);line-height:1.55;">
+      Compatible with any RFC 6238 TOTP authenticator: Google Authenticator, Microsoft
+      Authenticator, Authy, 1Password, Bitwarden, Symantec VIP (generic-TOTP mode),
+      Duo Mobile (generic-TOTP), Yubico Authenticator, etc. Backup codes are shown once at
+      enrollment — save them in a password manager.
+    </div>
+
+    {% if not user.mfa_enrolled %}
+    <div style="padding:0 14px 14px;">
+      <button class="btn btn-primary" id="mfa-begin">▸ Start enrollment</button>
+      <span id="mfa-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </div>
+    <div id="mfa-enroll" style="display:none;padding:12px 14px;border-top:1px solid var(--border);">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:6px;">1. Add to your authenticator — either scan the QR below or paste the key:</div>
+      <div style="display:flex;gap:16px;align-items:flex-start;">
+        <div id="mfa-qr" style="background:#fff;padding:8px;border-radius:6px;min-width:180px;min-height:180px;display:flex;align-items:center;justify-content:center;">
+          <!-- QR SVG injected here. On networks that allow it, the page uses an
+               external QR generator as a fallback for better scan reliability. -->
+        </div>
+        <div style="flex:1;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Secret key</div>
+          <div id="mfa-secret" style="font-family:var(--mono);font-size:14px;color:var(--text);word-break:break-all;margin-top:4px;user-select:all;"></div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;margin-top:10px;">otpauth URI</div>
+          <div id="mfa-uri" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);word-break:break-all;margin-top:4px;user-select:all;"></div>
+        </div>
+      </div>
+      <div style="margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">2. Enter the 6-digit code your app shows:</div>
+      <form id="mfa-confirm-form" style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+        <input class="input mono" name="code" pattern="[0-9]{6,8}" maxlength="8" required
+               style="max-width:160px;letter-spacing:4px;text-align:center;font-size:16px;">
+        <button class="btn btn-primary" type="submit">Confirm</button>
+        <span id="mfa-confirm-status" style="font-family:var(--mono);font-size:11px;"></span>
+      </form>
+      <div id="mfa-backup-codes" style="display:none;margin-top:14px;padding:12px;background:rgba(234,179,8,.06);border-left:3px solid var(--warn);"></div>
+    </div>
+    {% else %}
+    <div style="padding:0 14px 14px;">
+      <form id="mfa-disable-form" style="display:flex;gap:8px;align-items:center;">
+        <input class="input mono" name="code" pattern="[0-9]{6,8}" maxlength="8" placeholder="6-digit code" required style="max-width:160px;letter-spacing:4px;text-align:center;">
+        <button class="btn btn-danger" type="submit" style="padding:6px 12px;">Disable 2FA</button>
+        <span id="mfa-disable-status" style="font-family:var(--mono);font-size:11px;"></span>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div data-panel="recovery" data-group="settings" class="hidden">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Account recovery (5 questions, 3 must match)</div>
+      <span id="recovery-status-badge" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+    </div>
+    <div style="padding:12px 14px;font-size:12px;color:var(--text-dim);line-height:1.55;">
+      If you forget your password, you will be asked <strong>3 randomly-chosen questions out of 5</strong>.
+      All 3 must match to unlock a one-time 30-minute reset link. Answers are
+      case-insensitive and ignore extra whitespace / punctuation
+      (so "Spot", " spot.", "SPOT" all count the same).
+      Answers are hashed with Argon2id — same algorithm as your password.
+      Pick questions an attacker cannot answer from your public social profile.
+    </div>
+    <form id="recovery-form" style="padding:0 14px 14px;">
+      <div id="recovery-rows"></div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;">Save recovery questions</button>
+      <span id="recovery-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+</div>
+
+<div data-panel="tokens" data-group="settings" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Create API token</div></div>
+    <form id="token-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Name</label><input class="input mono" name="name" minlength="2" maxlength="128" placeholder="ci-runner-prod" required></div>
+        <div class="field"><label>Expires in days (blank = no expiry)</label><input class="input mono" name="expires_in_days" type="number" min="1" max="365"></div>
+        <div class="field"><label>Rate limit (req/min)</label><input class="input mono" name="rate_limit_per_min" type="number" value="120" min="1" max="6000"></div>
+      </div>
+      <div class="field" style="margin-bottom:14px;">
+        <label>Scopes (comma-separated permission keys · must be permissions you already have)</label>
+        <input class="input mono" name="scopes" placeholder="dns.sandbox, network.ping">
+      </div>
+      <button class="btn btn-primary" type="submit">Create token</button>
+      <span id="token-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Active tokens</div></div>
+    <div id="tokens-out" style="font-size:12px;color:var(--text-dim);font-style:italic;">Loading…</div>
+  </div>
+
+  <script>
+  (function(){
+    async function loadTokens() {
+      const r = await fetch('/api/v1/settings/tokens/', {credentials:'same-origin'});
+      if (!r.ok) { document.getElementById('tokens-out').textContent = 'load failed'; return; }
+      const tokens = await r.json();
+      const out = document.getElementById('tokens-out');
+      if (!tokens.length) { out.innerHTML = '<div style="font-style:italic;color:var(--text-dimmer);padding:6px 0;">No tokens yet.</div>'; return; }
+      out.innerHTML = `<table style="width:100%;font-size:12px;">
+        <thead><tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Name</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Scopes</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Created</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Expires</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last used</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Status</th>
+          <th style="text-align:right;padding:6px 8px;"></th>
+        </tr></thead>
+        <tbody>${tokens.map(t => `
+          <tr style="border-bottom:1px solid rgba(255,255,255,.04);${t.revoked_at ? 'opacity:.5;' : ''}">
+            <td style="padding:8px;font-family:var(--mono);color:var(--text);">${t.name}</td>
+            <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;">${t.scopes.join(', ') || '—'}</td>
+            <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:11px;">${(t.created_at || '').replace('T',' ').slice(0,16)}</td>
+            <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:11px;">${(t.expires_at || 'never').replace('T',' ').slice(0,16)}</td>
+            <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:11px;">${(t.last_used_at || '—').replace('T',' ').slice(0,16)}</td>
+            <td style="padding:8px;font-family:var(--mono);font-size:11px;color:${t.revoked_at ? 'var(--danger)' : 'var(--accent)'};">${t.revoked_at ? 'revoked' : 'active'}</td>
+            <td style="padding:8px;text-align:right;">${!t.revoked_at ? `<button class="btn btn-danger" data-revoke="${t.id}" style="padding:4px 10px;font-size:10px;">Revoke</button>` : ''}</td>
+          </tr>`).join('')}</tbody></table>`;
+      out.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Revoke this token? Any caller using it will immediately receive 401.')) return;
+        const r = await fetch(`/api/v1/settings/tokens/${b.dataset.revoke}/revoke`, {method:'POST', credentials:'same-origin'});
+        if (r.ok) loadTokens();
+      }));
+    }
+
+    const tokenForm = document.getElementById('token-form');
+    tokenForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(tokenForm);
+      const body = {
+        name: fd.get('name'),
+        scopes: (fd.get('scopes') || '').split(',').map(s => s.trim()).filter(Boolean),
+        expires_in_days: fd.get('expires_in_days') ? Number(fd.get('expires_in_days')) : null,
+        rate_limit_per_min: Number(fd.get('rate_limit_per_min') || 120),
+      };
+      const s = document.getElementById('token-status');
+      const r = await fetch('/api/v1/settings/tokens/', {
+        method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin',
+        body: JSON.stringify(body),
+      });
+      let data = {}; try { data = await r.json(); } catch {}
+      if (r.ok) {
+        prompt(`New token · ${data.warning}`, data.plaintext_token);
+        s.textContent = '✓ created'; s.style.color = 'var(--accent)';
+        tokenForm.reset();
+        loadTokens();
+      } else {
+        s.textContent = `✗ ${data.error || data.detail}`;
+        s.style.color = 'var(--danger)';
+      }
+    });
+
+    loadTokens();
+  })();
+  </script>
+</div>
+
+<script>
+(function(){
+  async function post(url, body) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: body ? JSON.stringify(body) : null,
+    });
+    let data = {};
+    try { data = await r.json(); } catch {}
+    return { ok: r.ok, status: r.status, data };
+  }
+
+  const profileForm = document.getElementById('profile-form');
+  profileForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {};
+    new FormData(profileForm).forEach((v, k) => {
+      body[k] = k === 'idle_timeout_override_min' && v !== '' ? Number(v) : (v === '' ? null : v);
+    });
+    const {ok, data} = await post('/api/v1/settings/profile', body);
+    const s = document.getElementById('profile-status');
+    s.textContent = ok ? `saved: ${(data.updated || []).join(', ') || 'no changes'}` : `error: ${data.error || data.detail}`;
+    s.style.color = ok ? 'var(--accent)' : 'var(--danger)';
+  });
+
+  document.querySelectorAll('[data-revoke]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Revoke this session?')) return;
+      const {ok} = await post(`/api/v1/settings/sessions/${btn.dataset.revoke}/revoke`);
+      if (ok) btn.closest('div').parentElement.remove();
+    });
+  });
+
+  document.getElementById('revoke-others').addEventListener('click', async () => {
+    if (!confirm('Revoke all other sessions? You will stay signed in here.')) return;
+    const {ok, data} = await post('/api/v1/settings/sessions/revoke-others');
+    if (ok) alert(`Revoked ${data.revoked} session(s). Reloading…`);
+    if (ok) location.reload();
+  });
+
+  const pwForm = document.getElementById('password-form');
+  pwForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(pwForm);
+    const cur = fd.get('current'), nxt = fd.get('new'), cf = fd.get('confirm');
+    const s = document.getElementById('password-status');
+    if (nxt !== cf) { s.textContent = 'new + confirm do not match'; s.style.color = 'var(--danger)'; return; }
+    const {ok, data} = await post('/api/v1/settings/password', {current: cur, new: nxt});
+    s.textContent = ok ? 'password changed' : `error: ${data.error || data.detail}`;
+    s.style.color = ok ? 'var(--accent)' : 'var(--danger)';
+    if (ok) pwForm.reset();
+  });
+
+  // ---------------- MFA enrollment ----------------
+  const mfaBegin = document.getElementById('mfa-begin');
+  if (mfaBegin) mfaBegin.addEventListener('click', async () => {
+    const status = document.getElementById('mfa-status');
+    status.textContent = 'generating secret…'; status.style.color = 'var(--text-dim)';
+    const {ok, data} = await post('/api/v1/auth/mfa/begin');
+    if (!ok) { status.textContent = `error: ${data.error||data.detail}`; status.style.color='var(--danger)'; return; }
+    status.textContent = '';
+    document.getElementById('mfa-secret').textContent = data.secret;
+    document.getElementById('mfa-uri').textContent = data.provisioning_uri;
+    // Render QR through a public generator. If the browser/CSP blocks it, the
+    // user can still enroll by pasting the secret key (shown below) into their
+    // authenticator's manual-entry field — no network hop needed.
+    const qr = document.getElementById('mfa-qr');
+    const img = new Image(180, 180);
+    img.alt = 'scan to enroll';
+    img.onerror = () => {
+      qr.innerHTML = '<div style="padding:20px;color:#666;font-family:monospace;font-size:10px;text-align:center;width:180px;">QR image blocked.<br>Use the secret key to the right (manual entry in your authenticator).</div>';
+    };
+    img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' +
+              encodeURIComponent(data.provisioning_uri);
+    qr.innerHTML = '';
+    qr.appendChild(img);
+    document.getElementById('mfa-enroll').style.display = '';
+  });
+
+  const mfaConfirmForm = document.getElementById('mfa-confirm-form');
+  if (mfaConfirmForm) mfaConfirmForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const status = document.getElementById('mfa-confirm-status');
+    const code = new FormData(e.target).get('code');
+    status.textContent = 'verifying…'; status.style.color = 'var(--text-dim)';
+    const {ok, data} = await post('/api/v1/auth/mfa/confirm', {code});
+    if (!ok) { status.textContent = `✗ ${data.error||data.detail}`; status.style.color='var(--danger)'; return; }
+    status.textContent = '✓ MFA enabled';
+    status.style.color = 'var(--accent)';
+    const bc = document.getElementById('mfa-backup-codes');
+    bc.style.display = '';
+    bc.innerHTML = `<div style="font-family:var(--mono);font-size:11px;color:var(--warn);margin-bottom:6px;">SAVE THESE BACKUP CODES — shown once</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--text);letter-spacing:1px;">${(data.backup_codes||[]).join('    ')}</div>`;
+    setTimeout(() => location.reload(), 5000);
+  });
+
+  // ---------------- Account recovery ----------------
+  async function loadRecovery() {
+    const [libR, statR] = await Promise.all([
+      fetch('/api/v1/auth/recovery/questions/library', {credentials:'same-origin'}),
+      fetch('/api/v1/auth/recovery/status',            {credentials:'same-origin'}),
+    ]);
+    if (!libR.ok || !statR.ok) return;
+    const lib  = (await libR.json()).questions || [];
+    const stat = await statR.json();
+    const badge = document.getElementById('recovery-status-badge');
+    badge.textContent = stat.enrolled ? 'ENROLLED · 5 questions set' : 'NOT SET';
+    badge.style.color = stat.enrolled ? 'var(--accent)' : 'var(--warn)';
+    const rows = document.getElementById('recovery-rows');
+    // Build 5 rows. Each row has a <select> of library options + a "custom"
+    // entry, a manual-text input (shown when custom is selected), and an
+    // answer input. When re-enrolling, prefill the existing question texts
+    // (we can't see the answers — user must retype them for a re-setup).
+    rows.innerHTML = '';
+    for (let i = 0; i < 5; i++) {
+      const existing = stat.questions[i] || '';
+      const inLib    = lib.includes(existing);
+      const opts = lib.map(q => `<option value="${q.replace(/"/g,'&quot;')}" ${q===existing?'selected':''}>${q}</option>`).join('');
+      rows.insertAdjacentHTML('beforeend', `
+        <div class="form-row" style="align-items:flex-end;gap:10px;margin-bottom:8px;">
+          <div class="field" style="flex:3;">
+            <label>Question ${i+1}</label>
+            <select class="select" data-row="${i}" data-kind="pick">
+              ${opts}
+              <option value="__custom__" ${!inLib && existing ? 'selected' : ''}>Write your own…</option>
+            </select>
+            <input class="input" data-row="${i}" data-kind="custom" maxlength="150"
+                   placeholder="Write a custom question (min 25 chars)"
+                   value="${!inLib ? (existing || '').replace(/"/g,'&quot;') : ''}"
+                   style="margin-top:6px;display:${(!inLib && existing) ? '' : 'none'};">
+          </div>
+          <div class="field" style="flex:2;">
+            <label>Answer ${i+1}</label>
+            <input class="input mono" type="password" data-row="${i}" data-kind="answer"
+                   minlength="2" maxlength="200" autocomplete="off" required>
+          </div>
+        </div>`);
+    }
+    // Toggle the custom text box when "Write your own…" is picked.
+    rows.querySelectorAll('[data-kind="pick"]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const row = sel.dataset.row;
+        const custom = rows.querySelector(`[data-row="${row}"][data-kind="custom"]`);
+        custom.style.display = sel.value === '__custom__' ? '' : 'none';
+        if (sel.value === '__custom__') custom.focus();
+      });
+    });
+  }
+
+  const recForm = document.getElementById('recovery-form');
+  if (recForm) recForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const rows = document.getElementById('recovery-rows');
+    const items = [];
+    for (let i = 0; i < 5; i++) {
+      const pick   = rows.querySelector(`[data-row="${i}"][data-kind="pick"]`).value;
+      const custom = rows.querySelector(`[data-row="${i}"][data-kind="custom"]`).value;
+      const answer = rows.querySelector(`[data-row="${i}"][data-kind="answer"]`).value;
+      const q = pick === '__custom__' ? custom : pick;
+      items.push({question: q, answer: answer});
+    }
+    const status = document.getElementById('recovery-status');
+    status.textContent = 'saving…'; status.style.color = 'var(--text-dim)';
+    const {ok, data} = await post('/api/v1/auth/recovery/setup', {items});
+    if (ok) {
+      status.textContent = '✓ saved — recovery is enrolled'; status.style.color = 'var(--accent)';
+      loadRecovery();
+    } else {
+      status.textContent = `✗ ${data.error || data.detail}`; status.style.color = 'var(--danger)';
+    }
+  });
+  loadRecovery();
+
+  // --- Timezone picker: grouped by region (continent prefix) and sorted
+  // by UTC offset within each group so the user can scan vertically.
+  (function populateTzPicker(){
+    const sel = document.getElementById('tz-select');
+    if (!sel) return;
+    const current = sel.dataset.current || 'UTC';
+
+    let zones = [];
+    try { if (typeof Intl.supportedValuesOf === 'function') zones = Intl.supportedValuesOf('timeZone').slice(); } catch {}
+    if (!zones.length) zones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver',
+                                'America/Los_Angeles', 'Europe/London', 'Europe/Paris',
+                                'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland'];
+    if (!zones.includes('UTC')) zones.unshift('UTC');
+
+    // Return "UTC±HH:MM" and a numeric sort key (minutes offset) for a zone.
+    function offsetInfo(tz) {
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {timeZone: tz, timeZoneName: 'shortOffset'})
+          .formatToParts(new Date());
+        const raw = (parts.find(p => p.type === 'timeZoneName') || {}).value || 'GMT';
+        // raw forms: GMT / GMT-5 / GMT+05:30
+        const m = raw.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+        if (!m) return {label: 'UTC+00:00', mins: 0};
+        const sign = m[1] === '-' ? -1 : 1;
+        const h = parseInt(m[2], 10);
+        const mm = m[3] ? parseInt(m[3], 10) : 0;
+        const mins = sign * (h * 60 + mm);
+        const hh = String(Math.abs(h)).padStart(2, '0');
+        const ss = String(mm).padStart(2, '0');
+        return {label: `UTC${sign < 0 ? '-' : '+'}${hh}:${ss}`, mins};
+      } catch { return {label: 'UTC+00:00', mins: 0}; }
+    }
+
+    // Group by the IANA region prefix (America, Europe, Asia, …).
+    // UTC gets its own top group so it's always the first row.
+    const groups = new Map();
+    for (const tz of zones) {
+      const region = (tz === 'UTC') ? 'UTC'
+                    : (tz.split('/')[0] || 'Other');
+      if (!groups.has(region)) groups.set(region, []);
+      const {label, mins} = offsetInfo(tz);
+      groups.get(region).push({tz, label, mins});
+    }
+    // Sort each group's zones by offset, then by name.
+    for (const list of groups.values()) {
+      list.sort((a, b) => a.mins - b.mins || a.tz.localeCompare(b.tz));
+    }
+
+    // Region display order: UTC first, then continents alphabetically,
+    // with Etc/* last (legacy zones the operator rarely wants).
+    const order = ['UTC', 'America', 'Europe', 'Africa', 'Asia',
+                   'Atlantic', 'Indian', 'Pacific', 'Australia',
+                   'Antarctica', 'Arctic', 'Etc'];
+    const knownRegions = order.filter(r => groups.has(r));
+    const otherRegions = [...groups.keys()].filter(r => !order.includes(r)).sort();
+    const regions = [...knownRegions, ...otherRegions];
+
+    const html = regions.map(r => {
+      const list = groups.get(r);
+      const body = list.map(e => {
+        const sel_attr = (e.tz === current) ? ' selected' : '';
+        const label = (e.tz === 'UTC') ? 'UTC (UTC+00:00)'
+                                        : `${e.tz} (${e.label})`;
+        return `<option value="${e.tz}"${sel_attr}>${label}</option>`;
+      }).join('');
+      return `<optgroup label="${r}">${body}</optgroup>`;
+    }).join('');
+    sel.innerHTML = html;
+
+    // Saved value not in any group → pin it at the top as a custom entry.
+    if (![...sel.options].some(o => o.value === current)) {
+      const o = document.createElement('option');
+      o.value = current; o.textContent = current + ' (custom)'; o.selected = true;
+      sel.prepend(o);
+    }
+  })();
+
+  const mfaDisableForm = document.getElementById('mfa-disable-form');
+  if (mfaDisableForm) mfaDisableForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!confirm('Disable two-factor authentication for your account?')) return;
+    const status = document.getElementById('mfa-disable-status');
+    const code = new FormData(e.target).get('code');
+    const r = await fetch('/api/v1/auth/mfa/disable', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code}),
+    });
+    if (r.ok || r.status === 204) {
+      status.textContent = '✓ disabled'; status.style.color = 'var(--accent)';
+      setTimeout(() => location.reload(), 800);
+    } else {
+      const d = await r.json().catch(()=>({}));
+      status.textContent = `✗ ${d.error||r.statusText}`; status.style.color = 'var(--danger)';
+    }
+  });
+})();
+</script>
+
+<!-- ===== Privacy & data panel (GDPR Art. 15 export + Art. 17 erasure) ===== -->
+<div data-panel="privacy" data-group="settings" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Export your data</div></div>
+    <div style="padding:14px 16px;">
+      <p style="font-size:12px;color:var(--text-dim);line-height:1.6;margin:0 0 12px;">
+        Download a JSON dossier of everything Meridian stores about you — profile, group memberships, sessions, notification channels, MFA enrollment summary, and your last 5,000 audit events. Sensitive fields (password hash, TOTP secret) are excluded; PII inside audit payloads is already redacted at write time.
+      </p>
+      <button class="btn btn-primary" id="gdpr-export-btn" type="button">▸ Download my data (JSON)</button>
+      <span id="gdpr-export-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;color:var(--text-dim);"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title" style="color:var(--danger);">Delete your account (GDPR Art. 17)</div></div>
+    <div style="padding:14px 16px;">
+      <p style="font-size:12px;color:var(--text-dim);line-height:1.6;margin:0 0 12px;">
+        Anonymizes your profile (email, recovery contacts, display name, phone all wiped),
+        revokes every session and API token, disables your account, and removes MFA
+        enrollment. <strong style="color:var(--danger);">This is irreversible.</strong>
+        Audit history is preserved with a tombstone identifier so security investigations
+        remain valid — the hash chain in <span class="mono">audit_events</span> requires
+        every row to stay.
+      </p>
+      <form id="gdpr-erase-form" style="display:flex;flex-direction:column;gap:10px;max-width:520px;">
+        <div class="field">
+          <label>Current password</label>
+          <input class="input" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        {% if user.mfa_enrolled %}
+        <div class="field">
+          <label>MFA code (6 digits)</label>
+          <input class="input mono" name="totp_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="10" required>
+        </div>
+        {% endif %}
+        <div class="field">
+          <label>Type exactly: <span class="mono" style="color:var(--warn);">I understand this is irreversible</span></label>
+          <input class="input mono" name="acknowledge" required autocomplete="off" placeholder="I understand this is irreversible">
+        </div>
+        <button class="btn" type="submit" style="background:var(--danger);color:#fff;align-self:flex-start;">▸ Erase my account</button>
+        <span id="gdpr-erase-status" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);"></span>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function csrfHeader() {
+    const cookie = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('meridian_csrf='));
+    return cookie ? cookie.split('=')[1] : '';
+  }
+  const expBtn = document.getElementById('gdpr-export-btn');
+  const expStatus = document.getElementById('gdpr-export-status');
+  if (expBtn) expBtn.addEventListener('click', async () => {
+    expStatus.textContent = 'building dossier…';
+    expStatus.style.color = 'var(--text-dim)';
+    const r = await fetch('/api/v1/users/me/export', {credentials: 'same-origin'});
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      expStatus.textContent = `failed: ${e.error || r.statusText}`;
+      expStatus.style.color = 'var(--danger)';
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0,10);
+    a.href = url; a.download = `meridian-data-${date}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    expStatus.textContent = '✓ downloaded';
+    expStatus.style.color = 'var(--accent)';
+  });
+
+  const erForm = document.getElementById('gdpr-erase-form');
+  const erStatus = document.getElementById('gdpr-erase-status');
+  if (erForm) erForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!confirm('Final confirmation — erase your account permanently?')) return;
+    erStatus.textContent = 'erasing…'; erStatus.style.color = 'var(--text-dim)';
+    const fd = new FormData(erForm);
+    const body = {
+      password: fd.get('password'),
+      totp_code: fd.get('totp_code') || null,
+      acknowledge: fd.get('acknowledge'),
+    };
+    const r = await fetch('/api/v1/users/me/erase', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type':'application/json','X-CSRF-Token': csrfHeader()},
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      erStatus.textContent = `failed: ${data.error || r.statusText}`;
+      erStatus.style.color = 'var(--danger)';
+      return;
+    }
+    erStatus.textContent = '✓ erased — redirecting…';
+    erStatus.style.color = 'var(--accent)';
+    setTimeout(() => { window.location.href = '/ui/login'; }, 1500);
+  });
+})();
+</script>
+{% endblock %}

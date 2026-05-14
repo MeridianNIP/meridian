@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Scope Manager · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Scope Manager</div>
+    <div class="page-sub">Override which networks count as internal/external, plus a hard deny list. Applies to every probe: ping, traceroute, port scan, SNMP, pcap, HTTP test.</div>
+</div>
+  <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+    Global scope_of_use: <span style="color:var(--accent);">{{ scope_of_use }}</span>
+  </div>
+  {% with docs_path="admin/scope.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="alert alert-info" style="margin:10px 0 14px;padding:10px 14px;border-left:3px solid var(--accent);background:rgba(90,180,255,.06);font-size:12px;line-height:1.5;color:var(--text);">
+  <strong>Scope is a target allow-list, not a role system.</strong>
+  This page controls <em>which networks</em> sandboxed tools (ping, traceroute, dig, port scan, pcap, HTTP test) are allowed to query — it's a firewall in front of the toolbox. It does <strong>not</strong> govern who can log in or what each user can do. For roles, permissions, and account management see
+  <a href="/ui/admin/users">Admin → Users</a>.
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">How classification works</div></div>
+  <div style="padding:10px 14px;font-size:12px;color:var(--text-dim);line-height:1.6;">
+    <ol style="margin:0;padding-left:18px;">
+      <li><strong style="color:var(--danger);">Deny rules</strong> run first — a host inside any deny CIDR is rejected regardless of scope or role.</li>
+      <li><strong style="color:var(--accent);">internal_extra / external_extra</strong> overlays override the RFC1918 default. Use these for CGNAT (100.64/10), partner ranges, or public IPs that are actually "yours".</li>
+      <li>Otherwise, RFC1918 / loopback / link-local → <strong>internal</strong>, everything else → <strong>external</strong>.</li>
+      <li>Hostnames that don't resolve to a literal IP are classified as <strong>unknown</strong> — scope_of_use does not block them, but deny rules still run once the probe resolves.</li>
+    </ol>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Add rule</div></div>
+  <form id="scope-form" style="padding:12px 14px;">
+    <div class="form-row">
+      <div class="field">
+        <label>Kind</label>
+        <select class="select" name="kind" required>
+          <option value="deny">deny (hard block)</option>
+          <option value="internal_extra">internal_extra (treat as internal)</option>
+          <option value="external_extra">external_extra (treat as external)</option>
+        </select>
+      </div>
+      <div class="field" style="flex:2;">
+        <label>CIDR</label>
+        <input class="input mono" name="cidr" placeholder="10.0.0.0/8" required>
+      </div>
+      <div class="field" style="flex:2;">
+        <label>Note (optional)</label>
+        <input class="input mono" name="note" placeholder="why this rule exists">
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit" style="margin-top:8px;">▸ Add rule</button>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Current rules</div>
+    <span id="scope-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span>
+  </div>
+  <table style="width:100%;font-size:12px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Kind</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">CIDR</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Note</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Enabled</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Updated</th>
+        <th style="text-align:right;padding:8px;"></th>
+      </tr>
+    </thead>
+    <tbody id="scope-rows"></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">Test a host</div></div>
+  <form id="scope-test-form" style="padding:12px 14px;display:flex;gap:10px;align-items:flex-end;">
+    <div class="field" style="flex:2;">
+      <label>Host or IP</label>
+      <input class="input mono" name="host" value="8.8.8.8" required>
+    </div>
+    <button class="btn btn-primary" type="submit">▸ Classify</button>
+  </form>
+  <div id="scope-test-out" style="padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--text-dim);"></div>
+</div>
+
+<script>
+(function(){
+  const kindColor = {
+    deny: 'var(--danger)', internal_extra: 'var(--accent)', external_extra: 'var(--warn)',
+  };
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+  async function load() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/scope');
+    const body = document.getElementById('scope-rows');
+    const count = document.getElementById('scope-count');
+    if (!ok) { count.textContent = `error: ${data.error || data.detail}`; return; }
+    count.textContent = `${data.rules.length} rule${data.rules.length === 1 ? '' : 's'}`;
+    body.innerHTML = data.rules.map(r => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;font-family:var(--mono);color:${kindColor[r.kind] || 'var(--text)'};font-weight:600;">${r.kind}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text);">${r.cidr}</td>
+        <td style="padding:8px;color:var(--text-dim);">${r.note || ''}</td>
+        <td style="padding:8px;">
+          <input type="checkbox" ${r.enabled ? 'checked' : ''} data-toggle="${r.id}">
+        </td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${(r.updated_at || '').slice(0,19).replace('T',' ')}</td>
+        <td style="padding:8px;text-align:right;">
+          <button class="btn" data-del="${r.id}" style="font-size:10px;padding:4px 8px;color:var(--danger);">delete</button>
+        </td>
+      </tr>
+    `).join('');
+
+    body.querySelectorAll('[data-toggle]').forEach(el => {
+      el.addEventListener('change', async () => {
+        await jfetch('PATCH', `/api/v1/admin/scope/${el.dataset.toggle}`, {enabled: el.checked});
+      });
+    });
+    body.querySelectorAll('[data-del]').forEach(el => {
+      el.addEventListener('click', async () => {
+        if (!confirm('Delete this rule? Scope classification will immediately revert for CIDRs covered by this row.')) return;
+        await jfetch('DELETE', `/api/v1/admin/scope/${el.dataset.del}`);
+        load();
+      });
+    });
+  }
+
+  document.getElementById('scope-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/scope', {
+      kind: fd.get('kind'),
+      cidr: fd.get('cidr'),
+      note: fd.get('note') || null,
+      enabled: true,
+    });
+    if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    e.target.reset();
+    load();
+  });
+
+  document.getElementById('scope-test-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const out = document.getElementById('scope-test-out');
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/scope/test', {host: fd.get('host')});
+    if (!ok) { out.textContent = `error: ${data.error || data.detail}`; return; }
+    const color = data.allowed
+      ? (data.classification === 'internal' ? 'var(--accent)' : data.classification === 'external' ? 'var(--warn)' : 'var(--text-dim)')
+      : 'var(--danger)';
+    out.innerHTML = `
+      <span style="color:${color};font-weight:600;">${data.allowed ? 'ALLOWED' : 'DENIED'}</span>
+      · classification: <span style="color:var(--text);">${data.classification}</span>
+      ${data.reason ? `· <span style="color:var(--text-dim);">${data.reason}</span>` : ''}
+    `;
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,15 @@
+# /etc/sudoers.d/meridian-network
+# Install with: sudo install -m 0440 -o root -g root \
+#   meridian-network /etc/sudoers.d/meridian-network
+#
+# Lets the portal invoke the network-config renderer AND the exact set
+# of service operations it needs, nothing more. Rendering logic lives
+# in /opt/meridian/scripts/apply-network-config.sh — the portal never
+# writes to /etc/systemd/ directly.
+
+meridian ALL=(root) NOPASSWD: \
+    /opt/meridian/scripts/apply-network-config.sh ip, \
+    /opt/meridian/scripts/apply-network-config.sh dns, \
+    /opt/meridian/scripts/apply-network-config.sh ntp, \
+    /opt/meridian/scripts/apply-network-config.sh proxy, \
+    /opt/meridian/scripts/apply-network-config.sh all

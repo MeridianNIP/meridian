@@ -1,0 +1,338 @@
+{% extends "base.html" %}
+{% set active = 'monitors' %}
+{% block title %}Monitors · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Monitors</div>
+    <div class="page-sub">HTTP/HTTPS · TCP port · ICMP ping · sampled in the background and tracked over time</div>
+  </div>
+  {% with docs_path="user/monitors.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">New monitor</div></div>
+  <form id="mon-create">
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Name</label><input class="input" name="name" placeholder="e.g. api.example.com · prod" required></div>
+      <div class="field"><label>Kind</label>
+        <select class="select" name="kind">
+          <option value="https">HTTPS</option>
+          <option value="http">HTTP</option>
+          <option value="port_tcp">TCP port</option>
+          <option value="ping_icmp">ICMP ping</option>
+        </select>
+      </div>
+      <div class="field" style="flex:2;"><label>Target</label><input class="input mono" name="target" placeholder="api.example.com or 10.0.0.1:443" required></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Interval (min)</label><input class="input mono" name="interval_minutes" type="number" min="0.5" max="60" step="0.5" value="5"></div>
+      <div class="field"><label>Timeout (s)</label><input class="input mono" name="timeout_seconds" type="number" min="2" max="60" value="10"></div>
+      <div class="field" title="Fire the open notification only after this many consecutive bad samples. Default 3."><label>Fail threshold</label><input class="input mono" name="fail_threshold" type="number" min="1" max="20" value="3"></div>
+      <div class="field" title="If on, also send a notification when the monitor recovers (status goes back to ok)."><label>Recovery notify</label><select class="select" name="recovery_notify"><option value="true" selected>on</option><option value="false">off</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="field" title="Re-fire the open notification every N minutes while the incident stays open. Blank or 0 = off."><label>Re-notify (min)</label><input class="input mono" name="renotify_interval_min" type="number" min="0" max="1440" placeholder="off"></div>
+      <div class="field" title="UTC hour to start the quiet window. During quiet hours notifications are audited but not dispatched."><label>Quiet hours start (UTC)</label><input class="input mono" name="quiet_hours_start" type="number" min="0" max="23" placeholder="—"></div>
+      <div class="field" title="UTC hour to end the quiet window. Leave blank along with start to disable quiet hours."><label>Quiet hours end (UTC)</label><input class="input mono" name="quiet_hours_end" type="number" min="0" max="23" placeholder="—"></div>
+    </div>
+    <button class="btn btn-primary" type="submit">+ Create monitor</button>
+    <span id="mon-create-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Watchlist</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">
+      {% set ok = monitors|selectattr("last_status","equalto","ok")|list|length %}
+      {% set bad = monitors|rejectattr("last_status","equalto","ok")|selectattr("last_status")|list|length %}
+      <span id="mon-summary">{{ monitors|length }} monitors · {{ ok }} ok · {{ bad }} not-ok</span>
+      <span id="mon-refresh-tick" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  {% if monitors %}
+  <table style="width:100%;font-size:12px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;width:16px;"></th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Name</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Kind</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Target</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last value</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last sample</th>
+        <th style="text-align:right;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in monitors %}
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:10px 8px;" data-mon-status="{{ m.id }}" data-enabled="{{ '1' if m.enabled else '0' }}">
+          {% if not m.enabled %}
+            <span style="font-family:var(--mono);font-size:9px;color:var(--text-faint);">OFF</span>
+          {% else %}
+            <span class="dot {% if m.last_status == 'warn' %}warn{% elif m.last_status in ('down','unknown') %}danger{% endif %}"></span>
+          {% endif %}
+        </td>
+        <td style="padding:10px 8px;color:var(--text);font-weight:500;">{{ m.name }}</td>
+        <td style="padding:10px 8px;font-family:var(--mono);color:var(--text-dim);">{{ m.kind }}</td>
+        <td style="padding:10px 8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;">{{ m.target }}</td>
+        <td style="padding:10px 8px;font-family:var(--mono);" data-mon-value="{{ m.id }}">
+          <span data-mon-value-color style="color:{% if m.last_status == 'ok' %}var(--accent){% elif m.last_status == 'warn' %}var(--warn){% elif m.last_status %}var(--danger){% else %}var(--text-dimmer){% endif %};">
+            {% if m.last_value is not none %}{{ '%.1f'|format(m.last_value) }}{% else %}—{% endif %}{% if m.consecutive_fails %} · {{ m.consecutive_fails }} fails{% endif %}
+          </span>
+        </td>
+        <td style="padding:10px 8px;font-family:var(--mono);color:var(--text-dimmer);font-size:11px;" data-mon-ts="{{ m.id }}">
+          {% if m.last_sample_at %}{{ m.last_sample_at.strftime('%H:%M:%S') }}{% else %}never{% endif %}
+        </td>
+        <td style="padding:10px 8px;text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost" data-edit="{{ m.id }}"
+                  data-name="{{ m.name|e }}" data-kind="{{ m.kind }}"
+                  data-target="{{ m.target|e }}"
+                  data-interval="{{ m.interval_seconds }}"
+                  data-timeout="{{ m.timeout_seconds }}"
+                  data-fail-threshold="{{ m.fail_threshold }}"
+                  data-recovery-notify="{{ '1' if m.recovery_notify else '0' }}"
+                  data-renotify="{{ m.renotify_interval_min or '' }}"
+                  data-quiet-start="{{ m.quiet_hours_start if m.quiet_hours_start is not none else '' }}"
+                  data-quiet-end="{{ m.quiet_hours_end if m.quiet_hours_end is not none else '' }}"
+                  style="padding:4px 10px;font-size:10px;">Edit</button>
+          <button class="btn btn-ghost" data-toggle="{{ m.id }}" style="padding:4px 10px;font-size:10px;">{{ 'Disable' if m.enabled else 'Enable' }}</button>
+          <button class="btn btn-ghost" data-delete="{{ m.id }}" style="padding:4px 10px;font-size:10px;color:var(--danger);">Delete</button>
+        </td>
+      </tr>
+      <tr data-edit-row="{{ m.id }}" style="display:none;background:rgba(32,200,150,.04);">
+        <td></td>
+        <td colspan="6" style="padding:12px;">
+          <form data-edit-form="{{ m.id }}" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end;">
+            <div class="field" style="grid-column:span 2;"><label>Name</label><input class="input" name="name" required></div>
+            <div class="field"><label>Kind</label>
+              <select class="select" name="kind">
+                <option value="https">HTTPS</option>
+                <option value="http">HTTP</option>
+                <option value="port_tcp">TCP port</option>
+                <option value="ping_icmp">ICMP ping</option>
+              </select>
+            </div>
+            <div class="field" style="grid-column:span 2;"><label>Target</label><input class="input mono" name="target" required></div>
+            <div class="field"><label>Interval (min)</label><input class="input mono" name="interval_minutes" type="number" min="0.5" max="60" step="0.5"></div>
+            <div class="field"><label>Timeout (s)</label><input class="input mono" name="timeout_seconds" type="number" min="2" max="60"></div>
+            <div class="field" title="Fire open notification only after this many consecutive bad samples."><label>Fail threshold</label><input class="input mono" name="fail_threshold" type="number" min="1" max="20"></div>
+            <div class="field" title="Send a notification when the monitor recovers."><label>Recovery notify</label><select class="select" name="recovery_notify"><option value="true">on</option><option value="false">off</option></select></div>
+            <div class="field" title="Re-fire the open notification every N minutes while the incident stays open. Blank/0 = off."><label>Re-notify (min)</label><input class="input mono" name="renotify_interval_min" type="number" min="0" max="1440" placeholder="off"></div>
+            <div class="field" title="UTC hour to start the quiet window."><label>Quiet start (UTC)</label><input class="input mono" name="quiet_hours_start" type="number" min="0" max="23" placeholder="—"></div>
+            <div class="field" title="UTC hour to end the quiet window."><label>Quiet end (UTC)</label><input class="input mono" name="quiet_hours_end" type="number" min="0" max="23" placeholder="—"></div>
+            <div style="grid-column:span 6;display:flex;gap:8px;">
+              <button class="btn btn-primary" type="submit" style="font-size:10px;">Save</button>
+              <button class="btn btn-ghost" type="button" data-edit-cancel="{{ m.id }}" style="font-size:10px;">Cancel</button>
+              <span data-edit-status="{{ m.id }}" style="font-family:var(--mono);font-size:10px;margin-left:auto;align-self:center;"></span>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div style="color:var(--text-dimmer);font-size:12px;font-style:italic;padding:12px 0;">No monitors yet. Create one above.</div>
+  {% endif %}
+</div>
+
+<script>
+(function(){
+  async function post(url, body) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      credentials: 'same-origin',
+      body: body ? JSON.stringify(body) : null,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, status: r.status, data};
+  }
+  async function del(url) {
+    const r = await fetch(url, {method: 'DELETE', credentials: 'same-origin'});
+    return r.ok;
+  }
+
+  // Pack form fields into the API payload. The UI collects Interval in
+  // MINUTES for UX — convert to the seconds the API actually stores.
+  // Quiet hours and re-notify are left out when blank so the server
+  // sees them as "unset" rather than 0 (which would mean "every 0 min").
+  function packBody(form) {
+    const body = {};
+    new FormData(form).forEach((v, k) => {
+      if (k === 'interval_minutes') {
+        body.interval_seconds = Math.max(30, Math.round(Number(v) * 60));
+      } else if (k === 'recovery_notify') {
+        body.recovery_notify = (v === 'true');
+      } else if (k === 'fail_threshold') {
+        if (v !== '') body.fail_threshold = Number(v);
+      } else if (k === 'renotify_interval_min' || k === 'quiet_hours_start' || k === 'quiet_hours_end') {
+        if (v !== '') body[k] = Number(v);
+      } else if (k.endsWith('_seconds')) {
+        body[k] = Number(v);
+      } else {
+        body[k] = v;
+      }
+    });
+    return body;
+  }
+
+  const f = document.getElementById('mon-create');
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const s = document.getElementById('mon-create-status');
+    s.textContent = 'creating + running first probe…'; s.style.color = 'var(--text-dim)';
+    const {ok, data} = await post('/api/v1/monitors/', packBody(f));
+    if (ok) { s.textContent = `created ${data.name}`; s.style.color = 'var(--accent)'; setTimeout(() => location.reload(), 600); }
+    else { s.textContent = `error: ${data.error || data.detail}`; s.style.color = 'var(--danger)'; }
+  });
+
+  document.querySelectorAll('[data-toggle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const {ok} = await post(`/api/v1/monitors/${btn.dataset.toggle}/toggle`);
+      if (ok) location.reload();
+    });
+  });
+  document.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this monitor? Samples + incident history are removed.')) return;
+      const ok = await del(`/api/v1/monitors/${btn.dataset.delete}`);
+      if (ok) location.reload();
+    });
+  });
+
+  document.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.edit;
+      const row = document.querySelector(`[data-edit-row="${id}"]`);
+      const form = document.querySelector(`[data-edit-form="${id}"]`);
+      if (!row || !form) return;
+      form.elements.name.value             = btn.dataset.name;
+      form.elements.kind.value             = btn.dataset.kind;
+      form.elements.target.value           = btn.dataset.target;
+      // Interval stored in seconds on the server; the UI field edits minutes.
+      const mins = Math.max(0.5, Number(btn.dataset.interval) / 60);
+      // Round to nearest 0.5 to match the step attr and avoid 1.0000001 drift.
+      form.elements.interval_minutes.value     = Math.round(mins * 2) / 2;
+      form.elements.timeout_seconds.value      = btn.dataset.timeout;
+      form.elements.fail_threshold.value       = btn.dataset.failThreshold || '3';
+      form.elements.recovery_notify.value      = (btn.dataset.recoveryNotify === '1') ? 'true' : 'false';
+      form.elements.renotify_interval_min.value = btn.dataset.renotify || '';
+      form.elements.quiet_hours_start.value    = btn.dataset.quietStart || '';
+      form.elements.quiet_hours_end.value      = btn.dataset.quietEnd || '';
+      row.style.display = '';
+    });
+  });
+  document.querySelectorAll('[data-edit-cancel]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const row = document.querySelector(`[data-edit-row="${btn.dataset.editCancel}"]`);
+      if (row) row.style.display = 'none';
+    });
+  });
+  document.querySelectorAll('[data-edit-form]').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = form.dataset.editForm;
+      const body = packBody(form);
+      const status = document.querySelector(`[data-edit-status="${id}"]`);
+      status.textContent = 'saving…'; status.style.color = 'var(--text-dim)';
+      const r = await fetch(`/api/v1/monitors/${id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      let data = {}; try { data = await r.json(); } catch {}
+      if (r.ok) { status.textContent = '✓ saved'; status.style.color = 'var(--accent)'; setTimeout(() => location.reload(), 400); }
+      else { status.textContent = `✗ ${data.error || r.statusText}`; status.style.color = 'var(--danger)'; }
+    });
+  });
+
+  // --------------------------------------------------------------------
+  // Auto-refresh the watchlist cells (status dot, value, last sample
+  // time, summary counts) every 15 s so a fresh sample shows up without
+  // the operator having to navigate away and back. Row structure stays
+  // the same between refreshes — add/remove/rename still requires a
+  // server-side re-render because new rows need the full Jinja template.
+  // --------------------------------------------------------------------
+  function fmtTs(iso) {
+    if (!iso) return 'never';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString(undefined, {hour12:false});
+    } catch { return iso; }
+  }
+  function statusColor(status) {
+    if (status === 'ok')   return 'var(--accent)';
+    if (status === 'warn') return 'var(--warn)';
+    if (status)            return 'var(--danger)';
+    return 'var(--text-dimmer)';
+  }
+  // Remember the last state we rendered so the next refresh can pulse
+  // cells whose value or status actually changed.
+  const lastRender = new Map();
+  function flash(el) {
+    if (!el) return;
+    el.style.transition = 'background-color 1.2s ease-out';
+    el.style.backgroundColor = 'rgba(32,200,150,.18)';
+    setTimeout(() => { el.style.backgroundColor = ''; }, 1200);
+  }
+  async function refreshList() {
+    let data;
+    try {
+      const r = await fetch('/api/v1/monitors/', {credentials:'same-origin'});
+      if (!r.ok) return;
+      data = await r.json();
+    } catch { return; }
+    let ok = 0, bad = 0, knownIds = new Set();
+    data.forEach(m => {
+      knownIds.add(m.id);
+      if (m.last_status === 'ok') ok++;
+      else if (m.last_status) bad++;
+      const statusCell = document.querySelector(`[data-mon-status="${m.id}"]`);
+      const valueCell  = document.querySelector(`[data-mon-value="${m.id}"] [data-mon-value-color]`);
+      const tsCell     = document.querySelector(`[data-mon-ts="${m.id}"]`);
+      const prev = lastRender.get(m.id) || {};
+      const statusChanged = prev.status !== m.last_status;
+      const valueChanged  = prev.last_sample_at !== m.last_sample_at;
+      if (statusCell && m.enabled) {
+        const klass = m.last_status === 'warn' ? 'warn'
+                    : (m.last_status === 'down' || m.last_status === 'unknown') ? 'danger'
+                    : '';
+        statusCell.innerHTML = `<span class="dot ${klass}"></span>`;
+        if (statusChanged && prev.status !== undefined) flash(statusCell);
+      }
+      if (valueCell) {
+        const v = (m.last_value != null) ? m.last_value.toFixed(1) : '—';
+        const fails = m.consecutive_fails ? ` · ${m.consecutive_fails} fails` : '';
+        valueCell.textContent = `${v}${fails}`;
+        valueCell.style.color = statusColor(m.last_status);
+        if (valueChanged && prev.last_sample_at !== undefined) flash(valueCell.parentElement);
+      }
+      if (tsCell) tsCell.textContent = fmtTs(m.last_sample_at);
+      lastRender.set(m.id, {status: m.last_status, last_sample_at: m.last_sample_at});
+    });
+    const summary = document.getElementById('mon-summary');
+    if (summary) summary.textContent = `${data.length} monitors · ${ok} ok · ${bad} not-ok`;
+    // If the server's monitor set has drifted (added/removed via another
+    // tab, API, or SSO session), do a full reload so the DOM matches.
+    const currentRowIds = new Set([...document.querySelectorAll('[data-mon-status]')].map(e => e.dataset.monStatus));
+    const addedOrRemoved = currentRowIds.size !== knownIds.size
+      || [...knownIds].some(id => !currentRowIds.has(id));
+    if (addedOrRemoved) { setTimeout(() => location.reload(), 200); return; }
+    const tick = document.getElementById('mon-refresh-tick');
+    if (tick) tick.textContent = `· refreshed ${new Date().toLocaleTimeString(undefined, {hour12:false})} · scheduler ticks every 60s`;
+  }
+  // Poll every 5s so the "refreshed …" tick moves visibly. The scheduler
+  // that actually samples monitors runs once a minute, so the underlying
+  // data only changes every ~60s — but faster polling makes the page
+  // feel live and lets us pulse cells the moment a sample arrives.
+  setInterval(refreshList, 5_000);
+  window.addEventListener('focus', refreshList);
+})();
+</script>
+{% endblock %}

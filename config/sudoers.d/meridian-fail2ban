@@ -1,0 +1,18 @@
+# /etc/sudoers.d/meridian-fail2ban
+# Install with: sudo install -m 0440 -o root -g root \
+#   meridian-fail2ban /etc/sudoers.d/meridian-fail2ban
+#
+# Lets the portal invoke fail2ban-client for read + narrow mutation
+# (unban, addignoreip, delignoreip). No jail start/stop, no reload,
+# no arbitrary config edits.
+
+Cmnd_Alias MERIDIAN_F2B = \
+    /usr/bin/fail2ban-client status, \
+    /usr/bin/fail2ban-client status *, \
+    /usr/bin/fail2ban-client get * ignoreip, \
+    /usr/bin/fail2ban-client set * unbanip *, \
+    /usr/bin/fail2ban-client set * addignoreip *, \
+    /usr/bin/fail2ban-client set * delignoreip *, \
+    /usr/bin/fail2ban-client reload
+
+meridian ALL=(root) NOPASSWD: MERIDIAN_F2B

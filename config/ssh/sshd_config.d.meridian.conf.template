@@ -1,0 +1,42 @@
+# Meridian · sshd drop-in
+# Installed to /etc/ssh/sshd_config.d/10-meridian.conf.
+# Variables:
+#   ${SSH_PORT} ${SSH_GROUP}
+
+Port ${SSH_PORT}
+Protocol 2
+
+# Keys only by default; PasswordAuthentication flipped via prompt.
+# Root is permitted with keys only (prohibit-password) so the installer
+# can keep its SSH session alive after this drop-in lands.
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication yes
+ChallengeResponseAuthentication no
+KbdInteractiveAuthentication no
+UsePAM yes
+
+AllowGroups ${SSH_GROUP}
+
+MaxAuthTries 4
+MaxSessions 6
+LoginGraceTime 30
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+PermitEmptyPasswords no
+PermitUserEnvironment no
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+PrintMotd no
+Banner /etc/issue.net
+
+# Strong crypto only
+KexAlgorithms       curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
+Ciphers             chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+MACs                hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+HostKeyAlgorithms   ssh-ed25519,rsa-sha2-512,rsa-sha2-256
+
+# Set the default shell for the ddi-ssh group members via useradd template.
+# Match rules below confine SFTP-only users if you add any.

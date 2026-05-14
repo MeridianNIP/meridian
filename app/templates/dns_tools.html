@@ -1,0 +1,2117 @@
+{% extends "base.html" %}
+{% set active = 'dns' %}
+{% block title %}DNS Tools · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">DNS Tools</div>
+    <div class="page-sub">Sandboxed DNS diagnostics — dig, propagation, DNSSEC, zone health</div>
+  </div>
+  {% with docs_path="user/dns-tools.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+<div class="tabs" data-tabs="dns">
+  <button class="tab active" data-tab="dig">Dig</button>
+  <button class="tab"        data-tab="propagation">Propagation</button>
+  <button class="tab"        data-tab="dnssec">DNSSEC</button>
+  <button class="tab"        data-tab="reverse">Reverse</button>
+  <button class="tab"        data-tab="zonehealth">Zone Health</button>
+  <button class="tab"        data-tab="axfr">AXFR</button>
+  <button class="tab"        data-tab="crtsh">CT / crt.sh</button>
+  <button class="tab"        data-tab="whois">WHOIS</button>
+  <button class="tab"        data-tab="bulkwhois">Bulk WHOIS</button>
+  <button class="tab"        data-tab="typosquat">Typosquat</button>
+  <button class="tab"        data-tab="resolvers">Resolvers</button>
+  <button class="tab"        data-tab="hoptrace">Hop Trace</button>
+  {% if user.role in ('admin', 'super_admin') %}
+  <button class="tab"        data-tab="mailauth">Mail Auth</button>
+  <button class="tab"        data-tab="rndc">DNS Flush</button>
+  {% endif %}
+</div>
+
+<!-- Dig panel -->
+<div data-panel="dig" data-group="dns">
+  <div class="card" style="margin-bottom:14px;">
+    <form data-endpoint="/api/v1/dns/dig" data-output="#dig-output">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Target (domain or IPv4)</label>
+          <input class="input mono" name="target" value="example.com" required>
+        </div>
+        <div class="field">
+          <label>Record type</label>
+          <select class="select" name="record_type">
+            {% for t in ['A','AAAA','MX','NS','SOA','TXT','CNAME','PTR','CAA','DNSKEY','DS','TLSA','SRV','ANY'] %}
+              <option value="{{ t }}" {% if t == 'A' %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Resolver</label>
+          <select class="select" name="resolver">
+            <option value="">System (BIND9)</option>
+            {# Resolvers are grouped by group_tag when present, so a customer
+               with "Corp DNS" and "Corp Cache" labels sees them as distinct
+               <optgroup>s in the dropdown. Ungrouped resolvers fall under
+               the scope label (House or Mine). #}
+            {% set house_groups = {} %}
+            {% for r in house_resolvers %}
+              {% set _ = house_groups.setdefault(r.group_tag or '__house__', []).append(r) %}
+            {% endfor %}
+            {% for label, rs in house_groups.items() %}
+              <optgroup label="{{ 'House · shared' if label == '__house__' else ('House · ' ~ label) }}">
+                {% for r in rs %}
+                  <option value="{{ r.ip }}">{{ r.name }} · {{ r.ip }}{% if r.region %} ({{ r.region }}){% endif %}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+            {% set my_groups = {} %}
+            {% for r in my_resolvers %}
+              {% set _ = my_groups.setdefault(r.group_tag or '__mine__', []).append(r) %}
+            {% endfor %}
+            {% for label, rs in my_groups.items() %}
+              <optgroup label="{{ 'Mine' if label == '__mine__' else ('Mine · ' ~ label) }}">
+                {% for r in rs %}
+                  <option value="{{ r.ip }}">{{ r.name }} · {{ r.ip }}{% if r.region %} ({{ r.region }}){% endif %}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label>Dig flags (click to toggle)</label>
+        <div class="chip-row" data-chip-group="dig-flags">
+          {% for flag in ['+short','+trace','+noall','+answer','+authority','+additional','+dnssec','+cd','+tcp','+norecurse','+multiline'] %}
+            <span class="chip {% if flag in ['+short','+noall','+answer'] %}active{% endif %}" data-value="{{ flag }}">{{ flag }}</span>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="flags_json" value='["+short","+noall","+answer"]' data-chip-output="dig-flags">
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-primary" type="submit" data-submit>▸ Run query</button>
+        <button type="button" class="btn btn-ghost troubleshoot-btn"
+                data-source-target="form[data-endpoint='/api/v1/dns/dig'] [name=target]"
+                data-source-rtype="form[data-endpoint='/api/v1/dns/dig'] [name=record_type]"
+                title="Run the same query against every resolver and the authoritative NS servers; highlight divergence">Troubleshoot →</button>
+        {% if resolver_groups %}
+          <span style="margin-left:auto;font-size:11px;color:var(--text-dim);">Query every server in group:</span>
+          {% for g in resolver_groups %}
+            <button type="button" class="btn btn-action run-group-btn"
+                    data-source-target="form[data-endpoint='/api/v1/dns/dig'] [name=target]"
+                    data-source-rtype="form[data-endpoint='/api/v1/dns/dig'] [name=record_type]"
+                    data-group="{{ g }}" data-mode="answer"
+                    data-output-sel="#dig-output"
+                    style="padding:4px 10px;font-size:11px;"
+                    title="Fan out the same query to every resolver in '{{ g }}' and show each server's answer inline.">{{ g }}</button>
+          {% endfor %}
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Output</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#dig-output">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv"  style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div class="console empty" id="dig-output" style="user-select:text;">Run a query to see output here.</div>
+  </div>
+</div>
+
+<!-- Propagation panel -->
+<div data-panel="propagation" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form data-endpoint="/api/v1/dns/propagation" data-output="#prop-output">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Target</label>
+          <input class="input mono" name="target" value="example.com" required>
+        </div>
+        <div class="field">
+          <label>Record type</label>
+          <select class="select" name="record_type">
+            {% for t in ['A','AAAA','MX','NS','TXT'] %}
+              <option value="{{ t }}" {% if t == 'A' %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" data-submit>▸ Check 16 resolvers</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Results</div>
+      <div style="display:flex;gap:6px;" class="no-print">
+        <button type="button" id="prop-copy" class="btn btn-action" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" id="prop-export-csv" class="btn btn-action" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" id="prop-print" class="btn btn-action" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div class="console empty" id="prop-output" style="user-select:text;">No results yet.</div>
+  </div>
+</div>
+
+<script>
+// CSV export for the propagation results table. Client-side so no extra
+// API round-trip and so the user exports exactly what they see.
+(() => {
+  const btn = document.getElementById('prop-export-csv');
+  const out = document.getElementById('prop-output');
+  const copyBtn = document.getElementById('prop-copy');
+  const printBtn = document.getElementById('prop-print');
+  if (!btn || !out) return;
+
+  const obs = new MutationObserver(() => {
+    const hasTable = !!out.querySelector('table');
+    btn.disabled = !hasTable;
+    if (copyBtn) copyBtn.disabled = !hasTable;
+    if (printBtn) printBtn.disabled = !hasTable;
+  });
+  obs.observe(out, { childList: true, subtree: true });
+
+  // Copy as TSV (spreadsheet-pasteable).
+  if (copyBtn) copyBtn.addEventListener('click', () => {
+    const tbl = out.querySelector('table'); if (!tbl) return;
+    const rows = [];
+    tbl.querySelectorAll('tr').forEach(tr => rows.push(
+      Array.from(tr.children).map(c => (c.innerText || '').trim().replace(/\s*⇅\s*$/, ''))));
+    const txt = rows.map(r => r.join('\t')).join('\n');
+    const orig = copyBtn.textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(txt);
+    copyBtn.textContent = '✓ copied'; setTimeout(() => copyBtn.textContent = orig, 1500);
+  });
+  if (printBtn) printBtn.addEventListener('click', () => window.print());
+
+  btn.addEventListener('click', () => {
+    const table = out.querySelector('table');
+    if (!table) return;
+    const cells = r => Array.from(r.children).map(c => c.textContent.trim().replace(/\s*⇅\s*$/, ''));
+    const rows = [];
+    const thead = table.querySelector('thead tr');
+    if (thead) rows.push(cells(thead));
+    table.querySelectorAll('tbody tr').forEach(tr => rows.push(cells(tr)));
+    const csv = rows.map(r => r.map(v => {
+      const s = String(v ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(',')).join('\r\n') + '\r\n';
+
+    // Filename = target-<record>-<date>.csv, pulled from the form fields.
+    const form = document.querySelector('form[data-endpoint*="/dns/propagation"]');
+    const target = (form?.querySelector('[name="target"]')?.value || 'propagation').replace(/[^A-Za-z0-9._-]/g, '_');
+    const rtype  = (form?.querySelector('[name="record_type"]')?.value || 'A').toUpperCase();
+    const stamp  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const name   = `${target}-${rtype}-${stamp}.csv`;
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+  });
+})();
+</script>
+
+<!-- DNSSEC panel -->
+<div data-panel="dnssec" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="dnssec-form">
+      <div class="field" style="flex:2;margin-bottom:14px;">
+        <label>Domain</label>
+        <input class="input mono" name="target" value="example.com" required>
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Walk DNSSEC chain</button>
+      <button type="button" class="btn btn-ghost troubleshoot-btn"
+              data-source-target="#dnssec-form [name=target]"
+              data-source-rtype=""
+              style="margin-left:8px;">Troubleshoot →</button>
+      {% if resolver_groups %}
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--text-dim);">Validate DNSSEC on every server in group:</span>
+          {% for g in resolver_groups %}
+            <button type="button" class="btn btn-action run-group-btn"
+                    data-source-target="#dnssec-form [name=target]"
+                    data-source-rtype=""
+                    data-group="{{ g }}" data-mode="dnssec"
+                    data-output-sel="#dnssec-out"
+                    style="padding:4px 10px;font-size:11px;"
+                    title="Fan out a DNSSEC validation query to every resolver in '{{ g }}' and show each server's AD flag / DNSKEY / DS inline.">{{ g }}</button>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Chain of trust</div></div>
+    <div id="dnssec-out" style="font-size:12px;color:var(--text-dim);font-style:italic;">Run the walker to see each zone's DS + DNSKEY state.</div>
+  </div>
+</div>
+
+<!-- Reverse DNS panel -->
+<div data-panel="reverse" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form data-endpoint="/api/v1/dns/reverse" data-output="#rev-output">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>IP address (v4 or v6)</label>
+          <input class="input mono" name="ip" value="1.1.1.1" required>
+        </div>
+        <div class="field">
+          <label>Resolver</label>
+          <select class="select" name="resolver">
+            <option value="">System (BIND9)</option>
+            {# Resolvers are grouped by group_tag when present, so a customer
+               with "Corp DNS" and "Corp Cache" labels sees them as distinct
+               <optgroup>s in the dropdown. Ungrouped resolvers fall under
+               the scope label (House or Mine). #}
+            {% set house_groups = {} %}
+            {% for r in house_resolvers %}
+              {% set _ = house_groups.setdefault(r.group_tag or '__house__', []).append(r) %}
+            {% endfor %}
+            {% for label, rs in house_groups.items() %}
+              <optgroup label="{{ 'House · shared' if label == '__house__' else ('House · ' ~ label) }}">
+                {% for r in rs %}
+                  <option value="{{ r.ip }}">{{ r.name }} · {{ r.ip }}{% if r.region %} ({{ r.region }}){% endif %}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+            {% set my_groups = {} %}
+            {% for r in my_resolvers %}
+              {% set _ = my_groups.setdefault(r.group_tag or '__mine__', []).append(r) %}
+            {% endfor %}
+            {% for label, rs in my_groups.items() %}
+              <optgroup label="{{ 'Mine' if label == '__mine__' else ('Mine · ' ~ label) }}">
+                {% for r in rs %}
+                  <option value="{{ r.ip }}">{{ r.name }} · {{ r.ip }}{% if r.region %} ({{ r.region }}){% endif %}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" data-submit>▸ Lookup PTR</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">PTR record</div>
+      <div style="display:flex;gap:6px;" class="no-print">
+        <button type="button" class="btn btn-action rev-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action rev-csv"  style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+      </div>
+    </div>
+    <div class="console empty" id="rev-output" style="user-select:text;">Run a reverse lookup to see output.</div>
+  </div>
+</div>
+
+<script>
+// Reverse tab — wire up Copy / Export CSV on the PTR record card. Both
+// pull from the rendered table (populated by portal.js renderResult).
+(() => {
+  const out = document.getElementById('rev-output');
+  const copyBtn = document.querySelector('.rev-copy');
+  const csvBtn  = document.querySelector('.rev-csv');
+  if (!out || !copyBtn || !csvBtn) return;
+  // Enable the buttons as soon as a result table appears.
+  new MutationObserver(() => {
+    const has = !!out.querySelector('table');
+    copyBtn.disabled = !has; csvBtn.disabled = !has;
+  }).observe(out, { childList: true, subtree: true });
+
+  function tableRows(sel) {
+    const tbl = out.querySelector('table');
+    if (!tbl) return [];
+    const rows = [];
+    tbl.querySelectorAll('tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c => (c.innerText || '').trim().replace(/\s*⇅\s*$/, '')));
+    });
+    return rows;
+  }
+  copyBtn.addEventListener('click', () => {
+    const rows = tableRows();
+    const txt = rows.map(r => r.join('\t')).join('\n');
+    if (navigator.clipboard) navigator.clipboard.writeText(txt);
+    copyBtn.textContent = '✓ copied'; setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+  });
+  csvBtn.addEventListener('click', () => {
+    const rows = tableRows();
+    const csv = rows.map(r => r.map(v => /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v).join(',')).join('\r\n') + '\r\n';
+    const ipField = document.querySelector('form[data-endpoint="/api/v1/dns/reverse"] [name=ip]');
+    const ip = (ipField?.value || 'reverse').replace(/[^A-Za-z0-9._-]/g, '_');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `reverse-${ip}-${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+  });
+})();
+</script>
+
+<!-- Zone Health panel -->
+<div data-panel="zonehealth" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="zone-health-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Zone (apex domain)</label>
+          <input class="input mono" name="target" value="example.com" required>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Checks SOA consistency across all authoritative NS, compares serials/MNAME/RNAME, validates delegation, reports lame NS.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Run zone health check</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Health report</div></div>
+    <div id="zone-health-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">Enter a zone and run the check.</div>
+  </div>
+</div>
+
+<!-- AXFR panel -->
+<div data-panel="axfr" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form data-endpoint="/api/v1/dns/axfr" data-output="#axfr-output">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Zone</label>
+          <input class="input mono" name="target" value="example.com" required>
+        </div>
+        <div class="field">
+          <label>Nameserver</label>
+          <input class="input mono" name="server" placeholder="ns1.example.com" required>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Attempts zone transfer (AXFR). Most public zones reject this — a refusal is expected and means delegation is configured safely.
+      </div>
+      <button class="btn btn-primary" type="submit" data-submit>▸ Attempt transfer</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Transfer result</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#axfr-output" data-tsv-rows="1">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv"  style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div class="console empty" id="axfr-output" style="user-select:text;">Run an AXFR attempt to see output.</div>
+  </div>
+</div>
+
+<!-- crt.sh panel -->
+<div data-panel="crtsh" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="crtsh-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;">
+          <label>Domain</label>
+          <input class="input mono" name="target" value="example.com" required>
+        </div>
+        <div class="field">
+          <label>Limit</label>
+          <input class="input mono" name="limit" type="number" value="100" min="1" max="1000">
+        </div>
+        <div class="field">
+          <label>Expired</label>
+          <select class="select" name="include_expired">
+            <option value="true" selected>include</option>
+            <option value="false">exclude</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Subdomains</label>
+          <select class="select" name="include_subdomains" title="When on, queries `%.<domain>` so subdomain certs are matched — most brands have the majority of their certs on subdomains.">
+            <option value="true" selected>include (*.domain)</option>
+            <option value="false">apex only</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Query crt.sh</button>
+    </form>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-top:8px;">
+      Queries public CT logs via crt.sh. No API key needed. Useful for passive subdomain discovery + historical cert enumeration.
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Certificate transparency entries</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#crtsh-out" data-tsv-rows="1">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv"  style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="crtsh-out" style="font-size:12px;color:var(--text-dim);font-style:italic;user-select:text;">Run a query to see results.</div>
+  </div>
+</div>
+
+<!-- WHOIS panel -->
+<div data-panel="whois" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="whois-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Domain</label><input class="input mono" name="target" value="example.com" required></div>
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Lookup</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Registration record</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#whois-out" data-tsv-rows="1">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv"  style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="whois-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;user-select:text;">Enter a domain and run the lookup.</div>
+  </div>
+</div>
+
+<!-- Bulk WHOIS panel -->
+<div data-panel="bulkwhois" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="bulkwhois-form">
+      <div class="field"><label>Domains (one per line · max 200)</label>
+        <textarea class="input mono" name="targets" rows="8" style="font-size:11px;" placeholder="example.com
+example.net
+acme.com"></textarea></div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Resolve all</button>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-left:8px;">Concurrency is capped at 4 to stay under WHOIS-server rate limits.</span>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Results</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#bulkwhois-out" data-tsv-rows="1" data-bulkwhois="1">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv"  style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div>
+    </div>
+    <div id="bulkwhois-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;user-select:text;">No results yet.</div>
+  </div>
+</div>
+
+<!-- Typosquat panel -->
+<div data-panel="typosquat" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;">
+    <form id="typo-form">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Brand domain</label><input class="input mono" name="target" value="example.com" required></div>
+        <div class="field"><label>Max variants</label><input class="input mono" name="max_variants" type="number" value="150" min="10" max="500"></div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 14px;">
+        Generates homoglyph, omission, transposition, insertion and TLD-swap permutations, then resolves each. Anything that answers is worth investigating.
+      </div>
+      <button class="btn btn-primary" type="submit">▸ Scan permutations</button>
+    </form>
+  </div>
+  <div class="card"><div class="card-head"><div class="card-title">Resolving permutations</div></div>
+    <div id="typo-out" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No scan yet.</div></div>
+</div>
+
+<!-- Resolvers panel — manage the DNS resolvers used by the Dig / Reverse
+     dropdowns and by the Propagation tool. Ownership: admins see & edit
+     everything; non-admins see House entries read-only and CRUD only
+     their own. -->
+<div data-panel="resolvers" data-group="dns" class="hidden">
+  {% set is_admin = user.role in ('admin', 'super_admin') %}
+  <div class="card" style="margin-bottom:14px;padding:12px 14px;">
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+      The resolvers here feed the <strong>Dig</strong> and <strong>Reverse</strong> dropdowns.
+      Entries marked <span class="mono" style="color:var(--accent);">propagation</span> are also
+      used by the <strong>Propagation</strong> tool. <strong>House</strong> resolvers are
+      shared across all users; <strong>Mine</strong> is your private list.
+      {% if is_admin %}As an admin, you can add / edit / delete house entries.{% else %}You can
+      add your own entries and edit or delete them.{% endif %}
+      Some public resolvers are US-centric and may be slow (&gt;1000&nbsp;ms RTT) from other
+      regions — feel free to remove or re-tag them.
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Add a resolver</div></div>
+    <form id="resolver-add" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field"><label>Name</label><input class="input mono" name="name" required maxlength="80"></div>
+        <div class="field"><label>IP</label><input class="input mono" name="ip" required placeholder="1.2.3.4"></div>
+        <div class="field"><label>Region</label>
+          <select class="select" name="region">
+            <option value="">—</option>
+            <option value="Corporate">Corporate</option>
+            <option value="Global">Global</option>
+            <option value="US">US</option>
+            <option value="EU">EU</option>
+            <option value="APAC">APAC</option>
+            <option value="RU">RU</option>
+            <option value="LATAM">LATAM</option>
+            <option value="AFRICA">AFRICA</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Group (optional)</label>
+          <input class="input mono" name="group_tag" list="resolver-group-list" maxlength="60"
+                 placeholder='e.g. "Corp DNS" / "Corp Cache" / "Staging"'>
+          <datalist id="resolver-group-list"></datalist>
+        </div>
+        <div class="field" style="flex:2;"><label>Notes (optional)</label><input class="input" name="notes" maxlength="500"></div>
+        <div class="field">
+          <label>Scope</label>
+          <select class="select" name="scope">
+            {% if is_admin %}<option value="house">House (shared)</option>{% endif %}
+            <option value="mine" {% if not is_admin %}selected{% endif %}>Mine (private)</option>
+          </select>
+        </div>
+        {% if is_admin %}
+        <div class="field" style="max-width:160px;">
+          <label>Propagation default</label>
+          <div style="padding-top:8px;"><label style="font-size:12px;"><input type="checkbox" name="is_propagation_default"> include in Propagation panel</label></div>
+        </div>
+        {% endif %}
+      </div>
+      <button class="btn btn-primary" type="submit">+ Add resolver</button>
+      <span id="resolver-add-msg" style="margin-left:10px;font-size:12px;color:var(--text-dim);"></span>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Current resolvers</div>
+      <button id="resolvers-refresh" type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Refresh</button>
+    </div>
+    <div id="resolvers-list" style="padding:12px 14px;font-size:12px;color:var(--text-dim);">Loading…</div>
+  </div>
+</div>
+
+<script>
+// Resolvers CRUD. Talks to /api/v1/dns/resolvers. All ops are same-origin
+// cookie-authed; no CSRF token plumbing exists yet at the app layer, so
+// be careful not to expose this from a third party origin (known gap per
+// docs/walkthrough-findings.md).
+(() => {
+  const list = document.getElementById('resolvers-list');
+  const form = document.getElementById('resolver-add');
+  const msg  = document.getElementById('resolver-add-msg');
+  const refresh = document.getElementById('resolvers-refresh');
+  if (!list) return;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const meRole = "{{ user.role }}";
+  const isAdmin = (meRole === 'admin' || meRole === 'super_admin');
+
+  async function load() {
+    list.textContent = 'Loading…';
+    try {
+      const r = await fetch('/api/v1/dns/resolvers', {credentials:'same-origin'});
+      if (!r.ok) { list.textContent = 'HTTP ' + r.status; return; }
+      const rows = await r.json();
+      if (!rows.length) { list.textContent = 'No resolvers.'; return; }
+      const group = {house: [], mine: []};
+      rows.forEach(r => group[r.scope]?.push(r));
+      const render = (title, rs, canEdit) => {
+        if (!rs.length) return '';
+        return `<div style="margin-bottom:10px;"><div style="font-weight:600;color:var(--text);margin-bottom:6px;">${esc(title)} (${rs.length})</div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+              <th style="padding:4px 8px;">Name</th><th style="padding:4px 8px;">IP</th>
+              <th style="padding:4px 8px;">Region</th><th style="padding:4px 8px;">Group</th>
+              <th style="padding:4px 8px;">Propagation</th><th style="padding:4px 8px;">Notes</th><th></th></tr></thead>
+            <tbody>${rs.map(r => `
+              <tr>
+                <td style="padding:4px 8px;font-family:var(--mono);">${esc(r.name)}</td>
+                <td style="padding:4px 8px;font-family:var(--mono);">${esc(r.ip)}</td>
+                <td style="padding:4px 8px;">${esc(r.region || '')}</td>
+                <td style="padding:4px 8px;">${r.group_tag ? `<span class="role-pill" style="background:rgba(96,165,250,.18);color:#60a5fa;">${esc(r.group_tag)}</span>` : '<span style="color:var(--text-dimmer);">—</span>'}</td>
+                <td style="padding:4px 8px;">${r.is_propagation_default ? '✓' : ''}</td>
+                <td style="padding:4px 8px;color:var(--text-dim);">${esc(r.notes || '')}</td>
+                <td style="padding:4px 8px;text-align:right;">${canEdit ? `<button data-del="${r.id}" class="btn btn-ghost" style="padding:3px 8px;font-size:11px;color:var(--danger,#e06060);">Delete</button>` : '<span style="color:var(--text-dimmer);font-size:11px;">read-only</span>'}</td>
+              </tr>`).join('')}</tbody></table></div>`;
+      };
+      list.innerHTML = render('House · shared', group.house, isAdmin) + render('Mine · private', group.mine, true);
+
+      // Refresh the datalist of known groups so the Add form's Group
+      // field autocompletes.
+      try {
+        const dl = document.getElementById('resolver-group-list');
+        if (dl) {
+          const seen = new Set(rows.map(r => r.group_tag).filter(Boolean));
+          dl.innerHTML = [...seen].sort((a,b) => a.localeCompare(b)).map(g => `<option value="${esc(g)}">`).join('');
+        }
+      } catch(_){}
+    } catch (e) { list.textContent = 'Error: ' + e.message; }
+  }
+
+  list.addEventListener('click', async e => {
+    const b = e.target.closest('button[data-del]');
+    if (!b) return;
+    if (!confirm('Delete this resolver?')) return;
+    b.disabled = true;
+    try {
+      const r = await fetch('/api/v1/dns/resolvers/' + b.dataset.del, {method:'DELETE', credentials:'same-origin'});
+      if (!r.ok) { alert('Delete failed: HTTP ' + r.status); b.disabled = false; return; }
+      load();
+    } catch (err) { alert('Delete failed: ' + err.message); b.disabled = false; }
+  });
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    msg.textContent = 'Saving…'; msg.style.color = 'var(--text-dim)';
+    const fd = new FormData(form);
+    const payload = {
+      name: fd.get('name'), ip: fd.get('ip'),
+      region: fd.get('region') || null,
+      notes: fd.get('notes') || null,
+      group_tag: (fd.get('group_tag') || '').trim() || null,
+      scope: fd.get('scope') || 'mine',
+      is_propagation_default: fd.get('is_propagation_default') === 'on',
+    };
+    try {
+      const r = await fetch('/api/v1/dns/resolvers', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { msg.textContent = (data.detail || ('HTTP ' + r.status)); msg.style.color = 'var(--danger,#e06060)'; return; }
+      msg.textContent = '✓ added'; msg.style.color = 'var(--accent)';
+      form.reset();
+      load();
+      setTimeout(() => { msg.textContent = ''; }, 2500);
+    } catch (err) { msg.textContent = 'Error: ' + err.message; msg.style.color = 'var(--danger,#e06060)'; }
+  });
+
+  refresh.addEventListener('click', load);
+  // Load on first panel activation. Tab-switch is plain DOM; safe to just
+  // load eagerly when DOMContentLoaded.
+  document.addEventListener('DOMContentLoaded', load);
+  // Fallback for late panel activation: observe the panel's hidden class.
+  const panel = document.querySelector('[data-panel="resolvers"]');
+  if (panel) {
+    const obs = new MutationObserver(() => {
+      if (!panel.classList.contains('hidden') && list.textContent.startsWith('Loading')) load();
+    });
+    obs.observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
+})();
+</script>
+
+<!-- Hop Trace panel — run the same query against every visible resolver
+     and the authoritative NS for the target, in parallel, and highlight
+     divergence. Can be triggered standalone or by the "Troubleshoot →"
+     button on the Dig or DNSSEC panels (those pre-fill target + record
+     type and switch tabs). -->
+<div data-panel="hoptrace" data-group="dns" class="hidden">
+  {% set is_admin = user.role in ('admin', 'super_admin') %}
+  <div class="card" style="margin-bottom:14px;padding:12px 14px;">
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+      Runs your query against <strong>every resolver</strong> in the Resolvers tab
+      (house + personal + the portal's local BIND9) <strong>plus</strong> the authoritative
+      nameservers for the target's zone, all in parallel. The authoritative answers
+      are ground truth; any resolver that disagrees is flagged <span class="mono" style="color:var(--warn,#eab308);">divergent</span>.
+      For your own BIND9 recursor you get a one-click <strong>Flush this record</strong>
+      shortcut when a row is divergent.
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <form id="trace-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Target</label><input class="input mono" name="target" required value="example.com"></div>
+        <div class="field"><label>Record type</label>
+          <select class="select" name="record_type">
+            {% for t in ['A','AAAA','MX','NS','SOA','TXT','CNAME','PTR','CAA','DS','DNSKEY','SRV','TLSA'] %}
+              <option value="{{ t }}" {% if t == 'A' %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>Mode</label>
+          <select class="select" name="mode">
+            <option value="answer" selected>Answer — cache consistency</option>
+            <option value="dnssec">DNSSEC — validation chain</option>
+          </select>
+        </div>
+        <div class="field"><label>Limit to group</label>
+          <select class="select" name="group_tag">
+            <option value="">All visible resolvers</option>
+            {% for g in resolver_groups %}
+              <option value="{{ g }}">{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary" type="submit">▸ Run hop trace</button>
+        <span id="trace-status" style="font-size:12px;color:var(--text-dim);"></span>
+      </div>
+    </form>
+  </div>
+
+  <div id="trace-summary" class="card hidden" style="margin-bottom:14px;"></div>
+
+  <div class="no-print" style="display:flex;gap:8px;margin-bottom:14px;">
+    <button type="button" id="trace-print" class="btn btn-action" style="padding:4px 12px;font-size:11px;" disabled>Print / Save as PDF</button>
+    <button type="button" id="trace-copy-all" class="btn btn-action" style="padding:4px 12px;font-size:11px;" disabled>Copy full report</button>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Resolver chain</div>
+      <div style="display:flex;gap:6px;" class="no-print">
+        <button type="button" class="btn btn-action trace-copy" data-copy-from="#trace-rows" data-copy-as="table" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" id="trace-export-csv" class="btn btn-action" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+      </div>
+    </div>
+    <div id="trace-rows" style="padding:12px 14px;font-size:12px;color:var(--text-dim);user-select:text;">Run a trace to populate.</div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Recursion trace — parsed hops</div>
+      <div style="display:flex;gap:6px;" class="no-print">
+        <button type="button" class="btn btn-action trace-copy" data-copy-from="#trace-hops" data-copy-as="table" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" id="trace-hops-csv" class="btn btn-action" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+      </div>
+    </div>
+    <div id="trace-hops" style="padding:12px 14px;font-size:12px;color:var(--text-dim);user-select:text;">Run a trace to populate.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Recursion trace — raw dig +trace output</div>
+      <div style="display:flex;gap:6px;" class="no-print">
+        <button type="button" class="btn btn-action trace-copy" data-copy-from="#trace-raw" style="padding:4px 10px;font-size:11px;">Copy</button>
+        <button type="button" id="trace-toggle" class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Show</button>
+      </div>
+    </div>
+    <pre id="trace-raw" class="console empty" style="white-space:pre;overflow:auto;max-height:460px;display:none;user-select:text;cursor:text;"></pre>
+  </div>
+</div>
+
+<style>
+/* "Action" button treatment — stands out visibly against the dark card
+   background without the visual weight of btn-primary. Uses the existing
+   accent-tinted palette so it fits the rest of the UI. */
+.btn.btn-action {
+  background: var(--accent-soft, rgba(32,200,150,.12));
+  color: var(--accent, #20c896);
+  border: 1px solid rgba(32,200,150,.4);
+  transition: background .15s, border-color .15s;
+}
+.btn.btn-action:hover:not(:disabled) {
+  background: rgba(32,200,150,.22);
+  border-color: rgba(32,200,150,.65);
+}
+.btn.btn-action:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+/* Print rules for the Hop Trace page — hide the shell chrome, expand
+   collapsed blocks, force landscape for the wide tables, and wrap long
+   lines in the raw recursion trace so they don't overrun the page edge. */
+@page { size: landscape; margin: 0.4in; }
+@media print {
+  /* Hide everything except the Hop Trace panel's content areas. */
+  .no-print, .sidebar, .top-bar, .topbar, .tabs, .footer,
+  .page-head, .page-actions, .page-sub, form, button,
+  [id$="-form"] { display: none !important; }
+  /* Keep the hop-trace content visible. */
+  body, html { background: #fff !important; color: #000 !important; margin: 0 !important; padding: 0 !important; }
+  /* Print whichever panel is currently active. Inactive panels carry the
+     .hidden class from the tab wiring; hide those. */
+  [data-panel].hidden { display: none !important; }
+  [data-panel]:not(.hidden) { display: block !important; }
+  main, .main, .content { max-width: 100% !important; width: 100% !important; padding: 0 !important; }
+
+  /* Cards: thin black borders, small margins, no fills. */
+  .card { break-inside: avoid; border: 1px solid #888 !important;
+          margin: 0 0 8px 0 !important; background: #fff !important;
+          box-shadow: none !important; }
+  .card-head { padding: 6px 10px !important; background: #f3f3f3 !important;
+               border-bottom: 1px solid #ccc !important; }
+  .card-title { font-size: 11px !important; color: #000 !important; font-weight: 600 !important; }
+
+  /* Tables: fit the page width; allow long strings (hashes, RRSIG blobs)
+     to wrap so a wide DNSKEY/DS column doesn't push the table past the
+     page edge. */
+  table { width: 100% !important; table-layout: auto !important;
+          border-collapse: collapse !important; font-size: 9px !important; }
+  th, td { padding: 3px 5px !important; border: 1px solid #ddd !important;
+           word-break: break-all !important; overflow-wrap: anywhere !important;
+           vertical-align: top !important; color: #000 !important; }
+  thead tr { background: #f0f0f0 !important; }
+
+  /* Summary + banner styling stays legible in print. */
+  [id="trace-summary"] { border: 1px solid #888 !important; }
+
+  /* Raw dig +trace output: force-show it (was collapsed), wrap long
+     RRSIG hash lines so they stay inside the card border. */
+  #trace-raw { display: block !important; max-height: none !important;
+               overflow: visible !important;
+               background: #fafafa !important; color: #000 !important;
+               border: 1px solid #ccc !important; padding: 6px !important;
+               white-space: pre-wrap !important;
+               word-break: break-all !important;
+               overflow-wrap: anywhere !important;
+               font-size: 9px !important; line-height: 1.35 !important; }
+
+  pre, code, .mono { font-family: Menlo, Consolas, monospace !important; color: #000 !important; }
+
+  /* Role pills / status pills: black on light grey for print legibility. */
+  .role-pill, [class*="role-pill"] {
+    background: #eee !important; color: #000 !important;
+    border: 1px solid #bbb !important; padding: 1px 4px !important; font-size: 9px !important;
+  }
+
+  /* Page breaks: keep a table row on one page. */
+  tr, td, th { page-break-inside: avoid; }
+  table { page-break-inside: auto; }
+}
+</style>
+
+<script>
+// Hop Trace controller. Talks to POST /api/v1/dns/trace. Same-origin cookie
+// auth; no CSRF plumbing at the app layer yet (known global gap).
+(() => {
+  const panel = document.querySelector('[data-panel="hoptrace"]');
+  if (!panel) return;
+  const form = document.getElementById('trace-form');
+  const statusEl = document.getElementById('trace-status');
+  const summaryEl = document.getElementById('trace-summary');
+  const rowsEl = document.getElementById('trace-rows');
+  const rawEl = document.getElementById('trace-raw');
+  const toggleBtn = document.getElementById('trace-toggle');
+  const exportBtn = document.getElementById('trace-export-csv');
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  let lastReport = null;
+
+  function statusPill(s) {
+    const map = {
+      'match':       ['✓', 'var(--accent)'],
+      'divergent':   ['⚠', 'var(--warn,#eab308)'],
+      'error':       ['✗', 'var(--danger,#e06060)'],
+      'unknown':     ['?', 'var(--text-dim)'],
+    };
+    const [ch, col] = map[s] || ['·', 'var(--text-dim)'];
+    return `<span style="color:${col};font-family:var(--mono);font-weight:600;">${ch} ${esc(s)}</span>`;
+  }
+
+  function fmtTtl(s) {
+    if (s == null || s < 0) return '—';
+    if (s < 60)   return s + 's';
+    if (s < 3600) return Math.floor(s/60)   + 'm';
+    if (s < 86400) return Math.floor(s/3600) + 'h';
+    return Math.floor(s/86400) + 'd';
+  }
+
+  function scopeTag(s) {
+    const colors = {local:'#60a5fa', house:'#20c896', mine:'#a78bfa', authoritative:'#f59e0b'};
+    return `<span class="role-pill" style="background:${colors[s]}22;color:${colors[s]};">${esc(s)}</span>`;
+  }
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const submitBtnLabel = submitBtn ? submitBtn.textContent : '';
+
+  async function runTrace(target, rtype, mode, groupTag) {
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '… Running'; }
+    statusEl.textContent = 'Querying all resolvers + authoritative NS in parallel…';
+    summaryEl.classList.add('hidden');
+    rowsEl.textContent = 'Running…';
+    exportBtn.disabled = true;
+    rawEl.textContent = '';
+    try {
+      const r = await fetch('/api/v1/dns/trace', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({target, record_type: rtype, include_external: true, mode: mode || 'answer', group_tag: groupTag || null}),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = data.error || data.detail || (typeof data === 'string' ? data : JSON.stringify(data));
+        rowsEl.innerHTML = `<span style="color:var(--danger);">HTTP ${r.status}: ${esc(msg)}</span>`;
+        statusEl.textContent = '';
+        return;
+      }
+      lastReport = data;
+      render(data);
+      enableExports(true);
+      const rc = (data.mode === 'dnssec' ? data.dnssec_rows.length : data.rows.length);
+      statusEl.textContent = `✓ ${data.mode} mode · ${rc} rows · ${data.authoritative_answers.length} authoritative answer(s)`;
+      exportBtn.disabled = false;
+    } catch (e) { rowsEl.innerHTML = `<span style="color:var(--danger);">${esc(e.message)}</span>`; statusEl.textContent = ''; }
+    finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitBtnLabel; }
+    }
+  }
+
+  // ----- summary card (diagnosis + evidence + suggested action) -----
+  function renderSummary(s) {
+    const col = {
+      'ok':      ['rgba(34,197,94,.08)',  'var(--accent)'],
+      'warn':    ['rgba(234,179,8,.08)',  'var(--warn,#eab308)'],
+      'error':   ['rgba(224,96,96,.08)',  'var(--danger,#e06060)'],
+      'unknown': ['rgba(148,163,184,.08)','var(--text-dim)'],
+    }[s.severity || 'unknown'];
+    const evid = (s.evidence || []).map(e =>
+      `<li style="margin:2px 0;">${esc(e)}</li>`).join('');
+    const action = s.suggested_action
+      ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(0,0,0,.15);border-radius:4px;font-family:var(--mono);font-size:11px;">
+           <span style="color:var(--text-dim);">Suggested:</span> ${esc(s.suggested_action)}
+         </div>`
+      : '';
+    return `<div style="padding:12px 14px;background:${col[0]};border-left:3px solid ${col[1]};">
+      <div style="font-weight:600;color:var(--text);margin-bottom:6px;">${esc(s.headline)}</div>
+      ${evid ? `<ul style="margin:6px 0 0 16px;padding:0;font-size:12px;color:var(--text-dim);line-height:1.6;">${evid}</ul>` : ''}
+      ${action}</div>`;
+  }
+
+  function render(data) {
+    // --- diagnosis summary (new: leads the page) ---
+    summaryEl.innerHTML = renderSummary(data.summary || {headline:'(no summary)', severity:'unknown', evidence:[]});
+    summaryEl.classList.remove('hidden');
+
+    // --- resolver chain table ---
+    if (data.mode === 'dnssec') {
+      const zoneHdr = data.zone ? ` for zone <span class="mono">${esc(data.zone)}</span>` : '';
+      const header = `<tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">Scope</th>
+        <th style="padding:6px 8px;">Name</th>
+        <th style="padding:6px 8px;">Resolver</th>
+        <th style="padding:6px 8px;">Target answer</th>
+        <th style="padding:6px 8px;text-align:right;">TTL</th>
+        <th style="padding:6px 8px;">AD</th>
+        <th style="padding:6px 8px;">RRSIG</th>
+        <th style="padding:6px 8px;">DNSKEY${zoneHdr}</th>
+        <th style="padding:6px 8px;">DS${zoneHdr}</th>
+        <th style="padding:6px 8px;text-align:right;">RTT</th>
+        <th style="padding:6px 8px;">Status</th>
+        <th></th></tr>`;
+      const body = data.dnssec_rows.map(r => {
+        const flush = r.flushable && (r.status === 'divergent' || r.target_ad === false)
+          ? `<button data-fluship="${esc(r.resolver_ip)}" data-flushname="${esc(data.zone || data.target)}" class="btn btn-ghost" style="padding:3px 8px;font-size:11px;color:var(--warn,#eab308);">Flush zone</button>`
+          : '';
+        const ad  = r.target_ad === true ? '<span style="color:var(--accent);">✓</span>'
+                   : r.target_ad === false ? '<span style="color:var(--warn);">—</span>' : '';
+        const sig = r.target_has_rrsig ? '✓' : '';
+        const ans = r.error ? `<span style="color:var(--danger);">${esc(r.error)}</span>`
+                            : `<span class="mono">${esc(r.target_answer || '—')}</span>`;
+        return `<tr>
+          <td style="padding:4px 8px;">${scopeTag(r.scope)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);">${esc(r.name)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);">${esc(r.resolver_ip)}</td>
+          <td style="padding:4px 8px;">${ans}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);text-align:right;" title="${r.target_ttl == null ? '' : r.target_ttl + ' seconds'}">${fmtTtl(r.target_ttl)}</td>
+          <td style="padding:4px 8px;text-align:center;">${ad}</td>
+          <td style="padding:4px 8px;text-align:center;">${sig}</td>
+          <td style="padding:4px 8px;font-size:11px;" title="${esc((r.dnskey_records || []).join('\n'))}">${esc(r.dnskey_summary || '—')}</td>
+          <td style="padding:4px 8px;font-size:11px;" title="${esc((r.ds_records || []).join('\n'))}">${esc(r.ds_summary || '—')}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);text-align:right;">${r.duration_ms} ms</td>
+          <td style="padding:4px 8px;">${statusPill(r.status)}${r.divergence_reason ? `<div style="font-size:10px;color:var(--warn,#eab308);line-height:1.3;margin-top:2px;max-width:260px;">${esc(r.divergence_reason)}</div>` : ''}</td>
+          <td style="padding:4px 8px;text-align:right;">${flush}</td>
+        </tr>`;
+      }).join('');
+      rowsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>${header}</thead><tbody>${body}</tbody></table>`;
+    } else {
+      const header = `<tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">Scope</th>
+        <th style="padding:6px 8px;">Name</th>
+        <th style="padding:6px 8px;">Resolver</th>
+        <th style="padding:6px 8px;">Region</th>
+        <th style="padding:6px 8px;">Answer</th>
+        <th style="padding:6px 8px;text-align:right;">TTL</th>
+        <th style="padding:6px 8px;text-align:right;">RTT</th>
+        <th style="padding:6px 8px;">AD</th>
+        <th style="padding:6px 8px;">Status</th>
+        <th></th></tr>`;
+      const body = data.rows.map(r => {
+        const flush = r.flushable && r.status === 'divergent'
+          ? `<button data-fluship="${esc(r.resolver_ip)}" data-flushname="${esc(data.target)}" class="btn btn-ghost" style="padding:3px 8px;font-size:11px;color:var(--warn,#eab308);">Flush this record</button>`
+          : '';
+        const ad = r.ad_flag === true ? '✓' : (r.ad_flag === false ? '—' : '');
+        const ans = r.error ? `<span style="color:var(--danger);">${esc(r.error)}</span>`
+                            : `<span class="mono">${esc(r.answer || '—')}</span>`;
+        return `<tr>
+          <td style="padding:4px 8px;">${scopeTag(r.scope)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);">${esc(r.name)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);">${esc(r.resolver_ip)}</td>
+          <td style="padding:4px 8px;">${esc(r.region || '')}</td>
+          <td style="padding:4px 8px;">${ans}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);text-align:right;" title="${r.ttl == null ? '' : r.ttl + ' seconds'}">${fmtTtl(r.ttl)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);text-align:right;">${r.duration_ms} ms</td>
+          <td style="padding:4px 8px;font-family:var(--mono);">${ad}</td>
+          <td style="padding:4px 8px;">${statusPill(r.status)}</td>
+          <td style="padding:4px 8px;text-align:right;">${flush}</td>
+        </tr>`;
+      }).join('');
+      rowsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>${header}</thead><tbody>${body}</tbody></table>`;
+    }
+
+    rawEl.textContent = data.recursion_trace + (data.recursion_trace_truncated ? '' : '');
+    renderTraceHops(data.recursion_trace);
+  }
+
+  // --- Parse `dig +trace` output into a per-hop table ---
+  // dig emits each recursion step as a block of RR lines terminated by
+  // ";; Received N bytes from IP#port(name) in Nms". Each hop is one
+  // server that answered; classify records by type so you can see at
+  // a glance "root gave 13 NS, TLD gave 2 NS + 2 A, apex gave 1 A".
+  function renderTraceHops(raw) {
+    const hopsEl = document.getElementById('trace-hops');
+    if (!hopsEl) return;
+    if (!raw) { hopsEl.textContent = 'No recursion trace available.'; return; }
+    const lines = raw.split('\n');
+    const hops = [];
+    let buffer = [];
+    const received = /^;;\s+Received\s+(\d+)\s+bytes\s+from\s+([\d.a-fA-F:]+)#\d+\(([^)]+)\)\s+in\s+(\d+)\s*ms/;
+    for (const raw_line of lines) {
+      const line = raw_line.trimEnd();
+      const m = line.match(received);
+      if (m) {
+        const [, bytes, ip, name, rtt] = m;
+        // Summarise record types in the buffered block.
+        const typeCounts = {};
+        for (const rr of buffer) {
+          const parts = rr.split(/\s+/);
+          // Standard RR layout: NAME TTL CLASS TYPE ...
+          const t = parts[3];
+          if (!t) continue;
+          typeCounts[t] = (typeCounts[t] || 0) + 1;
+        }
+        hops.push({
+          step: hops.length + 1,
+          server_ip: ip,
+          server_name: name.replace(/\.$/, ''),
+          bytes: Number(bytes),
+          rtt_ms: Number(rtt),
+          record_counts: typeCounts,
+          record_count_total: buffer.length,
+          records: buffer.slice(),
+        });
+        buffer = [];
+      } else if (line.trim() && !line.startsWith(';')) {
+        buffer.push(line);
+      }
+    }
+    if (!hops.length) {
+      hopsEl.textContent = 'Could not parse recursion trace.';
+      return;
+    }
+    const header = `<tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+      <th style="padding:6px 8px;">Step</th>
+      <th style="padding:6px 8px;">Server</th>
+      <th style="padding:6px 8px;">IP</th>
+      <th style="padding:6px 8px;text-align:right;">RTT</th>
+      <th style="padding:6px 8px;text-align:right;">Bytes</th>
+      <th style="padding:6px 8px;">Records returned</th></tr>`;
+    const body = hops.map(h => {
+      const summary = Object.entries(h.record_counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([t, c]) => `${c}&nbsp;${esc(t)}`)
+        .join(' · ') || '—';
+      return `<tr>
+        <td style="padding:4px 8px;font-family:var(--mono);">${h.step}</td>
+        <td style="padding:4px 8px;font-family:var(--mono);">${esc(h.server_name)}</td>
+        <td style="padding:4px 8px;font-family:var(--mono);">${esc(h.server_ip)}</td>
+        <td style="padding:4px 8px;font-family:var(--mono);text-align:right;">${h.rtt_ms}&nbsp;ms</td>
+        <td style="padding:4px 8px;font-family:var(--mono);text-align:right;">${h.bytes}</td>
+        <td style="padding:4px 8px;font-size:11px;">${summary} <span style="color:var(--text-dimmer);">(${h.record_count_total} total)</span></td>
+      </tr>`;
+    }).join('');
+    hopsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>${header}</thead><tbody>${body}</tbody></table>`;
+  }
+
+  // "Flush this record" — admin-only; hits the rndc endpoint. If the
+  // endpoint refuses (non-admin), show the response.
+  rowsEl.addEventListener('click', async e => {
+    const b = e.target.closest('button[data-fluship]');
+    if (!b) return;
+    if (!confirm(`Flush ${b.dataset.flushname} from this resolver's cache?`)) return;
+    b.disabled = true; const orig = b.textContent; b.textContent = 'Flushing…';
+    try {
+      const r = await fetch('/api/v1/dns/rndc-flush', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({zone: b.dataset.flushname}),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) { b.textContent = '✓ flushed'; setTimeout(() => { b.textContent = orig; b.disabled = false; }, 2500); }
+      else { alert('Flush failed: ' + (data.detail || r.status)); b.textContent = orig; b.disabled = false; }
+    } catch (err) { alert('Flush failed: ' + err.message); b.textContent = orig; b.disabled = false; }
+  });
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    runTrace(fd.get('target'), fd.get('record_type'), fd.get('mode'), fd.get('group_tag'));
+  });
+
+  toggleBtn.addEventListener('click', () => {
+    if (rawEl.style.display === 'none') { rawEl.style.display = 'block'; toggleBtn.textContent = 'Hide'; rawEl.classList.remove('empty'); }
+    else { rawEl.style.display = 'none'; toggleBtn.textContent = 'Show'; }
+  });
+
+  exportBtn.addEventListener('click', () => {
+    if (!lastReport) return;
+    const isDnssec = lastReport.mode === 'dnssec';
+    const cols = isDnssec
+      ? ['scope','name','resolver_ip','region','target_answer','target_ttl','target_ad','target_has_rrsig','dnskey_summary','ds_summary','zone','duration_ms','status','error']
+      : ['scope','name','resolver_ip','region','answer','ttl','duration_ms','ad_flag','status','error'];
+    const src = isDnssec ? lastReport.dnssec_rows : lastReport.rows;
+    const lines = [cols.join(',')].concat(src.map(r =>
+      cols.map(k => {
+        const v = r[k] == null ? '' : String(r[k]);
+        return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v;
+      }).join(',')
+    ));
+    const blob = new Blob([lines.join('\r\n') + '\r\n'], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `hoptrace-${lastReport.mode}-${lastReport.target}-${lastReport.record_type}-${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+  });
+
+  // "Troubleshoot →" jumps to Hop Trace (full analysis with authoritative
+  // comparison + summary); "run-group-btn" stays on the source tab and
+  // fans the same query to every resolver in the chosen group, rendering
+  // a compact per-server table inline. That way a user on Dig or DNSSEC
+  // gets their "does every Corp DNS agree?" answer without having to
+  // learn the Hop Trace UI, and Hop Trace stays as the heavier tool for
+  // divergence-from-authoritative diagnosis.
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.troubleshoot-btn');
+    if (!b) return;
+    e.preventDefault();
+    const srcT = document.querySelector(b.dataset.sourceTarget);
+    const srcR = b.dataset.sourceRtype ? document.querySelector(b.dataset.sourceRtype) : null;
+    if (srcT && srcT.value) form.target.value = srcT.value;
+    if (srcR && srcR.value) form.record_type.value = srcR.value;
+    const sel = (b.dataset.sourceTarget || '').toLowerCase();
+    form.mode.value = sel.includes('dnssec') ? 'dnssec' : 'answer';
+    if (form.group_tag) form.group_tag.value = '';
+    const tabBtn = document.querySelector('.tabs[data-tabs="dns"] .tab[data-tab="hoptrace"]');
+    if (tabBtn) tabBtn.click();
+    setTimeout(() => form.requestSubmit(), 60);
+  });
+
+  // Inline group fan-out. Runs /api/v1/dns/trace with group_tag set and
+  // renders the per-resolver rows directly into the source tab's output
+  // (no tab switch). Works for both Dig (answer mode) and DNSSEC mode.
+  const _groupEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('.run-group-btn');
+    if (!b) return;
+    e.preventDefault();
+    const srcT = document.querySelector(b.dataset.sourceTarget);
+    const srcR = b.dataset.sourceRtype ? document.querySelector(b.dataset.sourceRtype) : null;
+    const target = (srcT && srcT.value || '').trim();
+    if (!target) { alert('Enter a target domain first.'); return; }
+    const rtype = (srcR && srcR.value) || 'A';
+    const mode  = b.dataset.mode || 'answer';
+    const group = b.dataset.group || '';
+    const out   = document.querySelector(b.dataset.outputSel || '#dig-output');
+    if (!out) return;
+    out.classList.remove('empty');
+    out.innerHTML = `<div style="padding:10px 12px;color:var(--text-dim);">Querying every resolver in group "${_groupEsc(group)}"…</div>`;
+    const origTxt = b.textContent;
+    b.disabled = true; b.textContent = '… running';
+    try {
+      const r = await fetch('/api/v1/dns/trace', {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target, record_type: rtype, mode, group_tag: group, include_external: true}),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        out.innerHTML = `<div style="padding:12px;color:var(--danger);">HTTP ${r.status}: ${_groupEsc(data.error || data.detail || 'error')}</div>`;
+        return;
+      }
+      // Per-resolver rows, excluding the synthetic authoritative-NS set.
+      const src  = mode === 'dnssec' ? (data.dnssec_rows || []) : (data.rows || []);
+      const rows = src.filter(x => x.scope !== 'authoritative');
+      if (!rows.length) {
+        out.innerHTML = `<div style="padding:12px;color:var(--warn,#eab308);">
+          No resolvers matched group <strong>${_groupEsc(group)}</strong>. Add at least one resolver to that group in the Resolvers tab.
+        </div>`;
+        return;
+      }
+      const ansOf = r => mode === 'dnssec' ? r.target_answer : r.answer;
+      const body = rows.map(r => {
+        const ans = ansOf(r);
+        const err = r.error || '';
+        const adCell = mode === 'dnssec'
+          ? (r.target_ad === true ? '<span style="color:var(--accent);">✓</span>'
+             : r.target_ad === false ? '<span style="color:var(--warn,#eab308);">—</span>' : '')
+          : '';
+        const dkCell = mode === 'dnssec' ? (r.dnskey_summary || '—') : '';
+        return `<tr>
+          <td style="padding:4px 8px;font-family:var(--mono);">${_groupEsc(r.name)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);">${_groupEsc(r.resolver_ip)}</td>
+          <td style="padding:4px 8px;font-family:var(--mono);">${err ? `<span style="color:var(--danger);">${_groupEsc(err)}</span>` : _groupEsc(ans || '—')}</td>
+          <td style="padding:4px 8px;text-align:right;font-family:var(--mono);">${r.duration_ms} ms</td>
+          ${mode === 'dnssec' ? `<td style="padding:4px 8px;text-align:center;">${adCell}</td><td style="padding:4px 8px;font-size:11px;">${_groupEsc(dkCell)}</td>` : ''}
+        </tr>`;
+      }).join('');
+      const unique = new Set(rows.map(x => (ansOf(x) || '').toString().trim().toLowerCase()).filter(Boolean));
+      const divergent = unique.size > 1;
+      const banner = divergent
+        ? `<div style="padding:8px 12px;background:rgba(234,179,8,.08);border-left:3px solid var(--warn,#eab308);margin-bottom:10px;font-size:12px;">
+             <strong>${rows.length} resolver(s) in <span class="mono">${_groupEsc(group)}</span> returned <span class="mono">${unique.size}</span> different answers.</strong>
+             ${mode === 'answer' ? 'For full authoritative-vs-resolver divergence analysis, use the Hop Trace tab.' : ''}
+           </div>`
+        : `<div style="padding:8px 12px;background:rgba(34,197,94,.06);border-left:3px solid var(--accent);margin-bottom:10px;font-size:12px;">
+             <strong>All ${rows.length} resolver(s) in <span class="mono">${_groupEsc(group)}</span> agree.</strong>
+             ${mode === 'dnssec' ? 'DNSSEC state shown per row; AD flag = resolver validated.' : ''}
+           </div>`;
+      out.innerHTML = `${banner}
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+            <th style="padding:6px 8px;">Resolver</th>
+            <th style="padding:6px 8px;">IP</th>
+            <th style="padding:6px 8px;">${mode === 'dnssec' ? 'Target answer' : 'Answer'}</th>
+            <th style="padding:6px 8px;text-align:right;">RTT</th>
+            ${mode === 'dnssec' ? '<th style="padding:6px 8px;">AD</th><th style="padding:6px 8px;">DNSKEY</th>' : ''}
+          </tr></thead><tbody>${body}</tbody></table>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">
+          Group query · <span class="mono">${_groupEsc(target)}</span> (${_groupEsc(rtype)}) · <a href="#hoptrace" style="color:var(--accent);text-decoration:none;">switch to Hop Trace for authoritative comparison →</a>
+        </div>`;
+    } catch (err) {
+      out.innerHTML = `<div style="padding:12px;color:var(--danger);">Network error: ${_groupEsc(err.message)}</div>`;
+    } finally {
+      b.disabled = false; b.textContent = origTxt;
+    }
+  });
+
+  // --- Copy + Print helpers ---------------------------------------------
+  // Copy button on any card head. data-copy-from points at the element
+  // whose text to copy. data-copy-as="table" copies an HTML <table> as
+  // tab-separated text (spreadsheet-friendly). Everything else is copied
+  // as plain innerText so formatting doesn't leak.
+  function copyText(txt, btn) {
+    const orig = btn ? btn.textContent : '';
+    const done = ok => {
+      if (!btn) return;
+      btn.textContent = ok ? '✓ copied' : '✗ failed';
+      setTimeout(() => { btn.textContent = orig; }, 1800);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(() => done(true), () => done(false));
+    } else {
+      // Fallback for http:// origins that lack the Clipboard API.
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { done(document.execCommand('copy')); } catch { done(false); }
+      ta.remove();
+    }
+  }
+  function tableToTSV(el) {
+    const tbl = el.querySelector('table');
+    if (!tbl) return el.innerText || '';
+    const rows = [];
+    tbl.querySelectorAll('tr').forEach(tr => {
+      const cells = Array.from(tr.children).map(c => (c.innerText || '').trim().replace(/\t/g, ' ').replace(/\s+/g, ' '));
+      rows.push(cells.join('\t'));
+    });
+    return rows.join('\n');
+  }
+
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.trace-copy');
+    if (!b) return;
+    const src = document.querySelector(b.dataset.copyFrom);
+    if (!src) return;
+    const txt = b.dataset.copyAs === 'table' ? tableToTSV(src) : (src.innerText || src.textContent || '');
+    copyText(txt, b);
+  });
+
+  const printBtn = document.getElementById('trace-print');
+  const copyAllBtn = document.getElementById('trace-copy-all');
+  const hopsCsvBtn = document.getElementById('trace-hops-csv');
+  function enableExports(enable) {
+    [printBtn, copyAllBtn, hopsCsvBtn, ...document.querySelectorAll('.trace-copy')].forEach(btn => {
+      if (btn) btn.disabled = !enable;
+    });
+  }
+  if (hopsCsvBtn) hopsCsvBtn.addEventListener('click', () => {
+    const tbl = document.querySelector('#trace-hops table');
+    if (!tbl) return;
+    const rows = [];
+    tbl.querySelectorAll('tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c => (c.innerText || '').trim().replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')));
+    });
+    const csv = rows.map(r => r.map(v => /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v).join(',')).join('\r\n') + '\r\n';
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `hoptrace-hops-${(lastReport && lastReport.target) || 'trace'}-${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+  });
+  if (printBtn) printBtn.addEventListener('click', () => window.print());
+  if (copyAllBtn) copyAllBtn.addEventListener('click', () => {
+    if (!lastReport) return;
+    const parts = [];
+    parts.push(`Meridian Hop Trace — ${lastReport.target} (${lastReport.record_type}) · ${lastReport.mode} mode`);
+    parts.push('');
+    const s = lastReport.summary || {};
+    parts.push(`[${(s.severity || 'unknown').toUpperCase()}] ${s.headline || ''}`);
+    (s.evidence || []).forEach(e => parts.push('  - ' + e));
+    if (s.suggested_action) parts.push('Suggested: ' + s.suggested_action);
+    parts.push('');
+    parts.push('--- Resolver chain ---');
+    parts.push(tableToTSV(document.getElementById('trace-rows')));
+    parts.push('');
+    parts.push('--- Recursion trace (parsed hops) ---');
+    parts.push(tableToTSV(document.getElementById('trace-hops')));
+    parts.push('');
+    parts.push('--- Recursion trace (raw) ---');
+    parts.push(document.getElementById('trace-raw').textContent || '');
+    copyText(parts.join('\n'), copyAllBtn);
+  });
+
+})();
+</script>
+
+<!-- ========================================================= -->
+<!-- Mail Auth: SPF / DKIM / DMARC parser-level validators    -->
+<!-- ========================================================= -->
+<div data-panel="mailauth" data-group="dns" class="hidden">
+  <div class="tabs" data-tabs="mailauth">
+    <button class="tab active" data-tab="spf">SPF</button>
+    <button class="tab"        data-tab="dkim">DKIM</button>
+    <button class="tab"        data-tab="dmarc">DMARC</button>
+  </div>
+
+  <div data-panel="spf" data-group="mailauth">
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-head"><div class="card-title">Lookup published record</div></div>
+      <form id="spf-form" style="padding:12px 14px;">
+        <div class="form-row">
+          <div class="field" style="flex:2;"><label>Domain</label>
+            <input class="input mono" name="domain" value="example.com" required>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+          Parses the SPF TXT record, follows <code>include:</code> chains, counts DNS lookups against RFC 7208's 10-cap, and flags <code>+all</code> / <code>?all</code> footguns.
+        </div>
+        <button class="btn btn-primary" type="submit">▸ Validate SPF</button>
+      </form>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-head"><div class="card-title">Syntax checker — paste a proposed record</div></div>
+      <form id="spf-lint-form" style="padding:12px 14px;">
+        <div class="field"><label>Raw SPF record</label>
+          <textarea class="input mono" name="raw_record" rows="3" required
+                    placeholder="v=spf1 include:_spf.google.com ~all"
+                    style="resize:vertical;"></textarea>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:6px 0 10px;">
+          Vet a record before you publish it — no DNS lookup, just the same parser used above.
+        </div>
+        <button class="btn" type="submit">▸ Check syntax</button>
+      </form>
+    </div>
+
+    <div class="card"><div class="card-head"><div class="card-title">SPF findings</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#spf-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div></div>
+      <div id="spf-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No check yet.</div>
+    </div>
+  </div>
+
+  <div data-panel="dkim" data-group="mailauth" class="hidden">
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-head"><div class="card-title">Lookup published key</div></div>
+      <form id="dkim-form" style="padding:12px 14px;">
+        <div class="form-row">
+          <div class="field"><label>Domain</label>
+            <input class="input mono" name="domain" value="example.com" required>
+          </div>
+          <div class="field"><label>Selector</label>
+            <input class="input mono" name="selector" value="default" required placeholder="google, selector1, mail, ...">
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+          Fetches <code>&lt;selector&gt;._domainkey.&lt;domain&gt;</code>, parses the key+flags, base64-validates the public key, estimates bit-length. Flags RSA keys below 2048.
+        </div>
+        <button class="btn btn-primary" type="submit">▸ Validate DKIM</button>
+      </form>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-head"><div class="card-title">Syntax checker — paste a proposed record</div></div>
+      <form id="dkim-lint-form" style="padding:12px 14px;">
+        <div class="field"><label>Raw DKIM record (TXT value)</label>
+          <textarea class="input mono" name="raw_record" rows="4" required
+                    placeholder="v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA..."
+                    style="resize:vertical;"></textarea>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:6px 0 10px;">
+          Strip enclosing quotes and rejoin multi-chunk TXT values first.
+        </div>
+        <button class="btn" type="submit">▸ Check syntax</button>
+      </form>
+    </div>
+
+    <div class="card"><div class="card-head"><div class="card-title">DKIM findings</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#dkim-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div></div>
+      <div id="dkim-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No check yet.</div>
+    </div>
+  </div>
+
+  <div data-panel="dmarc" data-group="mailauth" class="hidden">
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-head"><div class="card-title">Lookup published record</div></div>
+      <form id="dmarc-form" style="padding:12px 14px;">
+        <div class="form-row">
+          <div class="field" style="flex:2;"><label>Domain</label>
+            <input class="input mono" name="domain" value="example.com" required>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:8px 0 10px;">
+          Fetches <code>_dmarc.&lt;domain&gt;</code> and lints the policy string: required tags, p= / sp= / pct= ranges, rua / ruf URI formats, adkim / aspf alignment.
+        </div>
+        <button class="btn btn-primary" type="submit">▸ Validate DMARC</button>
+      </form>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-head"><div class="card-title">Syntax checker — paste a proposed record</div></div>
+      <form id="dmarc-lint-form" style="padding:12px 14px;">
+        <div class="field"><label>Raw DMARC record</label>
+          <textarea class="input mono" name="raw_record" rows="3" required
+                    placeholder="v=DMARC1; p=reject; rua=mailto:dmarc@example.com; pct=100"
+                    style="resize:vertical;"></textarea>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin:6px 0 10px;">
+          Tags must be semicolon-separated. Runs the full policy lint.
+        </div>
+        <button class="btn" type="submit">▸ Check syntax</button>
+      </form>
+    </div>
+
+    <div class="card"><div class="card-head"><div class="card-title">DMARC findings</div>
+      <div style="display:flex;gap:6px;" class="no-print result-actions" data-source="#dmarc-out">
+        <button type="button" class="btn btn-action act-copy" style="padding:4px 10px;font-size:11px;" disabled>Copy</button>
+        <button type="button" class="btn btn-action act-csv" style="padding:4px 10px;font-size:11px;" disabled>Export CSV</button>
+        <button type="button" class="btn btn-action act-print" style="padding:4px 10px;font-size:11px;" disabled>Print / PDF</button>
+      </div></div>
+      <div id="dmarc-out" class="empty" style="font-size:12px;color:var(--text-dim);font-style:italic;padding:12px;">No check yet.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Mail Auth panel handlers — shared renderer for all three.
+(function(){
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function jfetch(url, body) {
+    const r = await fetch(url, {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+  function gradeColor(g) {
+    return g === 'ok' ? 'var(--accent)' : g === 'warn' ? 'var(--warn)' : 'var(--danger)';
+  }
+  function renderFindings(out, result, opts) {
+    opts = opts || {};
+    out.classList.remove('empty');
+    if (result.found === false) {
+      out.innerHTML = `<div style="padding:14px;color:var(--danger);">
+        <div style="font-family:var(--mono);font-size:11px;margin-bottom:6px;">Not found</div>
+        <div style="color:var(--text-dim);font-size:12px;">${esc(result.summary || 'Record missing.')}</div>
+      </div>`;
+      return;
+    }
+    const worstColor = gradeColor(result.worst);
+    const rows = (result.rows || []).map(r => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+        <td style="padding:6px 8px;font-family:var(--mono);vertical-align:top;"><span style="color:${gradeColor(r.grade)};font-weight:600;">${esc(r.grade.toUpperCase())}</span></td>
+        <td style="padding:6px 8px;color:var(--text);vertical-align:top;">${esc(r.check)}</td>
+        <td style="padding:6px 8px;color:var(--text-dim);font-size:11px;vertical-align:top;">
+          ${esc(r.detail)}
+          ${r.fix ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(32,200,150,.06);border-left:2px solid var(--accent);border-radius:0 4px 4px 0;color:var(--text);white-space:pre-wrap;"><div style="color:var(--accent);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Fix</div>${esc(r.fix)}</div>` : ''}
+        </td>
+      </tr>`).join('');
+    const metaBits = [];
+    if (opts.source) metaBits.push(opts.source);
+    if (result.dns_lookups != null) metaBits.push(`${result.dns_lookups}/10 DNS lookups`);
+    if (result.all_qualifier) metaBits.push(`${result.all_qualifier}all`);
+    if (result.policy) metaBits.push(`p=${result.policy}`);
+    if (result.selector) metaBits.push(`selector=${result.selector}`);
+    const rawBlock = result.raw_record ? `
+      <div style="padding:0 12px 10px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Record</div>
+        <pre style="margin:0;padding:10px 12px;background:rgba(0,0,0,.28);color:var(--text);font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;border:1px solid var(--border);border-radius:4px;">${esc(result.raw_record)}</pre>
+      </div>` : '';
+    out.innerHTML = `
+      <div style="padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;">
+        <span>Overall: <span style="color:${worstColor};font-weight:600;">${esc((result.worst||'').toUpperCase())}</span></span>
+        ${metaBits.map(b => `<span>${esc(b)}</span>`).join('')}
+      </div>
+      ${rawBlock}
+      <table style="width:100%;font-size:12px;border-collapse:collapse;margin:0 12px 12px;">
+        <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+          <th style="padding:6px 8px;">Grade</th><th style="padding:6px 8px;">Check</th><th style="padding:6px 8px;">Detail + fix</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function wireLookup(formId, outId, url, bodyFn, waitMsg) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const out = document.getElementById(outId);
+      out.classList.remove('empty'); out.textContent = waitMsg;
+      const {ok, data} = await jfetch(url, bodyFn(new FormData(e.target)));
+      if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error || data.detail)}</div>`; return; }
+      renderFindings(out, data, {source: 'Published record (DNS lookup)'});
+    });
+  }
+  function wireLinter(formId, outId, url, recordKind) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const out = document.getElementById(outId);
+      const raw = (new FormData(e.target).get('raw_record') || '').toString().trim();
+      if (!raw) return;
+      out.classList.remove('empty'); out.textContent = `linting ${recordKind}…`;
+      const {ok, data} = await jfetch(url, {raw_record: raw});
+      if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error || data.detail)}</div>`; return; }
+      // Lint responses have no `found` flag — synthesize for the renderer.
+      renderFindings(out, Object.assign({found: true}, data),
+                     {source: 'Pasted record (syntax only)'});
+    });
+  }
+
+  wireLookup('spf-form',   'spf-out',   '/api/v1/dns/spf-validate',
+             fd => ({domain: fd.get('domain')}), 'validating SPF…');
+  wireLookup('dkim-form',  'dkim-out',  '/api/v1/dns/dkim-validate',
+             fd => ({domain: fd.get('domain'), selector: fd.get('selector')}),
+             'fetching DKIM key…');
+  wireLookup('dmarc-form', 'dmarc-out', '/api/v1/dns/dmarc-validate',
+             fd => ({domain: fd.get('domain')}), 'parsing DMARC record…');
+
+  wireLinter('spf-lint-form',   'spf-out',   '/api/v1/dns/spf-lint',   'SPF');
+  wireLinter('dkim-lint-form',  'dkim-out',  '/api/v1/dns/dkim-lint',  'DKIM');
+  wireLinter('dmarc-lint-form', 'dmarc-out', '/api/v1/dns/dmarc-lint', 'DMARC');
+})();
+</script>
+
+{% if user.role in ('admin', 'super_admin') %}
+<!-- rndc flush panel -->
+<div data-panel="rndc" data-group="dns" class="hidden">
+  <div class="card" style="margin-bottom:14px;padding:12px 14px;background:rgba(234,179,8,.05);border-left:3px solid var(--warn,#eab308);">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:6px;">Flush the local BIND9 recursive cache</div>
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+      Useful after a DNS change upstream that should have propagated but is still being served stale from cache. Flushing the whole cache briefly increases recursion traffic. Prefer a zone-targeted flush when you know which zone changed.
+    </div>
+  </div>
+  <div class="card">
+    <form id="rndc-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field"><label>Zone (blank = flush all)</label><input class="input mono" name="zone" placeholder="example.com"></div>
+        <div class="field"><label>View (optional)</label><input class="input mono" name="view" placeholder="e.g. internal"></div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;">▸ Flush</button>
+      <span id="rndc-status" style="margin-left:10px;font-family:var(--mono);font-size:11px;"></span>
+    </form>
+    <pre id="rndc-out" style="background:rgba(0,0,0,.2);margin:12px;padding:10px;border-radius:4px;font-size:11px;color:var(--text-dim);min-height:40px;"></pre>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function(){
+  async function jfetch(url, body) {
+    const r = await fetch(url, {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data};
+  }
+
+  function renderDnssecSVG(data) {
+    const color = {ok:'#20c896', warn:'#eab308', fail:'#ef4444', unsigned:'#8b8d95'};
+    const bg = {ok:'rgba(32,200,150,.10)', warn:'rgba(234,179,8,.10)',
+                fail:'rgba(239,68,68,.10)', unsigned:'rgba(139,141,149,.06)'};
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const chain = data.chain || [];
+    if (!chain.length) return '<div style="padding:12px;color:var(--text-dimmer);">(empty chain)</div>';
+
+    // Each zone is a 210x130 card with an arrow dropping to the next.
+    const W = 240, H = 150, PAD = 20, GAP = 26;
+    const totalH = PAD * 2 + chain.length * H + (chain.length - 1) * GAP;
+    const cx = W / 2 + PAD;
+
+    const nodes = chain.map((s, i) => {
+      const y = PAD + i * (H + GAP);
+      const c = color[s.outcome] || color.unsigned;
+      const b = bg[s.outcome] || bg.unsigned;
+      const zoneLabel = s.zone === '.' ? '. (root)' : esc(s.zone);
+      const algs = (s.algorithms || []).join(', ') || 'no DNSSEC algorithms';
+      return `
+        <g transform="translate(${PAD}, ${y})">
+          <rect width="${W}" height="${H}" rx="10" fill="${b}" stroke="${c}" stroke-width="2"/>
+          <text x="${W/2}" y="26" text-anchor="middle" font-family="ui-sans-serif,system-ui"
+                font-weight="600" font-size="14" fill="var(--text)">${zoneLabel}</text>
+          <text x="${W/2}" y="46" text-anchor="middle" font-family="ui-monospace,monospace"
+                font-size="11" fill="${c}" font-weight="600">${esc(s.outcome.toUpperCase())}</text>
+          <g font-family="ui-monospace,monospace" font-size="11" fill="var(--text)">
+            <text x="18" y="74">DS:     <tspan fill="${s.has_ds ? color.ok : color.fail}" font-weight="700">${s.has_ds ? '✓' : '✗'}</tspan></text>
+            <text x="18" y="92">DNSKEY: <tspan fill="${s.has_dnskey ? color.ok : color.fail}" font-weight="700">${s.has_dnskey ? '✓' : '✗'}</tspan></text>
+          </g>
+          <text x="18" y="114" font-family="ui-monospace,monospace" font-size="10"
+                fill="var(--text-dim)">${esc(algs)}</text>
+          <text x="18" y="134" font-family="ui-sans-serif,system-ui" font-size="10"
+                fill="var(--text-dim)">${esc(s.message.length > 48 ? s.message.slice(0,45) + '…' : s.message)}</text>
+        </g>`;
+    }).join('');
+
+    const arrows = chain.slice(0, -1).map((s, i) => {
+      const y0 = PAD + i * (H + GAP) + H;
+      const y1 = y0 + GAP;
+      const next = chain[i+1];
+      const c = color[next.outcome] || color.unsigned;
+      return `
+        <line x1="${cx}" y1="${y0}" x2="${cx}" y2="${y1 - 6}"
+              stroke="${c}" stroke-width="2" stroke-dasharray="${next.has_ds ? '0' : '4 4'}"/>
+        <polygon points="${cx - 5},${y1 - 6} ${cx + 5},${y1 - 6} ${cx},${y1}" fill="${c}"/>
+        <text x="${cx + 12}" y="${(y0 + y1) / 2 + 3}" font-family="ui-monospace,monospace"
+              font-size="10" fill="${c}">${next.has_ds ? 'DS→zone' : 'no DS — break'}</text>`;
+    }).join('');
+
+    return `<svg viewBox="0 0 ${W + PAD * 2} ${totalH}" width="${W + PAD * 2}"
+                 height="${totalH}" style="max-width:100%;height:auto;"
+                 xmlns="http://www.w3.org/2000/svg">${nodes}${arrows}</svg>`;
+  }
+
+  document.getElementById('dnssec-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const out = document.getElementById('dnssec-out');
+    out.textContent = 'walking…';
+    const {ok, data} = await jfetch('/api/v1/dns/dnssec', {target: fd.get('target')});
+    if (!ok) { out.textContent = `error: ${data.error || data.detail}`; return; }
+    const color = {ok:'var(--accent)', warn:'var(--warn)', fail:'var(--danger)', unsigned:'var(--text-dimmer)'};
+    out.innerHTML = `
+      <div style="padding:10px 12px;color:${color[data.worst]};font-family:var(--mono);font-size:11px;font-weight:600;border-bottom:1px solid var(--border);">
+        OVERALL: ${data.worst.toUpperCase()} · AD flag: ${data.ad_flag ? '✓ resolver validated' : '✗ not set — unvalidated or unsigned'}
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;padding:10px;">
+        <div style="flex:0 1 300px;">${renderDnssecSVG(data)}</div>
+        <div style="flex:1 1 320px;min-width:260px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Findings (per zone)</div>
+          ${data.chain.map(s => `
+            <div style="padding:8px 10px;border-left:3px solid ${color[s.outcome] || 'var(--text-dimmer)'};background:rgba(255,255,255,.02);margin-bottom:6px;border-radius:0 6px 6px 0;">
+              <div style="font-family:var(--mono);font-size:12px;color:var(--text);">${s.zone === '.' ? '. (root)' : s.zone}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:${color[s.outcome]};margin:3px 0;">${s.outcome.toUpperCase()} · DS:${s.has_ds ? '✓' : '✗'} DNSKEY:${s.has_dnskey ? '✓' : '✗'}${s.algorithms.length ? ' · ' + s.algorithms.join(', ') : ''}</div>
+              <div style="font-size:11px;color:var(--text-dim);">${s.message}</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  });
+
+  document.getElementById('zone-health-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const out = document.getElementById('zone-health-out');
+    out.textContent = 'checking zone…';
+    const {ok, data} = await jfetch('/api/v1/dns/zone-health', {target: fd.get('target')});
+    if (!ok) { out.textContent = `error: ${data.error || data.detail}`; return; }
+    const badge = (s) => {
+      const c = s === 'ok' ? 'var(--accent)' : s === 'warn' ? 'var(--warn)' : 'var(--danger)';
+      return `<span style="color:${c};font-family:var(--mono);font-weight:600;">${s.toUpperCase()}</span>`;
+    };
+    // Back-end returns: { domain, ns_records, soa_serials, worst, findings }.
+    // Derive "serials agree" + "lame NS" from findings instead of expecting
+    // the old (never-existed) `data.overall` / `data.zone` / `data.lame_ns`.
+    const serials = Object.values(data.soa_serials || {});
+    const serialsAgree = serials.length > 0 && new Set(serials).size === 1;
+    const lameCount = (data.findings || []).filter(f => f.check === 'lame_ns').length;
+    const sevClass = s => s === 'ok' || s === 'info' ? 'var(--accent)'
+                        : s === 'warn' ? 'var(--warn)' : 'var(--danger)';
+    out.innerHTML = `
+      <div style="padding:10px 12px;font-family:var(--mono);font-size:11px;">
+        <div style="margin-bottom:6px;">Zone: <span style="color:var(--text);">${data.domain}</span> · overall ${badge(data.worst || 'ok')}</div>
+        <div style="color:var(--text-dim);">NS records: ${(data.ns_records || []).length} · SOA serial agreement: ${serialsAgree ? '✓' : '✗'} · lame NS: ${lameCount}</div>
+      </div>
+      <div style="margin-top:6px;">
+        ${(data.findings || []).map(f => `
+          <div style="padding:10px 12px;border-left:3px solid ${sevClass(f.severity)};background:rgba(255,255,255,.02);margin:0 12px 6px;border-radius:0 6px 6px 0;">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text);">${f.check}</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:3px;">${f.message}</div>
+          </div>`).join('')}
+      </div>`;
+  });
+
+  document.getElementById('crtsh-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const out = document.getElementById('crtsh-out');
+    out.textContent = 'querying crt.sh…';
+    const {ok, data} = await jfetch('/api/v1/dns/crtsh', {
+      target: fd.get('target'),
+      limit: Number(fd.get('limit')),
+      include_expired: fd.get('include_expired') === 'true',
+      include_subdomains: fd.get('include_subdomains') !== 'false',
+    });
+    if (!ok) {
+      const msg = data.error || data.detail || 'unknown error';
+      out.innerHTML = `<div style="padding:12px;color:var(--warn,#eab308);">
+        <strong>crt.sh query failed.</strong>
+        <div style="margin-top:4px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">${msg.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">
+          The public CT endpoint 502s intermittently. Try again in a minute, or toggle subdomain matching to narrow the query.
+        </div>
+      </div>`;
+      return;
+    }
+    out.innerHTML = `
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+        ${data.entry_count} total entries · showing ${data.entries.length} · ${data.unique_issuers.length} unique issuers · ${data.subdomains_seen.length} subdomains seen
+      </div>
+      <div style="max-height:500px;overflow-y:auto;">
+        <table style="width:100%;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Names</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Issuer</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Valid from</th>
+            <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Valid until</th>
+            <th style="text-align:right;padding:6px 8px;"></th>
+          </tr></thead>
+          <tbody>${data.entries.map(e => `
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text);word-break:break-all;max-width:300px;">${(e.common_name || e.name_value.split('\\n')[0] || '').slice(0,80)}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dim);font-size:10px;">${(e.issuer_name || '').split(',')[0].slice(0,40)}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${e.not_before}</td>
+              <td style="padding:6px 8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${e.not_after}</td>
+              <td style="padding:6px 8px;text-align:right;"><a href="https://crt.sh/?id=${e.crt_sh_id}" target="_blank" style="font-family:var(--mono);font-size:10px;color:var(--accent);">crt.sh ↗</a></td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+  });
+
+  // ------------------------------------------------------------------
+  // WHOIS / bulk WHOIS / typosquat / rndc flush wiring.
+  // ------------------------------------------------------------------
+  function esc(s){ return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  document.getElementById('whois-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('whois-out');
+    out.textContent = 'querying whois…';
+    const {ok, data} = await jfetch('/api/v1/dns/whois', {target: new FormData(e.target).get('target')});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    const p = data.parsed || {};
+    const kv = (label, val) => `<tr><td style="padding:3px 10px;color:var(--text-dim);font-family:var(--mono);font-size:10px;">${label}</td><td style="padding:3px 10px;color:var(--text);font-family:var(--mono);font-size:11px;">${esc(Array.isArray(val)?val.join(', '):(val||'—'))}</td></tr>`;
+    // Registrar URL is rendered as a real clickable link. WHOIS server is
+    // useful for seeing which specific refer-server authoritatively holds
+    // this domain record (e.g. `whois.markmonitor.com` vs a registry WHOIS).
+    const link = v => v ? `<a href="${esc(v.startsWith('http')?v:'https://'+v)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:var(--mono);font-size:11px;">${esc(v)}</a>` : '—';
+    out.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;padding:8px;">
+        ${kv('Registrar', p.registrar)}
+        <tr><td style="padding:3px 10px;color:var(--text-dim);font-family:var(--mono);font-size:10px;">Registrar URL</td><td style="padding:3px 10px;font-family:var(--mono);font-size:11px;">${link(p.registrar_url)}</td></tr>
+        ${kv('Registrar IANA ID', p.registrar_iana_id)}
+        ${kv('Registrar abuse email', p.registrar_abuse_email)}
+        ${kv('Registrar abuse phone', p.registrar_abuse_phone)}
+        ${kv('WHOIS server', p.whois_server)}
+        ${kv('Registrant', p.registrant_org)}
+        ${kv('Country', p.registrant_country)}
+        ${kv('Registrant email', p.registrant_email)}
+        ${kv('Created', p.created)}
+        ${kv('Updated', p.updated)}
+        ${kv('Expires', p.expires)}
+        ${kv('DNSSEC', p.dnssec)}
+        ${kv('Status', p.status)}
+        ${kv('Name servers', p.name_servers)}
+      </table>
+      <details style="margin:10px;"><summary style="cursor:pointer;color:var(--text-dim);font-family:var(--mono);font-size:11px;">Raw WHOIS response</summary>
+        <pre style="background:rgba(0,0,0,.2);padding:10px;border-radius:4px;font-size:10px;color:var(--text-dim);overflow-x:auto;margin-top:6px;user-select:text;">${esc(data.raw)}</pre></details>`;
+  });
+
+  document.getElementById('bulkwhois-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('bulkwhois-out');
+    const raw = new FormData(e.target).get('targets') || '';
+    const targets = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    if (!targets.length) { out.textContent = 'paste at least one domain'; return; }
+    out.textContent = `querying ${targets.length} domain(s)…`;
+    const {ok, data} = await jfetch('/api/v1/dns/whois-bulk', {targets});
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    // Stash full payload so the generic Export-CSV button in the card head
+    // can emit every field we parsed, not just the 5 table columns.
+    window.__lastBulkWhois = data;
+    const regLink = r => r.registrar_url
+      ? `<a href="${esc(r.registrar_url.startsWith('http')?r.registrar_url:'https://'+r.registrar_url)}" target="_blank" rel="noopener" class="mono" style="color:var(--accent);">${esc(r.registrar_url.replace(/^https?:\/\//,''))}</a>`
+      : '<span style="color:var(--text-dimmer);">—</span>';
+    const rows = (data.rows||[]).map(r => `
+      <tr><td class="mono" style="padding:4px 8px;">${esc(r.target)}</td>
+          <td class="mono" style="padding:4px 8px;">${esc(r.registrar||'—')}</td>
+          <td style="padding:4px 8px;font-size:11px;">${regLink(r)}</td>
+          <td class="mono" style="padding:4px 8px;font-size:11px;">${esc(r.whois_server||'—')}</td>
+          <td class="mono" style="padding:4px 8px;">${esc(r.expires||'—')}</td>
+          <td class="mono" style="padding:4px 8px;font-size:11px;">${esc(r.dnssec||'—')}</td>
+          <td class="mono" style="padding:4px 8px;color:var(--text-dim);font-size:10px;">${(r.name_servers||[]).slice(0,3).map(esc).join(', ') || (r.error ? '<span style="color:var(--danger);">'+esc(r.error)+'</span>' : '—')}</td>
+          <td style="padding:4px 8px;">${r.ok ? '✓' : '✗'}</td></tr>`).join('');
+    out.innerHTML = `
+      <div style="padding:10px 12px;border-bottom:1px solid var(--border);">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">${(data.rows||[]).length} result(s) · Export CSV (card head) includes all fields: registrar URL, IANA ID, abuse contacts, registrant, created/updated dates, statuses.</span>
+      </div>
+      <div style="overflow-x:auto;">
+      <table data-sortable style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+          <th data-sort="string" data-col="0" style="padding:6px 8px;cursor:pointer;">Domain ⇅</th>
+          <th data-sort="string" data-col="1" style="padding:6px 8px;cursor:pointer;">Registrar ⇅</th>
+          <th data-sort="string" data-col="2" style="padding:6px 8px;cursor:pointer;">Registrar URL ⇅</th>
+          <th data-sort="string" data-col="3" style="padding:6px 8px;cursor:pointer;">WHOIS server ⇅</th>
+          <th data-sort="string" data-col="4" style="padding:6px 8px;cursor:pointer;">Expires ⇅</th>
+          <th data-sort="string" data-col="5" style="padding:6px 8px;cursor:pointer;">DNSSEC ⇅</th>
+          <th data-sort="string" data-col="6" style="padding:6px 8px;cursor:pointer;">Name servers ⇅</th>
+          <th data-sort="string" data-col="7" style="padding:6px 8px;cursor:pointer;">OK ⇅</th>
+        </tr></thead><tbody>${rows}</tbody></table></div>`;
+    // CSV export now lives on the card head (generic wiring) and pulls
+    // the richer payload from window.__lastBulkWhois with all parsed
+    // fields, including the new registrar_url + whois_server etc.
+  });
+
+  document.getElementById('typo-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('typo-out');
+    const fd = new FormData(e.target);
+    out.textContent = 'generating + resolving permutations…';
+    const {ok, data} = await jfetch('/api/v1/dns/typosquat', {
+      target: fd.get('target'),
+      max_variants: Number(fd.get('max_variants')),
+    });
+    if (!ok) { out.innerHTML = `<div style="color:var(--danger);padding:12px;">error: ${esc(data.error||data.detail)}</div>`; return; }
+    const summary = `<div style="padding:10px 12px;color:var(--text-dim);font-family:var(--mono);font-size:11px;">
+      Checked <span style="color:var(--text);">${data.variants_checked}</span> permutations of
+      <span style="color:var(--accent);">${esc(data.target)}</span> · found
+      <span style="color:${data.total_hits ? 'var(--danger)' : 'var(--accent)'};font-weight:600;">${data.total_hits}</span> resolving.</div>`;
+    if (!data.total_hits) { out.innerHTML = summary + '<div style="padding:0 12px 12px;font-size:11px;color:var(--text-dim);">No permutations resolved. This is the common (and preferred) outcome.</div>'; return; }
+    const rows = (data.hits||[]).map(h => `<tr>
+      <td class="mono" style="padding:4px 8px;">${esc(h.variant)}</td>
+      <td class="mono" style="padding:4px 8px;color:var(--text-dim);font-size:11px;">${(h.ips||[]).map(esc).join(', ')}</td></tr>`).join('');
+    out.innerHTML = summary + `<table style="width:100%;font-size:12px;border-collapse:collapse;margin:0 12px 12px;">
+      <thead><tr style="text-align:left;color:var(--text-dim);border-bottom:1px solid var(--border);">
+        <th style="padding:6px 8px;">Variant</th><th style="padding:6px 8px;">Resolves to</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  });
+
+  const rndcForm = document.getElementById('rndc-form');
+  if (rndcForm) rndcForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const status = document.getElementById('rndc-status');
+    const out = document.getElementById('rndc-out');
+    const fd = new FormData(e.target);
+    status.textContent = 'flushing…'; status.style.color = 'var(--text-dim)';
+    const {ok, data} = await jfetch('/api/v1/dns/rndc-flush', {
+      zone: fd.get('zone') || null,
+      view: fd.get('view') || null,
+    });
+    if (!ok) { status.textContent = `✗ ${data.error||data.detail}`; status.style.color = 'var(--danger)'; return; }
+    status.textContent = `✓ ${data.action} rc=${data.returncode}`;
+    status.style.color = data.returncode === 0 ? 'var(--accent)' : 'var(--warn)';
+    out.textContent = (data.stdout || '(no output)') + (data.stderr ? '\n--- stderr ---\n' + data.stderr : '');
+  });
+})();
+</script>
+
+<script>
+// Generic "Running..." state on every form submit button. While a
+// submit is in-flight (fetch has not returned yet), disable the submit
+// and swap its text to "Running..." so a user who clicks twice doesn't
+// fire two queries or wonder if the click registered. Applies to both
+// data-endpoint forms (wired by portal.js) and the custom forms on this
+// page (crtsh/whois/bulkwhois/typo/rndc/dnssec/zone-health/hop-trace).
+//
+// Resilience: we set a 60s safety timer so a hung fetch doesn't leave
+// the button permanently disabled. portal.js already toggles its
+// buttons via its own submitTool for data-endpoint forms, but this
+// catches everything else.
+(function(){
+  function bind(form) {
+    if (form.__runningWired) return;
+    // Skip forms whose submit is already managed by portal.js's
+    // submitTool (those buttons carry data-submit). Double-binding
+    // would race portal.js's own disable/restore and stick the
+    // button on "... Running".
+    if (form.querySelector('button[type="submit"][data-submit]')) return;
+    form.__runningWired = true;
+    form.addEventListener('submit', () => {
+      const btn = form.querySelector('button[type="submit"]');
+      if (!btn) return;
+      if (btn.dataset.origText === undefined) btn.dataset.origText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '... Running';
+      // Fallback re-enable. Fetch handlers that finish faster will
+      // reset via their own logic; this is the safety net.
+      clearTimeout(form.__resetTimer);
+      form.__resetTimer = setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = btn.dataset.origText;
+      }, 60 * 1000);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('form').forEach(bind);
+  });
+})();
+
+// Generic Copy / Export CSV / Print-PDF wiring for any result card whose
+// header has a `<div class="result-actions" data-source="#SEL">…</div>`
+// with three buttons (.act-copy / .act-csv / .act-print). A card whose
+// actions div sets data-bulkwhois="1" gets a richer CSV exporter that
+// pulls directly from the last /api/v1/dns/whois-bulk payload cached on
+// window.__lastBulkWhois, so every field we parse goes into the CSV
+// (not just the five columns shown in the on-screen table).
+(function(){
+  function textOf(el) {
+    return (el.innerText || el.textContent || '').replace(/\u00a0/g,' ').trimEnd();
+  }
+  function tableTSV(el) {
+    const rows = [];
+    el.querySelectorAll('table tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c =>
+        (c.innerText || '').trim()
+          .replace(/\s*⇅\s*$/,'')
+          .replace(/\t/g,' ')
+          .replace(/\n+/g,' ')));
+    });
+    return rows.length ? rows.map(r => r.join('\t')).join('\n') : textOf(el);
+  }
+  function csvFromTable(el) {
+    const rows = [];
+    el.querySelectorAll('table tr').forEach(tr => {
+      rows.push(Array.from(tr.children).map(c => {
+        const v = (c.innerText || '').trim().replace(/\s*⇅\s*$/, '');
+        return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v;
+      }));
+    });
+    return rows.length ? rows.map(r => r.join(',')).join('\r\n') + '\r\n' : null;
+  }
+  function bulkwhoisCsvRich(payload) {
+    if (!payload || !payload.rows) return null;
+    const cols = ['target','registrar','registrar_url','registrar_iana_id',
+      'registrar_abuse_email','registrar_abuse_phone','whois_server',
+      'registrant_org','registrant_country','registrant_email',
+      'created','updated','expires','dnssec','status','name_servers','ok','error'];
+    const q = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+    };
+    const header = cols.map(q).join(',');
+    const lines = payload.rows.map(r => cols.map(c => {
+      const v = r[c];
+      if (Array.isArray(v)) return q(v.join(' | '));
+      if (typeof v === 'boolean') return q(v ? 'yes' : 'no');
+      return q(v);
+    }).join(','));
+    return [header, ...lines].join('\r\n') + '\r\n';
+  }
+  function copy(btn, text) {
+    const orig = btn.textContent;
+    const done = ok => { btn.textContent = ok ? '✓ copied' : '✗ failed'; setTimeout(() => btn.textContent = orig, 1500); };
+    if (navigator.clipboard) { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); }
+    else {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      try { done(document.execCommand('copy')); } catch { done(false); } ta.remove();
+    }
+  }
+  function download(name, body, mime) {
+    const blob = new Blob([body], {type: mime});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+  }
+
+  // Enable the action buttons for a card once its source has real content
+  // (i.e. not the initial placeholder text).
+  document.querySelectorAll('.result-actions').forEach(actions => {
+    const sel = actions.dataset.source;
+    const src = document.querySelector(sel);
+    if (!src) return;
+    const copyBtn = actions.querySelector('.act-copy');
+    const csvBtn  = actions.querySelector('.act-csv');
+    const printBtn= actions.querySelector('.act-print');
+    const hasContent = () => {
+      if (src.classList.contains('empty')) return false;
+      const t = (src.innerText || src.textContent || '').trim();
+      if (!t) return false;
+      // Treat transient placeholder/status messages as "still running".
+      if (/^(waiting|fetching|running|scanning|loading|probing|resolving|capturing|tracing|querying|walking|checking|generating)\b/i.test(t)) return false;
+      return true;
+    };
+    const update = () => {
+      const enable = hasContent();
+      if (copyBtn)  copyBtn.disabled  = !enable;
+      if (csvBtn)   csvBtn.disabled   = !enable;
+      if (printBtn) printBtn.disabled = !enable;
+    };
+    new MutationObserver(update).observe(src, {childList:true, subtree:true, attributes:true, attributeFilter:['class']});
+    update();
+
+    copyBtn && copyBtn.addEventListener('click', () => copy(copyBtn, tableTSV(src) || textOf(src)));
+    csvBtn  && csvBtn .addEventListener('click', () => {
+      let body;
+      // Richer CSV for Bulk WHOIS: pull from cached payload so every
+      // parsed field is in the output, not just the 5 shown.
+      if (actions.dataset.bulkwhois && window.__lastBulkWhois) {
+        body = bulkwhoisCsvRich(window.__lastBulkWhois);
+      } else {
+        body = csvFromTable(src) || (textOf(src) + '\n');
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+      const slug = sel.replace(/^#/,'').replace(/[^a-z0-9_-]/ig,'-');
+      download(`${slug}-${stamp}.csv`, body, 'text/csv;charset=utf-8');
+    });
+    // Print/PDF: scope print to just this card so the exported PDF
+    // doesn't include the sidebar, tabs, other cards, or the form.
+    printBtn && printBtn.addEventListener('click', () => {
+      const card = src.closest('.card') || src.parentElement;
+      if (card) card.classList.add('print-active');
+      document.body.classList.add('print-scoped');
+      const cleanup = () => {
+        if (card) card.classList.remove('print-active');
+        document.body.classList.remove('print-scoped');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+  });
+})();
+</script>
+{% endblock %}

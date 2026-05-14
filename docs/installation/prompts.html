@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Installer prompts · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">INSTALLATION · PROMPTS</div>
+<h1>Installer prompts</h1>
+<div class="page-sub">Every prompt <code>install.sh</code> shows you, with the explanation, a reasonable default, and why it matters.</div>
+
+<h2>License key (optional)</h2>
+<p>The first prompt. You can leave it blank — Meridian runs fully under the FSL grant without a key. If your organization has purchased a <a href="../legal/terms.html">commercial-use license</a>, paste the key here so it's recorded at install time; otherwise just press Enter.</p>
+<table>
+<tr><th>Input</th><th>Meaning</th></tr>
+<tr><td>(blank)</td><td><strong>FSL mode</strong> — full functionality, no key required, no time limit. Suitable for internal use by any company or individual per the Functional Source License 1.1 terms.</td></tr>
+<tr><td><code>MRD-…</code></td><td><strong>Commercial-use license</strong>. Ed25519-signed; bound to the contracting entity and (optionally) to this domain + hardware fingerprint; expires on the date inside the signed payload. Provides a formal agreement, indemnity, and SLA — same functionality as FSL mode.</td></tr>
+</table>
+<div class="callout info"><span class="lbl">AIRGAPPED</span><div>FSL mode works fully airgapped with no outbound calls. If you have a commercial-use key, it's verified entirely offline — no phone-home.</div></div>
+
+<h2>Portal display name</h2>
+<p>Shown in the top bar, email signatures, and PDF report headers. Changeable later in Admin → Branding.</p>
+<p><strong>Default:</strong> <code>Meridian NIP</code></p>
+
+<h2>Primary domain (FQDN)</h2>
+<p>The hostname users will browse to. Must resolve to this host's public IP for Let's Encrypt TLS to succeed. Also baked into the license binding — moving to a different domain later requires vendor-issued reactivation.</p>
+<p><strong>Format:</strong> <code>portal.yourcompany.com</code>. No scheme, no trailing slash.</p>
+
+<h2>Admin username &amp; email</h2>
+<p>Creates the super-admin account. The temp password is auto-generated and shown in the install summary exactly once — copy it before you let the summary scroll away or shred the log.</p>
+<ul>
+<li>The admin must change their password at first login (force-change flag set).</li>
+<li>MFA enrollment is offered (not required) at first login — enforceable later via Admin → Users.</li>
+<li>The email address receives AUP acceptance confirmations, license expiry notices, and any alerts you route to <code>admin@</code>.</li>
+</ul>
+
+<h2>Database name, role, password</h2>
+<p>PostgreSQL database + role for the app to connect as. The password is auto-generated (32 chars) and shown in the summary. The DB socket is bound to localhost only via <code>pg_hba.conf</code>, and no other roles can read the database.</p>
+
+<h2>Timezone</h2>
+<p>Default display timezone for emails, PDF reports, and the UI. All stored timestamps are UTC; this only affects presentation. Each user can override in their profile.</p>
+<p><strong>Default:</strong> the host's <code>/etc/timezone</code> value, or <code>UTC</code> if unset.</p>
+
+<h2>TLS method</h2>
+<table>
+<tr><th>Choice</th><th>When to pick it</th></tr>
+<tr><td><code>letsencrypt</code></td><td>Most installs. Port 80 must be reachable from the internet and the FQDN must resolve here. Auto-renew is configured.</td></tr>
+<tr><td><code>cloudflare</code></td><td>You're fronting with Cloudflare and want origin-cert TLS (full-strict). Installer renders the vhost; you drop the origin cert/key in the expected paths.</td></tr>
+<tr><td><code>self-signed</code></td><td>Airgapped labs. Browsers will warn.</td></tr>
+<tr><td><code>none</code></td><td>HTTP only. Never use in production.</td></tr>
+</table>
+
+<h2>Scope of use</h2>
+<p>Sets the default visibility for tools that target internal vs external networks. Every tool's scope is overridable per group in Admin → Scope Manager after install — this is just the default.</p>
+<ul>
+<li><code>internal</code> — hides external-only tools (typosquat sweep, public IP reputation, BGP looking-glass) by default.</li>
+<li><code>external</code> — hides internal-only tools (SNMP walk, DHCP lease viewer, subnet sweep) by default.</li>
+<li><code>both</code> — shows everything; admins narrow per-group.</li>
+</ul>
+<p>Guardrails always apply: internal-only tools refuse public IPs; external-only tools refuse RFC1918/link-local.</p>
+
+<h2>Custom SSH port</h2>
+<p>Optional. Moving SSH off 22 silences the vast majority of automated scan traffic. Choose a port in 1024-65535 that isn't already used.</p>
+<div class="callout danger"><span class="lbl">CRITICAL</span><div>The installer applies the new port and restarts <code>ssh</code> at the end. Verify you can open a fresh SSH session on the new port BEFORE closing your current terminal. UFW and fail2ban are re-tuned automatically.</div></div>
+
+<h2>LUKS encryption for /var/lib/postgresql</h2>
+<p>Yes/no. If yes, the installer emits a note pointing at <a href="luks.html">the LUKS setup walkthrough</a>, which is run separately because it is destructive and needs a block device choice.</p>
+<p>Even if you say no, Meridian still protects the data via three other layers: field-level AES-256-GCM on vault entries, HMAC-chained row hashes on sensitive tables, and localhost-only SQL access with SCRAM-SHA-256. See <a href="../admin/security.html">Database security</a>.</p>
+
+<h2>Post-install summary</h2>
+<p>The installer ends with a full credential summary printed to the terminal AND appended to <code>/root/meridian-install.log</code>. You are prompted to shred the log once you've saved the credentials elsewhere. If you don't shred immediately, do it manually:</p>
+<pre><code>sudo shred -u /root/meridian-install.log</code></pre>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

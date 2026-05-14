@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}System Health · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">System Health</div>
+    <div class="page-sub">Live self-check of services, DB, keys, cert, disk, memory, integrity chain. Repair actions audited; destructive ones require a second admin to approve.</div>
+</div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <span id="overall" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">loading…</span>
+    <button class="btn btn-primary" id="btn-refresh" style="font-size:11px;">▸ Refresh</button>
+  </div>
+  {% with docs_path="admin/health.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="stat-grid" id="count-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px;"></div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Checks</div><span id="chk-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);"></span></div>
+  <table style="width:100%;font-size:12px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Category</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Check</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Detail</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Severity</th>
+        <th style="text-align:right;padding:8px;"></th>
+      </tr>
+    </thead>
+    <tbody id="chk-rows"></tbody>
+  </table>
+</div>
+
+<div class="card" id="tls-card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">TLS audit</div>
+    <button type="button" class="btn btn-ghost" id="tls-refresh" style="padding:3px 10px;font-size:11px;">↻ Run audit</button>
+  </div>
+  <div id="tls-body" style="padding:12px 14px;font-size:12px;color:var(--text-dim);font-style:italic;">
+    Probes the portal's HTTPS endpoint: certificate, protocol mix (TLS 1.0–1.3), negotiated cipher, OCSP stapling, HSTS. Click "Run audit" to refresh.
+  </div>
+</div>
+
+{% if user.role == 'super_admin' %}
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Fail2ban jails</div>
+    <button type="button" class="btn btn-ghost" id="f2b-refresh" style="padding:3px 10px;font-size:11px;">↻ Refresh</button>
+  </div>
+  <div style="padding:10px 14px;font-size:12px;color:var(--text-dim);line-height:1.6;">
+    Per-jail bans and ignore lists. Unban restores an IP immediately.
+    "Add to ignore" whitelists an IP <em>until fail2ban reloads</em>; use
+    the <strong>persistent ignoreip</strong> panel below to write to
+    <span class="mono">/etc/fail2ban/jail.d/meridian-portal-overrides.conf</span>
+    so the whitelist survives reload + reboot.
+    Super-admin only.
+  </div>
+  <div id="f2b-body" style="padding:0 14px 14px;">loading…</div>
+
+  <div style="border-top:1px solid var(--border);margin-top:6px;padding:14px;">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Persistent ignoreip (all jails · survives reload)</div>
+    <div id="f2b-persisted" style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:10px;">—</div>
+    <form id="f2b-persist-form" style="display:flex;gap:8px;align-items:flex-end;">
+      <div class="field" style="flex:1;max-width:240px;">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">IP or CIDR</label>
+        <input class="input mono" name="ip" placeholder="192.168.50.196 or 10.0.0.0/8" required>
+      </div>
+      <button class="btn btn-primary" type="submit" style="padding:6px 12px;font-size:11px;">Persist + reload</button>
+      <span id="f2b-persist-status" style="font-family:var(--mono);font-size:10px;margin-left:6px;align-self:center;"></span>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head"><div class="card-title">Proactive repair actions</div></div>
+  <div style="padding:12px 14px;font-size:12px;color:var(--text-dim);line-height:1.7;">
+    These run on demand regardless of whether a check failed. <strong style="color:var(--warn);">destructive · two-person</strong>
+    actions raise an approval request and wait for a second admin to confirm before they commit — same flow as any other privileged operation in the portal.
+  </div>
+  <div id="proactive-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;padding:0 14px 14px;"></div>
+</div>
+
+<div id="repair-log" class="card" style="margin-top:14px;display:none;">
+  <div class="card-head"><div class="card-title">Recent repair outcomes</div></div>
+  <div id="repair-rows" style="padding:10px 14px;font-family:var(--mono);font-size:11px;"></div>
+</div>
+
+<script>
+(function(){
+  const sevColor = {ok:'var(--accent)', warn:'var(--warn)', fail:'var(--danger)'};
+  const catColor = {service:'var(--accent)', resource:'var(--text-dim)', cert:'var(--warn)', db:'var(--accent)', key:'var(--warn)', integrity:'var(--warn)', tls:'var(--warn)'};
+  const repairLog = [];
+
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data, status: r.status};
+  }
+
+  function renderCountGrid(counts, overall) {
+    const g = document.getElementById('count-grid');
+    g.innerHTML = `
+      <div class="stat"><div class="stat-label" style="color:var(--accent);">HEALTHY</div><div class="stat-value">${counts.ok || 0}</div></div>
+      <div class="stat"><div class="stat-label" style="color:var(--warn);">WARN</div><div class="stat-value">${counts.warn || 0}</div></div>
+      <div class="stat"><div class="stat-label" style="color:var(--danger);">FAIL</div><div class="stat-value">${counts.fail || 0}</div></div>`;
+    document.getElementById('overall').innerHTML =
+      `overall: <span style="color:${sevColor[overall]};font-weight:600;">${overall.toUpperCase()}</span>`;
+  }
+
+  // Best-effort "jump to the page that can fix this" map — gives warn/fail rows
+  // a visible click-through even when there's no automated repair action.
+  const CATEGORY_LINK = {
+    service:   '/ui/admin',
+    db:        '/ui/admin',
+    cert:      '/ui/certificates',
+    key:       '/ui/admin',
+    integrity: '/ui/admin',
+    resource:  '/ui/admin',
+    // tls links to the in-page TLS audit card (#tls-card anchor just below).
+    tls:       '#tls-card',
+  };
+
+  function renderChecks(checks) {
+    const tbody = document.getElementById('chk-rows');
+    document.getElementById('chk-count').textContent = `${checks.length} checks`;
+    tbody.innerHTML = checks.map(c => {
+      const link = CATEGORY_LINK[c.category];
+      const needsAttention = c.severity !== 'ok';
+      return `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;font-family:var(--mono);color:${catColor[c.category] || 'var(--text-dim)'};font-size:10px;">${c.category}</td>
+        <td style="padding:8px;color:var(--text);font-family:var(--mono);font-size:11px;">${c.name}</td>
+        <td style="padding:8px;color:var(--text-dim);">${c.detail}${c.hint ? `<div style="color:var(--text-dimmer);font-size:10px;margin-top:2px;">hint: ${c.hint}</div>` : ''}</td>
+        <td style="padding:8px;font-family:var(--mono);color:${sevColor[c.severity]};font-weight:600;">${c.severity}</td>
+        <td style="padding:8px;text-align:right;white-space:nowrap;">
+          ${c.repair ? `<button class="btn" data-repair="${c.repair}" style="font-size:10px;padding:4px 10px;color:${c.severity === 'fail' ? 'var(--warn)' : 'var(--text-dim)'};">▸ repair</button>` : ''}
+          ${c.auto_repair ? `<span title="This check is fixed automatically by the auto-repair sweep every 5 minutes — you don't have to click anything." style="margin-left:6px;font-family:var(--mono);font-size:9px;color:var(--accent);background:rgba(32,200,150,.1);padding:2px 6px;border-radius:3px;">AUTO</span>` : ''}
+          ${needsAttention && link ? `<a class="btn btn-ghost" href="${link}" style="font-size:10px;padding:4px 10px;margin-left:4px;text-decoration:none;">open ↗</a>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-repair]').forEach(el => {
+      el.addEventListener('click', () => runRepair(el.dataset.repair, el));
+    });
+  }
+
+  function renderProactive(list) {
+    const g = document.getElementById('proactive-grid');
+    const scopeColor = s => s.includes('destructive') ? 'var(--danger)' : s.includes('idempotent') ? 'var(--text-dim)' : 'var(--accent)';
+    g.innerHTML = list.map(r => `
+      <div style="border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <div style="font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:4px;">${r.label}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:${scopeColor(r.scope)};margin-bottom:10px;">${r.scope.toUpperCase()}</div>
+        <button class="btn btn-primary" data-repair="${r.key}" style="font-size:11px;">▸ run</button>
+      </div>`).join('');
+    g.querySelectorAll('[data-repair]').forEach(el => {
+      el.addEventListener('click', () => runRepair(el.dataset.repair, el));
+    });
+  }
+
+  async function runRepair(action, btn) {
+    const destructive = action.startsWith('retention:') || action.startsWith('service:restart:postgresql');
+    if (destructive && !confirm(`Run destructive action '${action}'? Approval may be required before it actually commits.`)) return;
+    const label = btn.textContent; btn.textContent = 'running…'; btn.disabled = true;
+    const {ok, data, status} = await jfetch('POST', '/api/v1/admin/health/repair', {action});
+    btn.disabled = false; btn.textContent = label;
+    // Show the outcome as an inline toast next to the button so the
+    // operator actually sees the result even if the #repair-log card
+    // is scrolled off-screen. The log card is still populated for the
+    // permanent history.
+    const announce = (ok_, text, colour) => {
+      const old = btn.nextElementSibling;
+      if (old && old.classList.contains('repair-toast')) old.remove();
+      const toast = document.createElement('span');
+      toast.className = 'repair-toast';
+      toast.style.cssText = `margin-left:8px;padding:2px 10px;border-radius:4px;font-family:var(--mono);font-size:10px;color:${colour};background:${colour === 'var(--accent)' ? 'rgba(32,200,150,.1)' : 'rgba(224,96,96,.12)'};`;
+      toast.textContent = (ok_ ? '✓ ' : '✗ ') + text;
+      btn.insertAdjacentElement('afterend', toast);
+      setTimeout(() => toast.remove(), 8000);
+    };
+    if (status === 403 || status === 202) {
+      addToLog({action, ok: false, detail: 'waiting for second-admin approval (destructive repair)'});
+      announce(false, 'approval required', 'var(--warn)');
+      return;
+    }
+    if (!ok) {
+      const detail = data.error || data.detail || 'request failed';
+      addToLog({action, ok: false, detail});
+      announce(false, detail.slice(0, 80), 'var(--danger)');
+      return;
+    }
+    addToLog(data);
+    announce(true, data.detail || 'ok', 'var(--accent)');
+    load();  // refresh checks to reflect any effect
+  }
+
+  function addToLog(entry) {
+    repairLog.unshift({ts: new Date().toISOString().slice(11,19), ...entry});
+    if (repairLog.length > 20) repairLog.length = 20;
+    document.getElementById('repair-log').style.display = 'block';
+    document.getElementById('repair-rows').innerHTML = repairLog.map(e => `
+      <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);">
+        <span style="color:var(--text-dimmer);">${e.ts}</span>
+        <span style="color:${e.ok ? 'var(--accent)' : 'var(--danger)'};font-weight:600;margin:0 8px;">${e.ok ? 'OK' : 'FAIL'}</span>
+        <span style="color:var(--text);">${e.action}</span>
+        <span style="color:var(--text-dim);margin-left:8px;">${e.detail || ''}</span>
+        ${e.output ? `<pre style="margin:4px 0 0 12px;font-size:10px;color:var(--text-dimmer);white-space:pre-wrap;">${e.output}</pre>` : ''}
+      </div>`).join('');
+  }
+
+  async function load() {
+    document.getElementById('chk-count').textContent = 'refreshing…';
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/health');
+    if (!ok) { document.getElementById('chk-count').textContent = `error: ${data.error || data.detail}`; return; }
+    renderCountGrid(data.counts, data.overall);
+    renderChecks(data.checks);
+    renderProactive(data.proactive_repairs);
+  }
+  document.getElementById('btn-refresh').addEventListener('click', load);
+
+  function renderTls(data) {
+    const card = document.getElementById('tls-body');
+    if (!data.ok) {
+      card.innerHTML = `<div style="color:var(--danger);">audit failed: ${String(data.error || 'unknown')}</div>`;
+      return;
+    }
+    const gradeColor = data.grade === 'ok' ? 'var(--accent)' : data.grade === 'warn' ? 'var(--warn)' : 'var(--danger)';
+    const protoTile = (name, status) => {
+      const good = status === 'ok';
+      const wantDisabled = name === '1.0' || name === '1.1';
+      const c = wantDisabled
+        ? (good ? 'var(--danger)' : 'var(--accent)')   // old protocols: available = bad
+        : (good ? 'var(--accent)' : 'var(--danger)');
+      return `<div style="padding:6px 10px;border:1px solid ${c};border-radius:4px;font-family:var(--mono);font-size:11px;text-align:center;color:${c};min-width:68px;">
+                <div style="font-size:10px;color:var(--text-dimmer);">TLS ${name}</div>
+                <div style="font-weight:600;">${good ? (wantDisabled ? '⚠ ON' : '✓ ON') : (wantDisabled ? '✓ OFF' : '✗ OFF')}</div>
+              </div>`;
+    };
+    const issues = (data.issues || []).map(i =>
+      `<div style="padding:4px 0;color:var(--danger);font-size:11px;">• ${String(i)}</div>`).join('');
+    card.innerHTML = `
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <span style="font-family:var(--mono);font-size:12px;color:${gradeColor};font-weight:600;">${data.grade.toUpperCase()}</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${data.host}:${data.port}</span>
+        ${data.days_left != null ? `<span style="font-family:var(--mono);font-size:10px;">${data.days_left}d until expiry</span>` : ''}
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${data.signature_algorithm || '?'} · ${data.key_type || '?'}${data.key_bits ? ' ' + data.key_bits + '-bit' : ''}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        ${protoTile('1.0', data.protocols.tls10)}
+        ${protoTile('1.1', data.protocols.tls11)}
+        ${protoTile('1.2', data.protocols.tls12)}
+        ${protoTile('1.3', data.protocols.tls13)}
+      </div>
+      <dl style="display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:11px;margin:0 0 6px;">
+        <dt style="color:var(--text-dimmer);">Subject</dt><dd style="margin:0;font-family:var(--mono);">${String(data.subject || '—')}</dd>
+        <dt style="color:var(--text-dimmer);">Issuer</dt><dd style="margin:0;font-family:var(--mono);">${String(data.issuer || '—')}</dd>
+        <dt style="color:var(--text-dimmer);">SANs</dt><dd style="margin:0;font-family:var(--mono);font-size:10px;">${String(data.sans || '—')}</dd>
+        <dt style="color:var(--text-dimmer);">Cipher</dt><dd style="margin:0;font-family:var(--mono);">${String(data.negotiated_cipher || '—')}</dd>
+        <dt style="color:var(--text-dimmer);">OCSP staple</dt><dd style="margin:0;color:${data.ocsp_stapled === 'yes' ? 'var(--accent)' : 'var(--warn)'};">${data.ocsp_stapled}</dd>
+        <dt style="color:var(--text-dimmer);">HSTS</dt><dd style="margin:0;font-family:var(--mono);font-size:10px;">${String(data.hsts || '— (missing)')}</dd>
+        <dt style="color:var(--text-dimmer);">Chain length</dt><dd style="margin:0;font-family:var(--mono);">${data.chain_length}</dd>
+      </dl>
+      ${issues ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">${issues}</div>` : ''}`;
+  }
+
+  async function loadTls() {
+    const card = document.getElementById('tls-body');
+    card.innerHTML = '<div style="color:var(--text-dim);">auditing TLS endpoint…</div>';
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/health/tls-audit');
+    if (!ok) {
+      card.innerHTML = `<div style="color:var(--danger);">${data.detail || data.error || 'audit failed'}</div>`;
+      return;
+    }
+    renderTls(data);
+  }
+  document.getElementById('tls-refresh').addEventListener('click', loadTls);
+
+  const f2bBody = document.getElementById('f2b-body');
+  const f2bRefreshBtn = document.getElementById('f2b-refresh');
+  const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  async function f2bAction(path, jail, ip) {
+    return jfetch('POST', `/api/v1/admin/fail2ban/${path}`, {jail, ip});
+  }
+
+  function renderF2b(data) {
+    const jails = data.jails || [];
+    if (!jails.length) {
+      f2bBody.innerHTML = `<div style="color:var(--text-dimmer);font-size:12px;font-style:italic;">no jails reported — is fail2ban running?</div>`;
+      return;
+    }
+    f2bBody.innerHTML = jails.map(j => `
+      <div data-jail="${escHtml(j.name)}" style="margin:8px 0;padding:10px 12px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:6px;">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-weight:600;font-family:var(--mono);font-size:12px;">${escHtml(j.name)}</span>
+          <span class="chip" style="font-size:10px;${j.currently_banned > 0 ? 'color:var(--danger);' : ''}"
+                title="IPs currently banned in this jail — they cannot reach the filtered service.">banned now: ${j.currently_banned}</span>
+          <span class="chip" style="font-size:10px;${j.currently_failed > 0 ? 'color:var(--warn);' : ''}"
+                title="Failed attempts currently tracked in the findtime window. If this climbs to the jail's maxretry, the source IP is banned. A non-zero value means an attack is in progress right now.">currently failed: ${j.currently_failed}</span>
+          <span class="chip" style="font-size:10px;color:var(--text-dimmer);"
+                title="Cumulative bans since fail2ban was last restarted. Historical only — resets on service restart.">total banned (since start): ${j.total_banned}</span>
+        </div>
+        <div style="margin-top:6px;">
+          <div style="font-size:10px;text-transform:uppercase;color:var(--text-dimmer);letter-spacing:.05em;margin-bottom:4px;">Banned IPs</div>
+          ${(j.banned_ips && j.banned_ips.length) ? j.banned_ips.map(ip => `
+            <div style="display:flex;gap:8px;align-items:center;padding:3px 0;">
+              <span class="mono" style="flex:1;">${escHtml(ip)}</span>
+              <button class="btn btn-ghost" data-unban="${escHtml(ip)}" style="padding:3px 10px;font-size:11px;">Unban</button>
+              <button class="btn btn-ghost" data-ignore-add="${escHtml(ip)}" style="padding:3px 10px;font-size:11px;">Unban + whitelist</button>
+            </div>`).join('') : `<div style="font-size:11px;color:var(--text-dimmer);font-style:italic;">none</div>`}
+        </div>
+        <div style="margin-top:10px;">
+          <div style="font-size:10px;text-transform:uppercase;color:var(--text-dimmer);letter-spacing:.05em;margin-bottom:4px;">Ignore list (whitelist)</div>
+          ${(j.ignore_list && j.ignore_list.length) ? j.ignore_list.map(ip => `
+            <div style="display:flex;gap:8px;align-items:center;padding:3px 0;">
+              <span class="mono" style="flex:1;">${escHtml(ip)}</span>
+              <button class="btn btn-ghost" data-ignore-remove="${escHtml(ip)}" style="padding:3px 10px;font-size:11px;color:var(--warn);">Remove</button>
+            </div>`).join('') : `<div style="font-size:11px;color:var(--text-dimmer);font-style:italic;">empty</div>`}
+        </div>
+        <div style="margin-top:10px;display:flex;gap:6px;align-items:center;">
+          <input class="input mono" data-add-ip placeholder="IP to whitelist (e.g. 192.168.50.0/24)"
+                 style="flex:1;font-size:11px;padding:4px 8px;">
+          <button class="btn btn-ghost" data-add-ignore style="padding:4px 10px;font-size:11px;">+ Add to ignore</button>
+        </div>
+      </div>`).join('');
+
+    f2bBody.querySelectorAll('[data-jail]').forEach(card => {
+      const jail = card.dataset.jail;
+      card.querySelectorAll('[data-unban]').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true;
+        const {ok, data} = await f2bAction('unban', jail, b.dataset.unban);
+        if (!ok) alert(`unban failed: ${data.detail || data.error}`);
+        loadF2b();
+      }));
+      card.querySelectorAll('[data-ignore-add]').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true;
+        // Unban first so the IP isn't blocked while we whitelist it, then
+        // add to ignore. Either call can be a no-op if already in that state.
+        await f2bAction('unban', jail, b.dataset.ignoreAdd);
+        const {ok, data} = await f2bAction('ignore/add', jail, b.dataset.ignoreAdd);
+        if (!ok) alert(`whitelist failed: ${data.detail || data.error}`);
+        loadF2b();
+      }));
+      card.querySelectorAll('[data-ignore-remove]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm(`Remove ${b.dataset.ignoreRemove} from the ${jail} whitelist?`)) return;
+        const {ok, data} = await f2bAction('ignore/remove', jail, b.dataset.ignoreRemove);
+        if (!ok) alert(`remove failed: ${data.detail || data.error}`);
+        loadF2b();
+      }));
+      const addBtn = card.querySelector('[data-add-ignore]');
+      const addInput = card.querySelector('[data-add-ip]');
+      if (addBtn && addInput) addBtn.addEventListener('click', async () => {
+        const ip = addInput.value.trim();
+        if (!ip) return;
+        const {ok, data} = await f2bAction('ignore/add', jail, ip);
+        if (!ok) { alert(`add failed: ${data.detail || data.error}`); return; }
+        addInput.value = '';
+        loadF2b();
+      });
+    });
+  }
+
+  async function loadF2b() {
+    if (!f2bBody) return;
+    f2bBody.innerHTML = '<div style="color:var(--text-dim);">loading fail2ban state…</div>';
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/fail2ban');
+    if (!ok) {
+      f2bBody.innerHTML = `<div style="color:var(--danger);">${escHtml(data.detail || data.error || 'error')}</div>`;
+      return;
+    }
+    renderF2b(data);
+    renderPersisted(data.persisted_ignore || []);
+  }
+
+  function renderPersisted(list) {
+    const el = document.getElementById('f2b-persisted');
+    if (!el) return;
+    if (!list.length) {
+      el.innerHTML = `<span style="color:var(--text-dimmer);font-style:italic;">no operator-added entries (loopback defaults are always present)</span>`;
+      return;
+    }
+    el.innerHTML = list.map(ip => `<span style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.05);border:1px solid var(--border);padding:3px 6px 3px 10px;border-radius:14px;margin:0 6px 6px 0;">${escHtml(ip)} <button class="btn btn-ghost" data-persist-remove="${escHtml(ip)}" style="padding:1px 6px;font-size:10px;line-height:1;color:var(--warn);" title="Remove from persistent ignoreip and reload fail2ban">×</button></span>`).join('');
+    el.querySelectorAll('[data-persist-remove]').forEach(b => b.addEventListener('click', async () => {
+      const ip = b.dataset.persistRemove;
+      if (!confirm(`Remove ${ip} from the persistent ignoreip list?`)) return;
+      const r = await jfetch('POST', '/api/v1/admin/fail2ban/ignore/persist/remove', {ip});
+      if (!r.ok) alert(r.data.error || r.data.detail || 'remove failed');
+      loadF2b();
+    }));
+  }
+
+  const persistForm = document.getElementById('f2b-persist-form');
+  const persistStatus = document.getElementById('f2b-persist-status');
+  if (persistForm) persistForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    persistStatus.textContent = 'writing + reloading…';
+    persistStatus.style.color = 'var(--text-dim)';
+    const ip = persistForm.elements.ip.value.trim();
+    if (!ip) return;
+    const r = await jfetch('POST', '/api/v1/admin/fail2ban/ignore/persist/add', {ip});
+    if (!r.ok) {
+      persistStatus.textContent = r.data.error || r.data.detail || 'failed';
+      persistStatus.style.color = 'var(--danger)';
+      return;
+    }
+    persistStatus.textContent = 'saved · ' + (r.data.detail || 'reloaded');
+    persistStatus.style.color = 'var(--accent)';
+    persistForm.elements.ip.value = '';
+    loadF2b();
+  });
+
+  if (f2bRefreshBtn) {
+    f2bRefreshBtn.addEventListener('click', loadF2b);
+    loadF2b();
+  }
+
+  load();
+  loadTls();
+})();
+</script>
+{% endblock %}

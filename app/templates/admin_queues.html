@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Queues &amp; scheduler · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Queues &amp; scheduler</div>
+    <div class="page-sub">Live view of Celery workers, broker queue depth, and the redbeat schedule</div>
+  </div>
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div style="display:flex;align-items:center;gap:10px;margin:8px 0 14px;">
+  <button class="btn btn-ghost" id="q-refresh" type="button" style="padding:3px 10px;font-size:11px;">↻ Refresh</button>
+  <span id="q-meta" style="font-family:var(--mono);font-size:11px;color:var(--text-dimmer);"></span>
+</div>
+
+<!-- Workers -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Workers</div>
+    <span id="q-workers-count" style="font-family:var(--mono);font-size:11px;color:var(--text-dimmer);"></span>
+  </div>
+  <div id="q-workers" style="padding:12px 14px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">loading…</div>
+</div>
+
+<!-- Queues -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title">Broker queue depths</div>
+    <span id="q-broker-meta" style="font-family:var(--mono);font-size:11px;color:var(--text-dimmer);"></span>
+  </div>
+  <div id="q-queues" style="padding:12px 14px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">loading…</div>
+</div>
+
+<!-- Schedule -->
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Schedule (jobs table)</div>
+    <span id="q-schedule-count" style="font-family:var(--mono);font-size:11px;color:var(--text-dimmer);"></span>
+  </div>
+  <div style="padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.55;border-bottom:1px solid var(--border);">
+    Recurring jobs picked up by <span class="mono">celery beat</span> (redbeat). Click <strong>Run now</strong> to fire a job out of cycle — gated on <span class="mono">admin.system.repair</span>. Disabled rows are listed but greyed out.
+  </div>
+  <div id="q-schedule" style="padding:0;">loading…</div>
+</div>
+
+<script>
+(function(){
+  const refreshBtn = document.getElementById('q-refresh');
+  const meta       = document.getElementById('q-meta');
+  const wEl        = document.getElementById('q-workers');
+  const wCount     = document.getElementById('q-workers-count');
+  const qEl        = document.getElementById('q-queues');
+  const qMeta      = document.getElementById('q-broker-meta');
+  const sEl        = document.getElementById('q-schedule');
+  const sCount     = document.getElementById('q-schedule-count');
+
+  function escHtml(s){ return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function csrf() {
+    const c = document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith('meridian_csrf='));
+    return c ? c.split('=')[1] : '';
+  }
+
+  async function load() {
+    meta.textContent = 'loading…';
+    const r = await fetch('/api/v1/admin/queues', {credentials: 'same-origin'});
+    if (!r.ok) {
+      meta.textContent = 'error: ' + r.status;
+      wEl.textContent = qEl.textContent = sEl.textContent = '—';
+      return;
+    }
+    const data = await r.json();
+    meta.textContent = `snapshot took ${data.generated_at_ms} ms`;
+    renderWorkers(data.workers);
+    renderQueues(data.queues);
+    renderSchedule(data.schedule);
+  }
+
+  function renderWorkers(w) {
+    if (w.status === 'unreachable') {
+      wEl.innerHTML = `<span style="color:var(--danger);">unreachable — ${escHtml(w.detail)}</span>`;
+      wCount.textContent = '';
+      return;
+    }
+    if (!w.workers.length) {
+      wEl.innerHTML = `<span style="color:var(--warn);">no workers responded</span>`;
+      wCount.textContent = '0 workers';
+      return;
+    }
+    wCount.textContent = `${w.count} worker${w.count===1?'':'s'}`;
+    wEl.innerHTML = `<table style="width:100%;font-family:var(--mono);font-size:11px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Worker</th>
+        <th style="text-align:right;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Procs</th>
+        <th style="text-align:right;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Concurrency</th>
+        <th style="text-align:right;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Active</th>
+        <th style="text-align:right;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Reserved</th>
+      </tr></thead>
+      <tbody>${w.workers.map(wr => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:5px 8px;color:var(--text);">${escHtml(wr.name)}</td>
+          <td style="padding:5px 8px;color:var(--text-dim);text-align:right;">${wr.processes ?? '—'}</td>
+          <td style="padding:5px 8px;color:var(--text-dim);text-align:right;">${wr.concurrency ?? '—'}</td>
+          <td style="padding:5px 8px;color:var(--text-dim);text-align:right;">${(wr.current_tasks || []).length}</td>
+          <td style="padding:5px 8px;color:var(--text-dim);text-align:right;">${wr.reserved_count}</td>
+        </tr>
+        ${(wr.current_tasks || []).map(t => `
+          <tr style="border-bottom:1px solid rgba(255,255,255,.04);background:rgba(255,255,255,.02);">
+            <td colspan="5" style="padding:4px 18px;color:var(--accent);font-size:10px;">
+              ↳ active: <span style="color:var(--text);">${escHtml(t.name)}</span>
+              <span style="color:var(--text-dimmer);"> · ${escHtml(t.id)}</span>
+              ${t.args ? `<span style="color:var(--text-dim);"> · args=${escHtml(t.args)}</span>` : ''}
+            </td>
+          </tr>`).join('')}
+      `).join('')}</tbody>
+    </table>`;
+  }
+
+  function renderQueues(q) {
+    qMeta.textContent = q.broker || '';
+    if (q.status === 'unreachable') {
+      qEl.innerHTML = `<span style="color:var(--danger);">unreachable — ${escHtml(q.detail)}</span>`;
+      return;
+    }
+    qEl.innerHTML = `<table style="width:100%;font-family:var(--mono);font-size:11px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Queue</th>
+        <th style="text-align:right;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Depth</th>
+        <th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Status</th>
+      </tr></thead>
+      <tbody>${q.queues.map(qu => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:5px 8px;color:var(--text);">${escHtml(qu.queue)}</td>
+          <td style="padding:5px 8px;color:${qu.depth > 0 ? 'var(--warn)' : 'var(--text-dim)'};text-align:right;">${qu.depth ?? '—'}</td>
+          <td style="padding:5px 8px;color:${qu.status === 'ok' ? 'var(--accent)' : 'var(--danger)'};">${escHtml(qu.status)}${qu.detail ? ' · ' + escHtml(qu.detail) : ''}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString();
+  }
+
+  function renderSchedule(s) {
+    if (s.status === 'unreachable') {
+      sEl.innerHTML = `<div style="padding:12px;color:var(--danger);">unreachable — ${escHtml(s.detail)}</div>`;
+      sCount.textContent = '';
+      return;
+    }
+    sCount.textContent = `${s.enabled}/${s.total} enabled`;
+    sEl.innerHTML = `<table style="width:100%;font-family:var(--mono);font-size:11px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:6px 10px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Job</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Cron</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Last run</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Last status</th>
+        <th style="text-align:left;padding:6px 10px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;">Next run</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9px;color:var(--text-dimmer);text-transform:uppercase;"></th>
+      </tr></thead>
+      <tbody>${s.schedule.map(r => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);${r.enabled ? '' : 'opacity:.5;'}">
+          <td style="padding:5px 10px;color:var(--text);">
+            <div>${escHtml(r.name)}</div>
+            <div style="font-size:10px;color:var(--text-dimmer);">${escHtml(r.description || '')}</div>
+          </td>
+          <td style="padding:5px 10px;color:var(--text-dim);">${escHtml(r.cron || (r.kind === 'on_event' ? 'on_event' : '—'))}</td>
+          <td style="padding:5px 10px;color:var(--text-dim);">${escHtml(fmtTime(r.last_run_at))}</td>
+          <td style="padding:5px 10px;color:${r.last_run_status === 'ok' ? 'var(--accent)' : r.last_run_status ? 'var(--danger)' : 'var(--text-dimmer)'};">${escHtml(r.last_run_status || '—')}</td>
+          <td style="padding:5px 10px;color:var(--text-dim);">${escHtml(fmtTime(r.next_run_at))}</td>
+          <td style="padding:5px 10px;text-align:right;">
+            ${r.enabled && r.cron ? `<button class="btn btn-ghost" data-kick="${escHtml(r.handler)}" style="padding:2px 8px;font-size:10px;">Run now</button>` : ''}
+          </td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+
+    sEl.querySelectorAll('[data-kick]').forEach(b => b.addEventListener('click', async () => {
+      const handler = b.dataset.kick;
+      if (!confirm(`Fire ${handler} now?`)) return;
+      b.disabled = true; b.textContent = 'queuing…';
+      const r = await fetch('/api/v1/admin/queues/kick', {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type':'application/json','X-CSRF-Token': csrf()},
+        body: JSON.stringify({handler}),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert('failed: ' + (d.error || r.statusText));
+      }
+      b.disabled = false; b.textContent = 'Run now';
+      load();
+    }));
+  }
+
+  refreshBtn.addEventListener('click', load);
+  load();
+})();
+</script>
+{% endblock %}

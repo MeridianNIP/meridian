@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Thin CLI shim. Installed to /usr/local/bin/meridian-nip by install.sh.
+# Delegates to the app's click-based CLI inside the Meridian venv.
+
+set -euo pipefail
+
+readonly VENV_PY="/opt/meridian/venv/bin/python"
+[[ -x "$VENV_PY" ]] || { echo "meridian-nip: venv not installed at /opt/meridian" >&2; exit 127; }
+
+export MERIDIAN_CONFIG="${MERIDIAN_CONFIG:-/etc/meridian/meridian.conf}"
+exec "$VENV_PY" -m app.cli "$@"

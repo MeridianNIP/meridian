@@ -1,0 +1,60 @@
+# Meridian is shipped as a Debian install-script payload, not a wheel —
+# this pyproject.toml exists to configure lint + type tooling only.
+# `pip install -r requirements.txt` is still the install path.
+
+[project]
+name = "meridian"
+version = "1.0.0"
+description = "Meridian · Network Intelligence Platform"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = [
+    "app/templates/**",
+    "app/static/**",
+    "docs/**",
+]
+
+[tool.ruff.lint]
+# Pragmatic rule set: pyflakes, bugbear, imports, string formatting bugs.
+# No whitespace/quote flamewars.
+select = ["E", "F", "W", "B", "I", "UP", "PL", "C4", "S", "DTZ", "RUF"]
+ignore = [
+    "E501",     # line-length handled by formatter, not linter
+    "PLR0913",  # "too many args" — common for FastAPI Depends()
+    "PLR2004",  # magic values — spec has many thresholds (30/14/7 days, etc.)
+    "S101",     # assert
+    "S311",     # pseudo-random — we use secrets where it matters, random where it doesn't
+    "S603",     # subprocess call with validated argv
+    "S607",     # partial path — allowed binaries are known absolute paths
+    "S608",     # allowing f-strings in SQL where they're wrapped in text()
+    "UP045",    # "X | None" union — keep explicit for readability
+    "DTZ005",   # datetime.now() — tz-aware usage is already the norm
+    "B008",     # default arg factories — FastAPI Depends() is an exception
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/cli.py" = ["T201"]            # print() is fine in a CLI
+"scripts/*.sh" = []                 # shellcheck runs separately
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+
+[tool.mypy]
+python_version = "3.11"
+strict_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Type-check app/ only — schema.sql, scripts, docs aren't Python.
+files = ["app"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: marks tests that hit the DB or network",
+]

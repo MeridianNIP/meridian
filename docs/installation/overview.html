@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Install overview · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">INSTALLATION · OVERVIEW</div>
+<h1>Install overview</h1>
+<div class="page-sub">What <code>install.sh</code> does, what you need before running it, and how to get from a fresh Debian box to a working portal in ~10 minutes.</div>
+
+<h2>Supported OS</h2>
+<table>
+<tr><th>Target</th><th>Debian version</th><th>Stack summary</th></tr>
+<tr><td><strong>Primary</strong></td><td>Debian 13 (Trixie)</td><td>PostgreSQL 17 · Python 3.13 · Valkey 7.2 · BIND 9.20 · nginx 1.26 · kernel 6.12 · systemd 256+</td></tr>
+<tr><td>Fallback</td><td>Debian 12 (Bookworm)</td><td>PostgreSQL 15 · Python 3.11 · Redis 7.0.15 (pre-RSAL) · BIND 9.18 · nginx 1.24 · kernel 6.1 · systemd 252</td></tr>
+</table>
+<p>The installer detects the OS at runtime and picks the right package set. Any other Debian major is rejected outright.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>Fresh Debian 12 or 13 install (minimal is fine)</li>
+<li>4 vCPU / 4 GB RAM / 60 GB disk (reference sizing for 1-4 operators)</li>
+<li>Root access</li>
+<li>A FQDN that resolves to this host (for TLS)</li>
+<li>Outbound HTTPS for Debian apt and (optionally) Let's Encrypt; no vendor phone-home is required in FSL mode. Use <code>--airgapped</code> if you have zero outbound.</li>
+<li>Ports 80 + 443 free</li>
+</ul>
+
+<h2>What the installer does</h2>
+<ol>
+<li><strong>Pre-flight.</strong> OS + arch check, disk + RAM floors, apt sources probe, port conflicts, existing install detection.</li>
+<li><strong>License entry (optional).</strong> If your organization has purchased a commercial-use license (see <a href="../legal/terms.html">Terms of use</a>), paste the key here. Leave blank otherwise — Meridian runs in full under the FSL grant with no key required.</li>
+<li><strong>Interactive config.</strong> Portal name, FQDN, first admin, DB name/role, timezone, TLS method, scope (internal/external/both), SSH port, optional LUKS encryption. Every prompt has a multi-paragraph explanation before the input.</li>
+<li><strong>System prep.</strong> Creates <code>meridian</code> service user, <code>ddi-ssh</code> group, directory tree under <code>/opt/meridian</code>, <code>/etc/meridian</code>, <code>/var/lib/meridian</code>, <code>/var/log/meridian</code>.</li>
+<li><strong>Package install.</strong> Installs the OS-matched package set. Versions resolve to distro defaults; exact versions are recorded into the <code>version_manifest</code> table for drift detection.</li>
+<li><strong>Master key generation.</strong> Creates two 32-byte keys at <code>/etc/meridian/secrets/</code> (<code>0400</code> owned by <code>meridian</code>): the AES-GCM master for the vault and the HMAC-SHA-256 key for the tamper-evidence hash chain.</li>
+<li><strong>Package staging.</strong> Copies <code>app/</code>, <code>db/</code>, <code>scripts/</code>, <code>config/</code> into <code>/opt/meridian/</code>; symlinks <code>/usr/local/bin/meridian-nip</code>.</li>
+<li><strong>System hardening.</strong> Applies <code>sysctl</code> policy, <code>logrotate</code> rules, UFW firewall, AppArmor profiles.</li>
+<li><strong>Postgres setup.</strong> Creates the DB + role, loads <code>schema.sql</code>, locks <code>pg_hba.conf</code> to localhost + the meridian role only, applies the tuning overlay.</li>
+<li><strong>Cache setup.</strong> Starts Valkey (Debian 13) or Redis (Debian 12), localhost-bound, password-protected.</li>
+<li><strong>BIND9 setup.</strong> Recursive resolver on <code>127.0.0.1</code> only, used by the dig sandbox.</li>
+<li><strong>App install.</strong> Creates the Python venv, pip-installs from pinned <code>requirements.txt</code>, writes <code>meridian.conf</code>, renders + enables the three systemd units (<code>meridian-app</code>, <code>meridian-celery</code>, <code>meridian-beat</code>).</li>
+<li><strong>Nginx + TLS.</strong> Based on the chosen method: Let's Encrypt (certbot + HTTP-01), Cloudflare origin cert, self-signed, or HTTP-only dev mode.</li>
+<li><strong>SSH hardening.</strong> Custom port, <code>AllowGroups ddi-ssh</code>, modern KEX/ciphers/MACs only, legal MOTD banner — all via a <code>sshd_config.d/10-meridian.conf</code> drop-in.</li>
+<li><strong>fail2ban.</strong> sshd, nginx-bad-request, nginx-req-limit, and a Meridian-login jail that reads the audit log.</li>
+<li><strong>First admin seed.</strong> Creates the super-admin account with an auto-generated temp password.</li>
+<li><strong>License activation.</strong> If a commercial-use key was provided, validates the Ed25519 signature offline and records the activation in the audit log. If no key was provided, this step is skipped.</li>
+<li><strong>Start services and smoke-test.</strong> Hits <code>/healthz</code>.</li>
+<li><strong>Summary.</strong> Prints every credential on-screen and to <code>/root/meridian-install.log</code> with an offer to <code>shred -u</code> once you've saved them.</li>
+</ol>
+
+<h2>Three-tier dependency model</h2>
+<p>Meridian splits dependencies across three layers by design:</p>
+<table>
+<tr><th>Layer</th><th>Source</th><th>Why</th></tr>
+<tr><td>OS packages (nginx, bind9, postgresql, valkey, etc.)</td><td><code>apt</code> from Debian (or the vendor repo at <code>apt.meridiannip.com</code>)</td><td>Security patches land within hours of release. Signed Release files verified by apt. Tested versions preserved indefinitely on our mirror.</td></tr>
+<tr><td>Python dependencies (30+ packages)</td><td>Bundled wheels in the release tarball</td><td>No PyPI dependency at install time. Eliminates supply-chain risk from typosquats or compromised uploads. Bit-for-bit reproducible across installs of the same release.</td></tr>
+<tr><td>Meridian itself (app, schema, configs, docs, scripts)</td><td>Bundled + GPG-signed release tarball</td><td>Single verified artifact.</td></tr>
+</table>
+<p>The <code>scripts/build-release.sh</code> script (vendor-side) produces the signed tarball. Inside it you'll find a <code>wheels/</code> directory — the installer consumes it via <code>pip install --no-index --find-links</code>, never touching PyPI.</p>
+<div class="callout ok"><span class="lbl">AIRGAPPED</span><div>Because Python deps are bundled, the only network calls <code>install.sh</code> makes are to apt + optionally to Let's Encrypt / the license server. With <code>--airgapped</code>, even those are skipped (apt can be pointed at a local mirror, license installed manually).</div></div>
+
+<h2>Running the installer</h2>
+<pre><code># From the extracted tarball directory:
+sudo ./install.sh
+
+# Upgrade an existing install:
+sudo ./install.sh --upgrade
+
+# Pre-flight only (no changes):
+sudo ./install.sh --dry-run
+
+# No internet access available:
+sudo ./install.sh --airgapped   # no outbound calls; commercial key verified entirely offline if present</code></pre>
+
+<h2>After install</h2>
+<ol>
+<li>Browse to <code>https://&lt;your-domain&gt;/</code></li>
+<li>Sign in with the admin username and temp password from the summary</li>
+<li>Accept the AUP (prompted automatically)</li>
+<li>Enroll MFA</li>
+<li><strong>Admin → Branding</strong> — upload logo, set AUP text, set the logo click-through URL</li>
+<li><strong>Admin → Scope Manager</strong> — enable only the features your team uses</li>
+<li><strong>Admin → Integrations</strong> — connect AD, Infoblox, Slack, etc.</li>
+<li>Back up the master keys at <code>/etc/meridian/secrets/</code> to secure offline storage</li>
+</ol>
+
+<div class="callout danger"><span class="lbl">CRITICAL</span><div>The master keys at <code>/etc/meridian/secrets/</code> cannot be regenerated. If you lose them, the database (and every backup that doesn't include them) is permanently unreadable. Back them up immediately after first install.</div></div>
+
+<h2>Troubleshooting</h2>
+<ul>
+<li>Installer aborted mid-way → see <code>/root/meridian-install.log</code> for the full transcript</li>
+<li>Services won't start → <code>journalctl -u meridian-app -n 100</code></li>
+<li>App <code>/healthz</code> fails → <code>sudo -u meridian /opt/meridian/venv/bin/python -m app.cli doctor</code></li>
+<li>TLS issues → <code>nginx -t</code> and <code>certbot certificates</code></li>
+<li>General environment health → <code>sudo /opt/meridian/scripts/doctor.sh</code></li>
+</ul>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

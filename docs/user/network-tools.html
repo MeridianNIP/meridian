@@ -1,0 +1,98 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Tools · Meridian Docs</title>
+    <link rel="stylesheet" href="../css/docs.css">
+    </head>
+    <body>
+    <div class="grid-bg"></div>
+    <div class="frame">
+    <aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+    <main class="content">
+    <div class="page-meta">USER · NETWORK TOOLS</div>
+    <h1>Network Tools</h1>
+    <div class="page-sub">Sandboxed reachability + performance: ping, traceroute, HTTP test, port scan, SNMP walk, packet capture, ASN lookup, BGP looking glass, IP reputation, geolocation, security-header audit, CVE lookup.</div>
+    <h2>Reachability</h2>
+<ul>
+<li><strong>Ping</strong> — IPv4 or IPv6, configurable count, interval, timeout, packet size. Returns transmitted/received/loss % + RTT min/avg/max/jitter.</li>
+<li><strong>Traceroute</strong> — renders hop-by-hop as a table with TTL, host/IP, and all RTT probes per hop.</li>
+<li><strong>HTTP test</strong> — GET/HEAD/POST against a URL, follows redirects, shows the full request chain, response headers, and body preview.</li>
+<li><strong>Port scan</strong> — nmap-backed, port-spec like <code>22,80,443</code> or <code>1-1024</code>. Concurrency capped at 256.</li>
+<li><strong>SNMP walk</strong> — v1/v2c/v3, read-only. Pre-loaded MIBs from <code>snmp-mibs-downloader</code> when available.</li>
+<li><strong>Packet capture</strong> — tcpdump with a BPF filter, duration-capped, auto-uploaded to File Repo on finish.</li>
+</ul>
+
+<h2>Research (no target reachability required)</h2>
+<ul>
+<li><strong>ASN lookup</strong> — Team Cymru whois-over-dig. IP &rarr; ASN + org + country + BGP prefix.</li>
+<li><strong>BGP LG</strong> — RIPEstat-backed. IP &rarr; covering prefix + origin ASN(s); <code>AS&lt;n&gt;</code> &rarr; holder + country.</li>
+<li><strong>IP reputation</strong> — 8 parallel DNSBL checks (Spamhaus, Barracuda, SpamCop, SORBS, CBL, PSBL, DroneBL, Lashback).</li>
+<li><strong>Geolocation</strong> — ipapi.co free tier, rate-limited upstream.</li>
+<li><strong>Header audit</strong> — HSTS / CSP / Frame-Options / XCTO / Referrer-Policy / Permissions-Policy / cookie flags with concrete fix recipes.</li>
+<li><strong>CVE lookup</strong> — NVD API v2. Gives CVSS v3.1 vector, CWE chain, primary references, and cross-reference links to NVD, MITRE, GHSA, Debian, Ubuntu, Red Hat.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Port scan on hostile networks</strong> can be disruptive. Scope Manager prevents scanning production ranges unless explicitly allowed.</li>
+<li><strong>Packet capture</strong> needs <code>cap_net_raw</code> on tcpdump (set automatically by <code>install.sh</code>). If pcap errors with "permission denied", check AppArmor profile.</li>
+<li><strong>Geolocation</strong> is ipapi.co; if you expect thousands of queries, swap in MaxMind GeoLite2 locally.</li>
+</ul>
+    </main>
+    </div>
+    </body>
+    </html>

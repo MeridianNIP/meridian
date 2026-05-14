@@ -1,0 +1,29 @@
+<aside class="sidebar">
+  <div class="side-head">Main</div>
+  <a class="nav-item {% if active == 'dashboard' %}active{% endif %}" href="/ui/dashboard"><div class="nav-ico"></div>Dashboard</a>
+  <a class="nav-item {% if active == 'dns' %}active{% endif %}" href="/ui/dns-tools"><div class="nav-ico"></div>DNS Tools<span class="nav-badge">13</span></a>
+  <a class="nav-item {% if active == 'network' %}active{% endif %}" href="/ui/network-tools"><div class="nav-ico"></div>Network Tools<span class="nav-badge">11</span></a>
+  <a class="nav-item {% if active == 'threat-intel' %}active{% endif %}" href="/ui/threat-intel"><div class="nav-ico"></div>Threat Intel<span class="nav-badge">12</span></a>
+  <a class="nav-item {% if active == 'wizards' %}active{% endif %}" href="/ui/wizards"><div class="nav-ico"></div>Wizards<span class="nav-badge">16</span></a>
+  <a class="nav-item {% if active == 'monitors' %}active{% endif %}" href="/ui/monitors"><div class="nav-ico"></div>Monitors</a>
+  <a class="nav-item {% if active == 'directory' %}active{% endif %}" href="/ui/directory"><div class="nav-ico"></div>Directory<span class="nav-badge">AD</span></a>
+  <a class="nav-item {% if active == 'certs' %}active{% endif %}" href="/ui/certificates"><div class="nav-ico"></div>Certificates</a>
+  <a class="nav-item {% if active == 'files' %}active{% endif %}" href="/ui/files"><div class="nav-ico"></div>File Repo</a>
+  <a class="nav-item {% if active == 'links' %}active{% endif %}" href="/ui/links"><div class="nav-ico"></div>Important Links</a>
+  <a class="nav-item {% if active == 'messages' %}active{% endif %}" href="/ui/messages"><div class="nav-ico"></div>Messages</a>
+  {% if user.role in ('admin', 'super_admin') %}
+  <a class="nav-item {% if active == 'approvals' %}active{% endif %}" href="/ui/approvals"><div class="nav-ico"></div>Approvals</a>
+  {% endif %}
+  <div class="side-head">Workspace</div>
+  <a class="nav-item {% if active == 'runbooks' %}active{% endif %}" href="/ui/runbooks"><div class="nav-ico"></div>Runbooks</a>
+  <a class="nav-item {% if active == 'reports' %}active{% endif %}" href="/ui/reports"><div class="nav-ico"></div>Scheduled Reports</a>
+  <div class="side-head">System</div>
+  {% if user.role in ('admin', 'super_admin') %}
+  <a class="nav-item {% if active == 'admin' %}active{% endif %}" href="/ui/admin"><div class="nav-ico"></div>Admin Panel</a>
+  {% endif %}
+  {% if user.role == 'super_admin' %}
+  <a class="nav-item {% if active == 'global-settings' %}active{% endif %}" href="/ui/admin/settings"><div class="nav-ico"></div>Global Settings</a>
+  {% endif %}
+  <a class="nav-item {% if active == 'settings' %}active{% endif %}" href="/ui/settings"><div class="nav-ico"></div>Settings</a>
+  <a class="nav-item" href="/docs/index.html" target="_blank"><div class="nav-ico"></div>Docs ↗</a>
+</aside>

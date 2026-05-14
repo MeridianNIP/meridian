@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Webhooks · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Webhooks</div>
+    <div class="page-sub">HMAC-signed inbound receivers + outbound fan-out. Signing secrets are shown <strong>exactly once</strong> on create or rotate — store them now, they're vault-only after that.</div>
+  </div>
+  {% with docs_path="admin/webhooks.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="tabs" data-tabs="wh">
+  <button class="tab active" data-tab="outbound">Outbound</button>
+  <button class="tab"        data-tab="inbound">Inbound</button>
+  <button class="tab"        data-tab="events">Event catalog</button>
+</div>
+
+<!-- ============= Outbound ============= -->
+<div data-panel="outbound" data-group="wh">
+  <div class="card" style="margin-bottom:14px;padding:12px 14px;background:rgba(32,200,150,.04);border-left:3px solid var(--accent);">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:6px;">What outbound webhooks are for</div>
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+      Push Meridian events into external systems (PagerDuty, Slack incoming webhooks, ServiceNow, Splunk HEC, a SIEM). Every POST is JSON and HMAC-signed; the receiver should verify the <code class="mono">X-Meridian-Signature</code> header before acting. Common use cases: opening a page when a monitor goes down, appending an audit row to a SIEM, kicking a CI pipeline when a runbook finishes.
+    </div>
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">Sample payload + signature verification</summary>
+      <pre class="mono" style="background:rgba(0,0,0,.3);padding:10px;border-radius:4px;font-size:10px;color:var(--text-dim);margin-top:6px;overflow-x:auto;line-height:1.5;">POST https://events.pagerduty.com/v2/enqueue
+Content-Type: application/json
+X-Meridian-Event: monitor.incident.opened
+X-Meridian-Delivery: 8c4d9b2e-...
+X-Meridian-Signature: sha256=a73c9f... (HMAC-SHA256 over the raw body)
+
+{
+  "event": "monitor.incident.opened",
+  "ts": "2026-04-19T05:00:00Z",
+  "monitor": { "id": "...", "target": "api.acme.com", "kind": "https" },
+  "severity": "down",
+  "detail": { "http_status": 503, "rtt_ms": 8210 }
+}
+
+# Python receiver — verify before trusting:
+import hmac, hashlib
+mac = hmac.new(signing_secret, raw_body, hashlib.sha256).hexdigest()
+if not hmac.compare_digest(f"sha256={mac}",
+        request.headers["X-Meridian-Signature"]):
+    return 401</pre>
+    </details>
+  </div>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">New outbound webhook</div></div>
+    <form id="out-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Name</label><input class="input mono" name="name" required></div>
+        <div class="field" style="flex:3;"><label>Target URL</label><input class="input mono" name="url" placeholder="https://hooks.example.com/incoming" required></div>
+      </div>
+      <div class="field" style="margin-top:10px;"><label>Description</label><input class="input" name="description" placeholder="which external system this notifies"></div>
+      <div class="field" style="margin-top:10px;">
+        <label>Subscribed events (click to toggle)</label>
+        <div class="chip-row" id="out-events"></div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;font-size:11px;">▸ Create + reveal signing secret</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Configured outbound webhooks</div><span id="out-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span></div>
+    <div id="out-rows" style="padding:0;"></div>
+  </div>
+</div>
+
+<!-- ============= Inbound ============= -->
+<div data-panel="inbound" data-group="wh" class="hidden">
+  <div class="card" style="margin-bottom:14px;padding:12px 14px;background:rgba(32,200,150,.04);border-left:3px solid var(--accent);">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:6px;">What inbound receivers are for</div>
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">
+      Accept signed POSTs from external systems and act on them: auto-create a monitor when a new service is registered in your CMDB, open an approval when GitHub posts a push event to a protected repo, create a ticket when an IDS tool raises an alert. Each receiver gets its own URL and HMAC signing secret; callers must send the signature header or the request is rejected.
+    </div>
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">Sample inbound POST + curl example</summary>
+      <pre class="mono" style="background:rgba(0,0,0,.3);padding:10px;border-radius:4px;font-size:10px;color:var(--text-dim);margin-top:6px;overflow-x:auto;line-height:1.5;">BODY=$(cat <<'JSON'
+{"event":"service.added","service":"payments-api","tier":"critical"}
+JSON
+)
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SIGNING_SECRET" -r | awk '{print $1}')
+
+curl -X POST https://meridian.example.com/api/v1/webhooks/inbound/cmdb-sync \
+  -H "Content-Type: application/json" \
+  -H "X-Meridian-Signature: sha256=$SIG" \
+  --data "$BODY"</pre>
+    </details>
+  </div>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">New inbound receiver</div></div>
+    <form id="in-form" style="padding:12px 14px;">
+      <div class="form-row">
+        <div class="field" style="flex:2;"><label>Name</label><input class="input mono" name="name" required></div>
+        <div class="field" style="flex:3;"><label>Description</label><input class="input" name="description" placeholder="which external system posts here + what it sends"></div>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">
+        After creation you'll receive a unique URL and a signing secret. The sender must set <code>X-Meridian-Signature: sha256=&lt;hex&gt;</code> (HMAC-SHA256 of the raw body, computed with the secret). Unsigned or mismatched requests are rejected.
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:10px;font-size:11px;">▸ Create + reveal URL & secret</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Configured inbound receivers</div><span id="in-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span></div>
+    <div id="in-rows" style="padding:0;"></div>
+  </div>
+</div>
+
+<!-- ============= Event catalog ============= -->
+<div data-panel="events" data-group="wh" class="hidden">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Internal event catalog</div></div>
+    <div style="padding:10px 14px;font-size:12px;color:var(--text-dim);">These are the event keys internal code emits. Outbound webhooks pick which events they want; the dispatcher POSTs to every subscribed endpoint.</div>
+    <table style="width:100%;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Event key</th>
+        <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">What fires it</th>
+      </tr></thead>
+      <tbody id="event-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Reveal modal -->
+<div id="reveal" style="display:none;position:fixed;top:10%;left:50%;transform:translateX(-50%);max-width:640px;width:90%;background:var(--panel);border:1px solid var(--accent);border-radius:8px;padding:18px;z-index:9999;box-shadow:0 30px 60px rgba(0,0,0,.6);">
+  <div style="font-family:var(--mono);font-size:11px;color:var(--warn);margin-bottom:10px;">⚠ SHOWN ONCE — COPY NOW</div>
+  <div id="reveal-body" style="font-size:12px;color:var(--text);"></div>
+  <div style="text-align:right;margin-top:14px;">
+    <button class="btn btn-primary" onclick="document.getElementById('reveal').style.display='none'">Close (I've copied it)</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const statusColor = {ok:'var(--accent)', failed:'var(--danger)', deferred:'var(--warn)'};
+  let eventCatalog = [];
+
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data, status: r.status};
+  }
+
+  function reveal(parts) {
+    const body = document.getElementById('reveal-body');
+    body.innerHTML = parts.map(p => `
+      <div style="margin-bottom:14px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;margin-bottom:4px;">${p.label}</div>
+        <div style="font-family:var(--mono);font-size:12px;word-break:break-all;background:rgba(0,0,0,.3);padding:10px 12px;border-radius:4px;color:var(--accent);">${p.value}</div>
+      </div>`).join('');
+    document.getElementById('reveal').style.display = 'block';
+  }
+
+  async function loadEvents() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/webhooks/events');
+    if (!ok) return;
+    eventCatalog = data;
+    const chips = document.getElementById('out-events');
+    chips.innerHTML = data.map(e => `<span class="chip" data-event="${e.key}" title="${e.description}">${e.key}</span>`).join('');
+    chips.querySelectorAll('[data-event]').forEach(c => c.addEventListener('click', () => c.classList.toggle('active')));
+    const er = document.getElementById('event-rows');
+    er.innerHTML = data.map(e => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:8px;font-family:var(--mono);color:var(--accent);">${e.key}</td>
+        <td style="padding:8px;color:var(--text-dim);">${e.description}</td>
+      </tr>`).join('');
+  }
+
+  function renderEventChipsForSubscription(webhookEvents, idx) {
+    return eventCatalog.map(e => `
+      <label style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-right:10px;display:inline-block;">
+        <input type="checkbox" data-ev="${idx}:${e.key}" ${webhookEvents.includes(e.key) ? 'checked' : ''}> ${e.key}
+      </label>`).join('');
+  }
+
+  async function loadOutbound() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/webhooks?direction=outbound');
+    const rows = document.getElementById('out-rows');
+    const count = document.getElementById('out-count');
+    if (!ok) { count.textContent = `error: ${data.error || data.detail}`; return; }
+    count.textContent = `${data.length} webhook${data.length === 1 ? '' : 's'}`;
+    rows.innerHTML = data.map((w, idx) => `
+      <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.04);">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
+          <div style="flex:1;">
+            <div style="color:var(--text);font-weight:500;">${w.name}</div>
+            <div style="color:var(--text-dim);font-size:11px;">${w.description || ''}</div>
+          </div>
+          <span style="font-family:var(--mono);font-size:10px;color:${w.has_secret ? 'var(--accent)' : 'var(--danger)'};">${w.has_secret ? 'secret set' : 'no secret'}</span>
+          <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+            <input type="checkbox" ${w.enabled ? 'checked' : ''} data-en="${w.id}"> enabled
+          </label>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:8px;word-break:break-all;">→ ${w.url}</div>
+        <div style="margin-bottom:8px;">${renderEventChipsForSubscription(w.events, w.id)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" data-test="${w.id}" style="font-size:10px;">▸ test send</button>
+          <button class="btn" data-rotate="${w.id}" data-name="${w.name}" style="font-size:10px;color:var(--warn);">rotate secret</button>
+          <button class="btn" data-deliveries="${w.id}" style="font-size:10px;">deliveries</button>
+          <button class="btn" data-save-events="${w.id}" style="font-size:10px;color:var(--accent);">save events</button>
+          <button class="btn" data-del="${w.id}" style="font-size:10px;color:var(--danger);margin-left:auto;">delete</button>
+        </div>
+        <div id="deliveries-${w.id}" style="margin-top:10px;"></div>
+      </div>`).join('') || '<div style="padding:14px;color:var(--text-dimmer);font-size:12px;">No outbound webhooks yet.</div>';
+
+    rows.querySelectorAll('[data-en]').forEach(el => el.addEventListener('change', async () => {
+      await jfetch('PATCH', `/api/v1/admin/webhooks/${el.dataset.en}`, {enabled: el.checked});
+    }));
+    rows.querySelectorAll('[data-test]').forEach(el => el.addEventListener('click', async () => {
+      const {ok, data} = await jfetch('POST', `/api/v1/admin/webhooks/${el.dataset.test}/test`, {event: 'meridian.test', subject: 'Test from Meridian'});
+      alert(ok ? `status=${data.status} http=${data.http_status}\n\n${(data.response || '').slice(0, 400)}` : `error: ${data.error || data.detail}`);
+    }));
+    rows.querySelectorAll('[data-rotate]').forEach(el => el.addEventListener('click', async () => {
+      if (!confirm(`Rotate HMAC secret for "${el.dataset.name}"? Old secret becomes invalid immediately. Update the receiver before re-enabling.`)) return;
+      const {ok, data} = await jfetch('PATCH', `/api/v1/admin/webhooks/${el.dataset.rotate}`, {rotate_secret: true});
+      if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+      reveal([{label: 'New signing secret', value: data.signing_secret}]);
+    }));
+    rows.querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', async () => {
+      if (!confirm('Delete this webhook? Also removes its signing secret from the vault.')) return;
+      await jfetch('DELETE', `/api/v1/admin/webhooks/${el.dataset.del}`);
+      loadOutbound();
+    }));
+    rows.querySelectorAll('[data-deliveries]').forEach(el => el.addEventListener('click', async () => {
+      const target = document.getElementById(`deliveries-${el.dataset.deliveries}`);
+      const {ok, data} = await jfetch('GET', `/api/v1/admin/webhooks/${el.dataset.deliveries}/deliveries?limit=20`);
+      if (!ok) { target.textContent = `error: ${data.error || data.detail}`; return; }
+      target.innerHTML = data.length === 0
+        ? `<div style="color:var(--text-dimmer);font-size:11px;font-family:var(--mono);">no deliveries yet</div>`
+        : `<table style="width:100%;font-size:10px;font-family:var(--mono);">
+             <thead><tr style="color:var(--text-dimmer);"><th style="text-align:left;padding:4px 6px;">when</th><th style="text-align:left;padding:4px 6px;">event</th><th style="text-align:left;padding:4px 6px;">http</th><th style="text-align:left;padding:4px 6px;">status</th><th style="text-align:left;padding:4px 6px;">response</th></tr></thead>
+             <tbody>${data.map(d => `
+               <tr style="border-top:1px solid rgba(255,255,255,.04);">
+                 <td style="padding:4px 6px;color:var(--text-dimmer);">${(d.ts || '').slice(11,19)}</td>
+                 <td style="padding:4px 6px;color:var(--accent);">${d.event}</td>
+                 <td style="padding:4px 6px;color:var(--text-dim);">${d.http_status ?? '—'}</td>
+                 <td style="padding:4px 6px;color:${statusColor[d.status] || 'var(--text-dim)'};">${d.status}</td>
+                 <td style="padding:4px 6px;color:var(--text-dim);word-break:break-all;">${(d.response || '').slice(0, 200)}</td>
+               </tr>`).join('')}</tbody>
+           </table>`;
+    }));
+    rows.querySelectorAll('[data-save-events]').forEach(el => el.addEventListener('click', async () => {
+      const id = el.dataset.saveEvents;
+      const events = [...rows.querySelectorAll(`[data-ev^="${id}:"]`)]
+        .filter(cb => cb.checked).map(cb => cb.dataset.ev.split(':')[1]);
+      const {ok, data} = await jfetch('PATCH', `/api/v1/admin/webhooks/${id}`, {events});
+      if (!ok) alert(`error: ${data.error || data.detail}`);
+      else el.textContent = '✓ saved';
+    }));
+  }
+
+  async function loadInbound() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/webhooks?direction=inbound');
+    const rows = document.getElementById('in-rows');
+    const count = document.getElementById('in-count');
+    if (!ok) { count.textContent = `error: ${data.error || data.detail}`; return; }
+    count.textContent = `${data.length} receiver${data.length === 1 ? '' : 's'}`;
+    rows.innerHTML = data.map(w => `
+      <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.04);">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
+          <div style="flex:1;">
+            <div style="color:var(--text);font-weight:500;">${w.name}</div>
+            <div style="color:var(--text-dim);font-size:11px;">${w.description || ''}</div>
+          </div>
+          <span style="font-family:var(--mono);font-size:10px;color:${w.has_secret ? 'var(--accent)' : 'var(--danger)'};">${w.has_secret ? 'secret set' : 'no secret'}</span>
+          <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">
+            <input type="checkbox" ${w.enabled ? 'checked' : ''} data-en="${w.id}"> enabled
+          </label>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:8px;word-break:break-all;">${w.inbound_url}</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" data-rotate="${w.id}" data-name="${w.name}" style="font-size:10px;color:var(--warn);">rotate secret</button>
+          <button class="btn" data-deliveries="${w.id}" style="font-size:10px;">deliveries</button>
+          <button class="btn" data-del="${w.id}" style="font-size:10px;color:var(--danger);margin-left:auto;">delete</button>
+        </div>
+        <div id="deliveries-${w.id}" style="margin-top:10px;"></div>
+      </div>`).join('') || '<div style="padding:14px;color:var(--text-dimmer);font-size:12px;">No inbound receivers yet.</div>';
+
+    rows.querySelectorAll('[data-en]').forEach(el => el.addEventListener('change', async () => {
+      await jfetch('PATCH', `/api/v1/admin/webhooks/${el.dataset.en}`, {enabled: el.checked});
+    }));
+    rows.querySelectorAll('[data-rotate]').forEach(el => el.addEventListener('click', async () => {
+      if (!confirm(`Rotate HMAC secret for "${el.dataset.name}"? Senders must update immediately.`)) return;
+      const {ok, data} = await jfetch('PATCH', `/api/v1/admin/webhooks/${el.dataset.rotate}`, {rotate_secret: true});
+      if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+      reveal([{label: 'New signing secret', value: data.signing_secret}]);
+    }));
+    rows.querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', async () => {
+      if (!confirm('Delete this receiver? The URL becomes invalid immediately.')) return;
+      await jfetch('DELETE', `/api/v1/admin/webhooks/${el.dataset.del}`);
+      loadInbound();
+    }));
+    rows.querySelectorAll('[data-deliveries]').forEach(el => el.addEventListener('click', async () => {
+      const target = document.getElementById(`deliveries-${el.dataset.deliveries}`);
+      const {ok, data} = await jfetch('GET', `/api/v1/admin/webhooks/${el.dataset.deliveries}/deliveries?limit=20`);
+      target.innerHTML = (!ok || data.length === 0)
+        ? `<div style="color:var(--text-dimmer);font-size:11px;font-family:var(--mono);">no deliveries yet</div>`
+        : `<table style="width:100%;font-size:10px;font-family:var(--mono);">
+             <thead><tr style="color:var(--text-dimmer);"><th style="text-align:left;padding:4px 6px;">when</th><th style="text-align:left;padding:4px 6px;">event</th><th style="text-align:left;padding:4px 6px;">http</th><th style="text-align:left;padding:4px 6px;">status</th></tr></thead>
+             <tbody>${data.map(d => `
+               <tr style="border-top:1px solid rgba(255,255,255,.04);">
+                 <td style="padding:4px 6px;color:var(--text-dimmer);">${(d.ts || '').slice(11,19)}</td>
+                 <td style="padding:4px 6px;color:var(--accent);">${d.event}</td>
+                 <td style="padding:4px 6px;color:var(--text-dim);">${d.http_status ?? '—'}</td>
+                 <td style="padding:4px 6px;color:${statusColor[d.status] || 'var(--text-dim)'};">${d.status}</td>
+               </tr>`).join('')}</tbody>
+           </table>`;
+    }));
+  }
+
+  document.getElementById('out-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const events = [...document.querySelectorAll('#out-events .chip.active')].map(c => c.dataset.event);
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/webhooks', {
+      direction: 'outbound', name: fd.get('name'),
+      description: fd.get('description') || '',
+      url: fd.get('url'), events, enabled: true,
+    });
+    if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    e.target.reset();
+    document.querySelectorAll('#out-events .chip.active').forEach(c => c.classList.remove('active'));
+    reveal([{label: 'Signing secret (copy now)', value: data.signing_secret}]);
+    loadOutbound();
+  });
+
+  document.getElementById('in-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const {ok, data} = await jfetch('POST', '/api/v1/admin/webhooks', {
+      direction: 'inbound', name: fd.get('name'),
+      description: fd.get('description') || '',
+      events: [], enabled: true,
+    });
+    if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    e.target.reset();
+    reveal([
+      {label: 'Inbound URL', value: data.inbound_url},
+      {label: 'Signing secret (copy now)', value: data.signing_secret},
+      {label: 'Signature header', value: 'X-Meridian-Signature: sha256=&lt;HMAC-SHA256 of raw body&gt;'},
+    ]);
+    loadInbound();
+  });
+
+  loadEvents().then(() => { loadOutbound(); loadInbound(); });
+})();
+</script>
+{% endblock %}

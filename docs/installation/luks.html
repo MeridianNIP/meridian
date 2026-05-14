@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUKS setup · Meridian Docs</title>
+<link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="frame">
+<aside class="sidebar" id="sidebar">
+  <a class="logo" href="../index.html">
+    <div class="logo-mark"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"><circle cx="24" cy="24" r="19" opacity=".4"/><ellipse cx="24" cy="24" rx="19" ry="5.5" opacity=".3"/><ellipse cx="24" cy="24" rx="11" ry="19" opacity=".45" transform="rotate(22 24 24)"/><ellipse cx="24" cy="24" rx="6" ry="19"/><ellipse cx="24" cy="24" rx="3" ry="19" opacity=".6" transform="rotate(-38 24 24)"/><line x1="24" y1="5" x2="24" y2="43" stroke-width="1.3"/><circle cx="24" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="24" cy="43" r="2" fill="currentColor" stroke="none"/><circle cx="30" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg></div>
+    <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">DOCUMENTATION</div></div>
+  </a>
+  <input class="search" id="docs-search" placeholder="search docs…" spellcheck="false">
+
+  <h3>Installation</h3>
+  <a href="../installation/overview.html">Install overview</a>
+  <a href="../installation/prompts.html">Installer prompts</a>
+  <a href="../installation/luks.html">LUKS setup</a>
+
+  <h3>User · tools</h3>
+  <a href="../user/getting-started.html">Getting started</a>
+  <a href="../user/dashboard.html">Dashboard</a>
+  <a href="../user/dns-tools.html">DNS Tools</a>
+  <a href="../user/network-tools.html">Network Tools</a>
+  <a href="../user/monitors.html">Monitors</a>
+  <a href="../user/wizards.html">Wizards</a>
+  <a href="../user/certificates.html">Certificates</a>
+  <a href="../user/runbooks.html">Runbooks</a>
+  <a href="../user/dhcp.html">DHCP</a>
+  <a href="../user/ipam.html">IPAM</a>
+  <a href="../user/directory.html">Directory</a>
+  <a href="../user/files.html">File Repo</a>
+  <a href="../user/messages.html">Messages</a>
+  <a href="../user/approvals.html">Approvals</a>
+  <a href="../user/settings.html">User Settings</a>
+
+  <h3>Admin</h3>
+  <a href="../admin/overview.html">Admin overview</a>
+  <a href="../admin/users.html">Users</a>
+  <a href="../admin/scope.html">Scope Manager</a>
+  <a href="../admin/integrations.html">Integrations</a>
+  <a href="../admin/devices.html">Network Devices</a>
+  <a href="../admin/vulnerabilities.html">Vulnerabilities</a>
+  <a href="../admin/health.html">System Health</a>
+  <a href="../admin/updates.html">Updates</a>
+  <a href="../admin/webhooks.html">Webhooks</a>
+  <a href="../admin/branding.html">Branding &amp; identity</a>
+  <a href="../admin/security.html">Database security</a>
+  <a href="../admin/scheduled-jobs.html">Scheduled jobs</a>
+  <a href="../admin/backup-restore.html">Backup &amp; restore</a>
+
+  <h3>Reference</h3>
+  <a href="../reference/cli.html">meridian-nip CLI</a>
+
+  <h3>Legal</h3>
+  <a href="../legal/terms.html">Terms of use</a>
+  <a href="../legal/aup-template.html">AUP template</a>
+  <a href="../legal/oss.html">Open-source licenses</a>
+</aside>
+
+<main class="content">
+<div class="page-meta">INSTALLATION · LUKS</div>
+<h1>LUKS setup for <code>/var/lib/postgresql</code></h1>
+<div class="page-sub">Layer 1 of Meridian's 4-layer data protection: encrypts the block device the database lives on, so a stolen disk or snapshot is unreadable without the passphrase.</div>
+
+<div class="callout danger"><span class="lbl">DESTRUCTIVE</span><div>This operation formats an entire block device. Every existing byte on that device is lost. Run on a dedicated disk, not the system disk. Back up the database first (<code>sudo /opt/meridian/scripts/backup.sh --include-keys</code>).</div></div>
+
+<h2>When to use it</h2>
+<ul>
+<li>Physical hardware where the disk could be removed or imaged.</li>
+<li>Hosts where "someone with root" is a realistic threat model and you want defence-in-depth.</li>
+<li>Compliance regimes that require encryption at rest (HIPAA, PCI-DSS).</li>
+</ul>
+
+<h2>When to skip it</h2>
+<ul>
+<li>Cloud VMs where the provider already encrypts volumes (EBS, Azure Managed Disks).</li>
+<li>Hosts that already use full-disk encryption at the OS-install layer.</li>
+<li>Ephemeral lab / demo machines.</li>
+</ul>
+<p>Even without LUKS, the other three layers (field encryption, hash-chain tamper detection, SCRAM-SHA-256 localhost-only access) still apply.</p>
+
+<h2>What you need</h2>
+<ul>
+<li>A second block device (<code>/dev/sdb</code>, <code>/dev/nvme1n1</code>, etc.) of at least 20 GB.</li>
+<li>A passphrase of at least 12 characters that you can remember or securely store.</li>
+<li>Meridian already installed and at least one pre-LUKS backup in hand.</li>
+</ul>
+
+<h2>Walkthrough</h2>
+<ol>
+<li>Confirm the device. <code>lsblk</code> to see what's attached. Make sure you know which device is the target and that it holds nothing you want.</li>
+<li>Take a full backup including keys: <pre><code>sudo /opt/meridian/scripts/backup.sh --include-keys --output /root/</code></pre></li>
+<li>Run the setup script: <pre><code>sudo /opt/meridian/scripts/setup_luks.sh /dev/sdb</code></pre></li>
+<li>Type the exact device path when prompted to confirm destruction.</li>
+<li>Enter a 12+ character passphrase twice.</li>
+<li>The script: stops PostgreSQL → stages existing data to <code>/var/lib/meridian/tmp/</code> → formats the device LUKS2 with <code>aes-xts-plain64</code> 512-bit + <code>argon2id</code> PBKDF → opens it as <code>/dev/mapper/meridian-pg</code> → mkfs.ext4 → mounts at <code>/var/lib/postgresql</code> → rsyncs data back → adds entries to <code>/etc/crypttab</code> and <code>/etc/fstab</code> → starts PostgreSQL.</li>
+<li>After it finishes, the staging copy is preserved in case anything went wrong. Once you've verified the portal is healthy (<code>sudo /opt/meridian/scripts/health_check.sh</code>), remove it: <pre><code>sudo rm -rf /var/lib/meridian/tmp/pg-preluks-*</code></pre></li>
+</ol>
+
+<h2>What the config actually looks like</h2>
+<p>After setup, <code>/etc/crypttab</code> has:</p>
+<pre><code>meridian-pg  UUID=&lt;UUID&gt;  none  luks,discard</code></pre>
+<p>And <code>/etc/fstab</code> has:</p>
+<pre><code>/dev/mapper/meridian-pg  /var/lib/postgresql  ext4  defaults,noatime  0 2</code></pre>
+
+<h2>Boot-time passphrase handling</h2>
+<p>By default the passphrase is asked on every boot. For unattended reboots you have two options:</p>
+<h3>TPM2 auto-unlock (recommended)</h3>
+<p>If the host has a TPM2 chip, bind the LUKS key slot to it with <code>systemd-cryptenroll</code>:</p>
+<pre><code>sudo systemd-cryptenroll --tpm2-device=auto \
+     --tpm2-pcrs=7+11 /dev/sdb
+
+# Update /etc/crypttab to use the TPM:
+#   meridian-pg  UUID=&lt;UUID&gt;  none  luks,discard,tpm2-device=auto</code></pre>
+<p>PCR 7 binds to Secure Boot policy; PCR 11 binds to the kernel image. Changing either (e.g., installing a rootkit) breaks the unlock.</p>
+
+<h3>Keyfile on a separate encrypted volume</h3>
+<p>Viable in controlled physical-access environments but weaker than TPM because the keyfile is only as safe as its container. Not documented in detail here; see the Debian cryptsetup guide.</p>
+
+<h2>Rotating the passphrase</h2>
+<pre><code>sudo cryptsetup luksChangeKey /dev/sdb
+# or add a second key slot before removing the old:
+sudo cryptsetup luksAddKey /dev/sdb
+sudo cryptsetup luksKillSlot /dev/sdb 0</code></pre>
+
+<h2>Emergency recovery</h2>
+<p>If you lose the passphrase and haven't enrolled TPM/keyfile, the data is permanently unrecoverable. Restore from a backup bundle onto a new host. <strong>Always keep at least one recent <code>backup.sh --include-keys</code> tarball in secure offsite storage.</strong></p>
+
+<div class="foot">
+  <div>MERIDIAN 1.0.0 · DOCUMENTATION</div>
+  <div><a href="https://meridiannip.com" target="_blank">meridiannip.com ↗</a></div>
+</div>
+</main>
+</div>
+<script>(function(){const s=document.getElementById('docs-search');if(!s)return;const links=[...document.querySelectorAll('.sidebar a:not(.logo)')],heads=[...document.querySelectorAll('.sidebar h3')];s.addEventListener('input',()=>{const q=s.value.trim().toLowerCase();if(!q){links.forEach(a=>a.classList.remove('hidden'));heads.forEach(h=>h.classList.remove('hidden'));return;}links.forEach(a=>a.classList.toggle('hidden',!a.textContent.toLowerCase().includes(q)));heads.forEach(h=>{let n=h.nextElementSibling,v=false;while(n&&n.tagName==='A'){if(!n.classList.contains('hidden'))v=true;n=n.nextElementSibling;}h.classList.toggle('hidden',!v);});});const here=location.pathname.split('/').pop();links.forEach(a=>{if(a.getAttribute('href').endsWith(here))a.classList.add('active');});})();</script>
+</body>
+</html>

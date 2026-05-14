@@ -1,0 +1,113 @@
+<div class="top-bar">
+  <button type="button" id="nav-toggle" class="nav-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  {% include "_logo.html" %}
+  <div class="top-right">
+    {% if user %}
+      {# Idle countdown. Resets on user activity (mouse/key/click/scroll);
+         when it hits 0 the page auto-redirects to /ui/login so the user
+         doesn't stumble into a failed action expecting it to work. The
+         admin-configured default is {{ idle_timeout_min or 30 }} min --
+         0 means "never expire", in which case the chip is hidden. #}
+      {% if idle_timeout_min and idle_timeout_min > 0 %}
+      <div id="idle-countdown" title="Time remaining before automatic logout (resets on activity)"
+           data-idle-min="{{ idle_timeout_min }}"
+           style="margin-right:10px;padding:4px 10px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:14px;font-family:var(--mono);font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+        <span style="opacity:.6;">idle</span><span id="idle-countdown-val">--:--</span>
+      </div>
+      {% endif %}
+      <div class="user-chip" id="user-chip-menu" style="cursor:pointer;" tabindex="0" role="button" aria-haspopup="menu" aria-expanded="false">
+        <div class="user-av">{{ user.username[:2]|upper }}</div>
+        <div class="user-chip-name">{{ user.username|upper }}</div>
+        <span style="color:var(--text-dimmer);font-size:10px;margin-left:4px;" aria-hidden="true">&#9662;</span>
+      </div>
+      {# Dropdown lives at the end of <body> (injected by the script below)
+         so it escapes any stacking context created by the top-bar or the
+         page cards. position: fixed means z-index actually wins. #}
+      <template id="user-chip-dropdown-template">
+        <div id="user-chip-dropdown"
+             style="display:none;position:fixed;width:max-content;min-width:200px;
+                    background-color:rgb(14,17,22);border:1px solid rgba(255,255,255,.08);
+                    border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.55);
+                    z-index:10000;overflow:hidden;"
+             role="menu">
+          <div style="padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.08);font-family:var(--mono);font-size:10px;color:var(--text-dimmer);white-space:nowrap;">
+            Signed in as <span style="color:var(--text);">{{ user.username }}</span><br>
+            <span style="color:var(--text-dim);">{{ user.role }}</span>
+          </div>
+          <a href="/ui/settings#profile"  role="menuitem" data-menu-item="1" style="display:block;padding:8px 14px;color:var(--text);text-decoration:none;font-size:12px;white-space:nowrap;">My profile</a>
+          <a href="/ui/settings#sessions" role="menuitem" data-menu-item="1" style="display:block;padding:8px 14px;color:var(--text);text-decoration:none;font-size:12px;white-space:nowrap;">Active sessions</a>
+          <a href="/ui/settings#password" role="menuitem" data-menu-item="1" style="display:block;padding:8px 14px;color:var(--text);text-decoration:none;font-size:12px;white-space:nowrap;">Change password</a>
+          <a href="/ui/settings#mfa"      role="menuitem" data-menu-item="1" style="display:block;padding:8px 14px;color:var(--text);text-decoration:none;font-size:12px;white-space:nowrap;">Two-factor auth {% if user.mfa_enrolled %}<span style="color:var(--accent);font-size:10px;">&#10003;</span>{% endif %}</a>
+          <a href="/ui/settings#recovery" role="menuitem" data-menu-item="1" style="display:block;padding:8px 14px;color:var(--text);text-decoration:none;font-size:12px;white-space:nowrap;">Account recovery</a>
+          <a href="/ui/settings#tokens"   role="menuitem" data-menu-item="1" style="display:block;padding:8px 14px;color:var(--text);text-decoration:none;font-size:12px;white-space:nowrap;">API tokens</a>
+          <form method="post" action="/ui/logout" style="border-top:1px solid rgba(255,255,255,.08);margin:0;">
+            <button type="submit" role="menuitem" style="width:100%;text-align:left;padding:8px 14px;background:none;border:none;color:var(--danger);font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;">Sign out</button>
+          </form>
+        </div>
+      </template>
+      <script>
+      (function(){
+        const chip = document.getElementById('user-chip-menu');
+        const tmpl = document.getElementById('user-chip-dropdown-template');
+        if (!chip || !tmpl) return;
+        // Move the menu to document.body so no parent stacking context can
+        // bury it (the page content cards create their own contexts via
+        // opacity/transform; position:fixed + z-index:10000 on a body-level
+        // element is the only reliable way to float above all of them).
+        const menu = tmpl.content.firstElementChild.cloneNode(true);
+        document.body.appendChild(menu);
+
+        const hover = (link) => {
+          link.addEventListener('mouseenter', () => link.style.background = 'rgba(255,255,255,.05)');
+          link.addEventListener('mouseleave', () => link.style.background = 'transparent');
+        };
+        menu.querySelectorAll('[data-menu-item], button[type=submit]').forEach(hover);
+
+        const position = () => {
+          // Pin the menu's top-right just below the chip's bottom-right.
+          const r = chip.getBoundingClientRect();
+          menu.style.top  = (r.bottom + 6) + 'px';
+          // Align right edges by setting `left` to (chip.right - menu.width).
+          // Width may be `max-content` so we read after making it visible.
+          menu.style.left = '0px';                    // temp so width is measurable
+          const mw = menu.offsetWidth;
+          let left = r.right - mw;
+          if (left < 8) left = 8;                     // don't let it clip off-screen
+          menu.style.left = left + 'px';
+        };
+
+        const setOpen = (open) => {
+          if (open) {
+            menu.style.display = 'block';
+            position();
+          } else {
+            menu.style.display = 'none';
+          }
+          chip.setAttribute('aria-expanded', open ? 'true' : 'false');
+        };
+        const toggle = () => setOpen(menu.style.display === 'none');
+
+        chip.addEventListener('click', (e) => {
+          if (e.target.closest('a, button')) return;     // let links/submit bubble
+          e.stopPropagation();
+          toggle();
+        });
+        chip.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          if (e.key === 'Escape') setOpen(false);
+        });
+        document.addEventListener('click', (e) => {
+          if (!chip.contains(e.target) && !menu.contains(e.target)) setOpen(false);
+        });
+        // Keep the menu glued to the chip if the viewport reflows.
+        window.addEventListener('resize', () => { if (menu.style.display !== 'none') position(); });
+        window.addEventListener('scroll', () => { if (menu.style.display !== 'none') position(); }, {passive: true});
+      })();
+      </script>
+    {% else %}
+      <span>{{ branding.login_banner_text or 'RESTRICTED ACCESS SYSTEM' }}</span>
+    {% endif %}
+  </div>
+</div>

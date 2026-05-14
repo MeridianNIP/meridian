@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}Network Devices · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">Network Devices</div>
+    <div class="page-sub">SSH-based config backup with change detection. A new snapshot is only written when the SHA-256 differs from the last one — cosmetic refreshes don't pollute history. Notifications + webhooks fire on every real change.</div>
+</div>
+  <button class="btn btn-primary" id="btn-new" style="font-size:11px;">+ Add device</button>
+  {% with docs_path="admin/devices.html" %}{% include "_page_docs_link.html" %}{% endwith %}
+</div>
+
+{% include "_admin_tabs.html" %}
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-head"><div class="card-title">Inventory</div><span id="dev-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">loading…</span></div>
+  <table style="width:100%;font-size:12px;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Name</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Kind</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Management</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Site / tags</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Last backup</th>
+      <th style="text-align:left;padding:8px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);text-transform:uppercase;">Auto</th>
+      <th style="text-align:right;padding:8px;"></th>
+    </tr></thead>
+    <tbody id="dev-rows"></tbody>
+  </table>
+</div>
+
+<!-- Drawer: add/edit + snapshot history + diff -->
+<div id="drawer" class="card" style="display:none;margin-bottom:14px;">
+  <div class="card-head">
+    <div class="card-title" id="drawer-title">Device</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn" id="btn-backup-now" style="font-size:11px;">▸ Backup now</button>
+      <button class="btn btn-primary" id="btn-save" style="font-size:11px;">Save</button>
+      <button class="btn" id="btn-del" style="font-size:11px;color:var(--danger);">Delete</button>
+      <button class="btn" id="btn-close" style="font-size:11px;">Close</button>
+    </div>
+  </div>
+
+  <div style="padding:12px 14px;">
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Name</label><input class="input mono" id="fld-name" required></div>
+      <div class="field"><label>Kind</label>
+        <select class="select" id="fld-kind">
+          <optgroup label="Cisco">
+            <option value="cisco_ios">Cisco IOS</option>
+            <option value="cisco_iosxe">Cisco IOS-XE</option>
+            <option value="cisco_iosxr">Cisco IOS-XR</option>
+            <option value="cisco_nxos">Cisco NX-OS</option>
+            <option value="cisco_asa">Cisco ASA</option>
+            <option value="cisco_wlc">Cisco WLC</option>
+            <option value="cisco_s300">Cisco SMB (S300 / SG)</option>
+          </optgroup>
+          <optgroup label="Other enterprise switches / routers">
+            <option value="juniper_junos">Juniper Junos</option>
+            <option value="arista_eos">Arista EOS</option>
+            <option value="huawei">Huawei VRP</option>
+            <option value="aruba_aoscx">Aruba AOS-CX</option>
+            <option value="aruba_os">Aruba OS (older)</option>
+            <option value="hp_procurve">HP / HPE ProCurve</option>
+            <option value="hp_comware">HPE Comware</option>
+            <option value="dell_os10">Dell OS10</option>
+            <option value="dell_force10">Dell Force10</option>
+            <option value="dell_powerconnect">Dell PowerConnect</option>
+            <option value="extreme_exos">Extreme EXOS</option>
+            <option value="brocade_fastiron">Brocade FastIron</option>
+          </optgroup>
+          <optgroup label="Firewalls">
+            <option value="palo_alto">Palo Alto PAN-OS</option>
+            <option value="fortinet">Fortinet FortiOS</option>
+            <option value="sonicwall">SonicWall</option>
+            <option value="pfsense">pfSense</option>
+            <option value="opnsense">OPNsense</option>
+            <option value="sophos">Sophos UTM / XG</option>
+          </optgroup>
+          <optgroup label="Load balancers / ADCs">
+            <option value="f5_tmsh">F5 BIG-IP (tmsh)</option>
+            <option value="citrix_netscaler">Citrix NetScaler</option>
+          </optgroup>
+          <optgroup label="SoHo / open-source">
+            <option value="mikrotik">MikroTik RouterOS</option>
+            <option value="ubiquiti_edge">Ubiquiti EdgeOS / EdgeRouter</option>
+            <option value="ubiquiti_unifi">Ubiquiti UniFi (linux)</option>
+            <option value="vyos">VyOS</option>
+          </optgroup>
+          <optgroup label="NAS / appliance">
+            <option value="synology">Synology DSM</option>
+            <option value="qnap">QNAP QTS</option>
+          </optgroup>
+          <optgroup label="Generic">
+            <option value="generic_ssh">Generic SSH (Linux)</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field"><label>Site</label><input class="input mono" id="fld-site" placeholder="nyc-dc1"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Management host</label><input class="input mono" id="fld-host" placeholder="10.0.0.1 or sw1.example.internal" required></div>
+      <div class="field"><label>Port</label><input class="input mono" id="fld-port" type="number" value="22" min="1" max="65535"></div>
+      <div class="field"><label>Username</label><input class="input mono" id="fld-user"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:2;"><label>Password / key (write-only)</label><input class="input mono" id="fld-pw" type="password" placeholder="leave blank to keep current"></div>
+      <div class="field" style="flex:2;"><label>Enable password (Cisco)</label><input class="input mono" id="fld-enpw" type="password" placeholder="optional"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:3;"><label>Description</label><input class="input" id="fld-desc"></div>
+      <div class="field"><label>Tags (comma-separated)</label><input class="input mono" id="fld-tags" placeholder="core, edge, lab"></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Enabled</label><select class="select" id="fld-enabled"><option value="true">yes</option><option value="false">no</option></select></div>
+      <div class="field"><label>Auto-backup</label><select class="select" id="fld-auto"><option value="true">yes · pulled on schedule</option><option value="false">no · manual only</option></select></div>
+      <div class="field"><label>Retain snapshots</label><input class="input mono" id="fld-retain" type="number" min="1" max="10000" value="50"></div>
+      <div class="field"><label>Override command</label><input class="input mono" id="fld-cmd" placeholder="blank = use default for kind"></div>
+    </div>
+    <div style="padding:0 14px 2px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);line-height:1.5;">
+      Nightly retention trims each device to its own <strong>Retain snapshots</strong> count (keeps the N most recent). A separate age cap from <em>retention_rules.scope='device_snapshots'</em> still applies globally.
+    </div>
+    <div id="drawer-status" style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:8px;"></div>
+  </div>
+
+  <div class="card-head" style="border-top:1px solid var(--border);">
+    <div class="card-title">Config snapshots</div>
+    <span id="snap-count" style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);"></span>
+  </div>
+  <div id="snap-list" style="padding:0 14px 14px;"></div>
+  <div id="diff-view" style="padding:0 14px 14px;"></div>
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">Recent backup runs</div></div>
+  <div id="runs-list" style="padding:0;"></div>
+</div>
+
+<script>
+(function(){
+  const statusColor = {ok:'var(--accent)', partial:'var(--warn)', failed:'var(--danger)', running:'var(--text-dim)'};
+  let current = null;
+  let selectedSnapshots = [];
+
+  async function jfetch(method, url, body) {
+    const r = await fetch(url, {
+      method, credentials:'same-origin',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    return {ok: r.ok, data, status: r.status};
+  }
+
+  function openDrawer(dev) {
+    current = dev || {id: null, name: '', kind: 'cisco_ios', mgmt_host: '',
+                     mgmt_port: 22, username: '', enabled: true,
+                     auto_backup: true, retain_snapshots_count: 50,
+                     tags: [], site: '', description: '',
+                     config: {}};
+    document.getElementById('drawer').style.display = 'block';
+    document.getElementById('drawer-title').textContent = dev ? `Edit · ${dev.name}` : 'New device';
+    document.getElementById('fld-name').value = current.name || '';
+    document.getElementById('fld-name').disabled = !!current.id;
+    document.getElementById('fld-kind').value = current.kind;
+    document.getElementById('fld-site').value = current.site || '';
+    document.getElementById('fld-host').value = current.mgmt_host || '';
+    document.getElementById('fld-port').value = current.mgmt_port || 22;
+    document.getElementById('fld-user').value = current.username || '';
+    document.getElementById('fld-pw').value = '';
+    document.getElementById('fld-enpw').value = '';
+    document.getElementById('fld-desc').value = current.description || '';
+    document.getElementById('fld-tags').value = (current.tags || []).join(', ');
+    document.getElementById('fld-enabled').value = String(!!current.enabled);
+    document.getElementById('fld-auto').value = String(!!current.auto_backup);
+    document.getElementById('fld-retain').value = current.retain_snapshots_count ?? 50;
+    document.getElementById('fld-cmd').value = (current.config || {}).show_command || '';
+    document.getElementById('drawer-status').textContent = '';
+    document.getElementById('snap-list').innerHTML = '';
+    document.getElementById('snap-count').textContent = '';
+    document.getElementById('diff-view').innerHTML = '';
+    document.getElementById('btn-del').style.display = current.id ? '' : 'none';
+    document.getElementById('btn-backup-now').style.display = current.id ? '' : 'none';
+    if (current.id) loadSnapshots();
+  }
+
+  function closeDrawer() { document.getElementById('drawer').style.display = 'none'; current = null; }
+
+  function buildPayload() {
+    const tags = document.getElementById('fld-tags').value
+                   .split(',').map(s => s.trim()).filter(Boolean);
+    const cmd = document.getElementById('fld-cmd').value.trim();
+    const payload = {
+      description: document.getElementById('fld-desc').value || null,
+      mgmt_host: document.getElementById('fld-host').value,
+      mgmt_port: Number(document.getElementById('fld-port').value),
+      username: document.getElementById('fld-user').value || null,
+      enabled: document.getElementById('fld-enabled').value === 'true',
+      auto_backup: document.getElementById('fld-auto').value === 'true',
+      retain_snapshots_count: Number(document.getElementById('fld-retain').value) || 50,
+      tags, site: document.getElementById('fld-site').value || null,
+      config: cmd ? {show_command: cmd} : {},
+    };
+    const pw = document.getElementById('fld-pw').value;
+    const enpw = document.getElementById('fld-enpw').value;
+    if (pw) payload.password = pw;
+    if (enpw) payload.enable_password = enpw;
+    return payload;
+  }
+
+  async function save() {
+    const p = buildPayload();
+    if (current.id) {
+      const {ok, data} = await jfetch('PATCH', `/api/v1/admin/devices/${current.id}`, p);
+      if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+    } else {
+      p.name = document.getElementById('fld-name').value;
+      p.kind = document.getElementById('fld-kind').value;
+      const {ok, data} = await jfetch('POST', '/api/v1/admin/devices', p);
+      if (!ok) { alert(`error: ${data.error || data.detail}`); return; }
+      current.id = data.id;
+      document.getElementById('fld-name').disabled = true;
+      document.getElementById('btn-del').style.display = '';
+      document.getElementById('btn-backup-now').style.display = '';
+    }
+    document.getElementById('drawer-status').textContent = '✓ saved';
+    document.getElementById('drawer-status').style.color = 'var(--accent)';
+    loadInventory();
+  }
+
+  async function del() {
+    if (!current?.id) return;
+    if (!confirm(`Delete device "${current.name}"? Snapshots are retained until the device-retention job trims them.`)) return;
+    const {ok, data} = await jfetch('DELETE', `/api/v1/admin/devices/${current.id}`);
+    if (!ok && ok !== undefined) { alert(`error: ${data.error || data.detail}`); return; }
+    closeDrawer();
+    loadInventory();
+  }
+
+  async function backupNow() {
+    if (!current?.id) return;
+    const s = document.getElementById('drawer-status');
+    s.textContent = 'connecting…'; s.style.color = 'var(--text-dim)';
+    const {ok, data} = await jfetch('POST', `/api/v1/admin/devices/${current.id}/backup`);
+    if (!ok) { s.textContent = `error: ${data.error || data.detail}`; s.style.color = 'var(--danger)'; return; }
+    s.innerHTML = data.ok
+      ? `<span style="color:var(--accent);">✓ ok</span> · ${data.changed ? 'CHANGED — new snapshot recorded' : 'no change (same SHA)'}<br>sha256 <span style="color:var(--text);">${(data.sha256 || '').slice(0,16)}…</span> · ${data.size_bytes} bytes · ${data.duration_ms} ms`
+      : `<span style="color:var(--danger);">✗ ${data.error}</span>`;
+    loadSnapshots();
+    loadInventory();
+  }
+
+  async function loadInventory() {
+    const {ok, data} = await jfetch('GET', '/api/v1/admin/devices');
+    const rows = document.getElementById('dev-rows');
+    const count = document.getElementById('dev-count');
+    if (!ok) { count.textContent = `error: ${data.error || data.detail}`; return; }
+    count.textContent = `${data.length} device${data.length === 1 ? '' : 's'}`;
+    rows.innerHTML = data.map(d => `
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04);${!d.enabled ? 'opacity:0.5;' : ''}">
+        <td style="padding:8px;color:var(--text);font-family:var(--mono);font-size:11px;">${d.name}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--accent);font-size:10px;">${d.kind}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dim);font-size:11px;">${d.mgmt_host}:${d.mgmt_port}</td>
+        <td style="padding:8px;font-family:var(--mono);color:var(--text-dimmer);font-size:10px;">${d.site || ''} ${(d.tags || []).map(t => `<span style="background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;margin-right:3px;">${t}</span>`).join('')}</td>
+        <td style="padding:8px;font-family:var(--mono);font-size:10px;">
+          ${d.last_backup_at
+            ? `<span style="color:${d.last_backup_ok ? 'var(--accent)' : 'var(--danger)'};">${d.last_backup_ok ? '✓' : '✗'}</span> ${d.last_backup_at.slice(0,19).replace('T',' ')}`
+            : '<span style="color:var(--text-dimmer);">never</span>'}
+          ${d.last_backup_error ? `<div style="color:var(--danger);font-size:9px;max-width:260px;">${d.last_backup_error.slice(0, 120)}</div>` : ''}
+        </td>
+        <td style="padding:8px;font-family:var(--mono);color:${d.auto_backup ? 'var(--accent)' : 'var(--text-dimmer)'};">${d.auto_backup ? 'yes' : 'no'}</td>
+        <td style="padding:8px;text-align:right;">
+          <button class="btn" data-edit="${d.id}" style="font-size:10px;">edit</button>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="7" style="padding:14px;color:var(--text-dimmer);font-size:12px;">No devices yet — click + Add device to register one.</td></tr>';
+
+    rows.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', async () => {
+      const {ok, data: dev} = await jfetch('GET', `/api/v1/admin/devices`);
+      if (ok) openDrawer(dev.find(x => x.id === b.dataset.edit));
+    }));
+
+    // Runs panel
+    const {ok: rOk, data: rData} = await jfetch('GET', '/api/v1/admin/devices/runs');
+    if (rOk) {
+      document.getElementById('runs-list').innerHTML = rData.map(r => `
+        <div style="padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.04);font-family:var(--mono);font-size:11px;">
+          <span style="color:var(--text-dimmer);">${(r.started_at || '').slice(0,19).replace('T',' ')}</span>
+          <span style="color:${statusColor[r.status]};font-weight:600;margin:0 10px;">${r.status}</span>
+          <span style="color:var(--text-dim);">${r.trigger_kind}</span>
+          <span style="color:var(--text);margin-left:10px;">${r.devices_attempted} tried</span>
+          <span style="color:var(--accent);margin-left:6px;">${r.devices_ok} ok</span>
+          <span style="color:var(--warn);margin-left:6px;">${r.devices_changed} changed</span>
+          <span style="color:var(--danger);margin-left:6px;">${r.devices_failed} failed</span>
+        </div>`).join('') || '<div style="padding:14px;color:var(--text-dimmer);font-size:11px;">no backup runs yet</div>';
+    }
+  }
+
+  async function loadSnapshots() {
+    if (!current?.id) return;
+    const {ok, data} = await jfetch('GET', `/api/v1/admin/devices/${current.id}/snapshots`);
+    const el = document.getElementById('snap-list');
+    const count = document.getElementById('snap-count');
+    if (!ok) { el.textContent = `error: ${data.error || data.detail}`; return; }
+    count.textContent = `${data.length} snapshot${data.length === 1 ? '' : 's'}`;
+    selectedSnapshots = [];
+    el.innerHTML = data.length === 0
+      ? '<div style="color:var(--text-dimmer);font-size:11px;padding:8px 0;">no snapshots yet — click ▸ Backup now</div>'
+      : '<div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:6px;">pick TWO to compare, or click VIEW on a single row</div>' +
+        data.map(s => `
+          <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:10px;align-items:center;">
+            <input type="checkbox" data-cmp="${s.id}">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${(s.ts || '').slice(0,19).replace('T',' ')}</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);">${s.trigger_kind}</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);">${s.sha256_hex.slice(0,16)}…</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">${s.line_count} lines · ${s.size_bytes}B</span>
+            ${s.diff_lines_added != null
+              ? `<span style="font-family:var(--mono);font-size:10px;"><span style="color:var(--accent);">+${s.diff_lines_added}</span> / <span style="color:var(--danger);">-${s.diff_lines_removed}</span></span>`
+              : ''}
+            <span style="flex:1;"></span>
+            <button class="btn" data-view="${s.id}" style="font-size:10px;padding:2px 8px;">view</button>
+          </div>`).join('');
+
+    el.querySelectorAll('[data-cmp]').forEach(cb => cb.addEventListener('change', () => {
+      if (cb.checked) selectedSnapshots.push(cb.dataset.cmp);
+      else selectedSnapshots = selectedSnapshots.filter(x => x !== cb.dataset.cmp);
+      if (selectedSnapshots.length === 2) diff(selectedSnapshots[0], selectedSnapshots[1]);
+    }));
+    el.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => view(b.dataset.view)));
+  }
+
+  async function view(snapId) {
+    const {ok, data} = await jfetch('GET', `/api/v1/admin/devices/${current.id}/snapshots/${snapId}`);
+    if (!ok) return;
+    document.getElementById('diff-view').innerHTML = `
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:8px;">
+        ${data.ts.slice(0,19).replace('T',' ')} · ${data.trigger_kind} · ${data.line_count} lines · sha256 ${data.sha256_hex}
+        ${data.diff_from_prev ? ` · diff: +${data.diff_lines_added}/-${data.diff_lines_removed}` : ''}
+      </div>
+      <pre style="background:rgba(0,0,0,.3);border-radius:4px;padding:12px;max-height:500px;overflow:auto;font-size:11px;line-height:1.5;color:var(--text);">${escapeHtml(data.raw_config).slice(0, 100000)}</pre>
+      ${data.diff_from_prev ? `<div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--text-dimmer);">diff vs previous:</div>${renderDiff(data.diff_from_prev)}` : ''}`;
+  }
+
+  async function diff(a, b) {
+    const {ok, data} = await jfetch('GET', `/api/v1/admin/devices/${current.id}/snapshots/${a}/diff/${b}`);
+    if (!ok) { document.getElementById('diff-view').textContent = 'diff failed'; return; }
+    document.getElementById('diff-view').innerHTML = `
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dimmer);margin-bottom:8px;">
+        ${data.from.ts.slice(0,19)} → ${data.to.ts.slice(0,19)}
+        · <span style="color:var(--accent);">+${data.lines_added}</span>
+        · <span style="color:var(--danger);">-${data.lines_removed}</span>
+      </div>
+      ${renderDiff(data.diff)}`;
+  }
+
+  function renderDiff(diffText) {
+    return '<pre style="background:rgba(0,0,0,.3);border-radius:4px;padding:12px;max-height:500px;overflow:auto;font-size:11px;line-height:1.5;">' +
+      (diffText || '').split('\n').map(line => {
+        if (line.startsWith('+++') || line.startsWith('---')) return `<span style="color:var(--text-dimmer);">${escapeHtml(line)}</span>`;
+        if (line.startsWith('+')) return `<span style="color:var(--accent);">${escapeHtml(line)}</span>`;
+        if (line.startsWith('-')) return `<span style="color:var(--danger);">${escapeHtml(line)}</span>`;
+        if (line.startsWith('@@')) return `<span style="color:var(--warn);">${escapeHtml(line)}</span>`;
+        return `<span style="color:var(--text-dim);">${escapeHtml(line)}</span>`;
+      }).join('\n') + '</pre>';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  document.getElementById('btn-new').addEventListener('click', () => openDrawer(null));
+  document.getElementById('btn-save').addEventListener('click', save);
+  document.getElementById('btn-del').addEventListener('click', del);
+  document.getElementById('btn-close').addEventListener('click', closeDrawer);
+  document.getElementById('btn-backup-now').addEventListener('click', backupNow);
+
+  loadInventory();
+})();
+</script>
+{% endblock %}

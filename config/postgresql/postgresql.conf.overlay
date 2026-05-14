@@ -1,0 +1,53 @@
+# Meridian · PostgreSQL overlay tuning
+# Installed to /etc/postgresql/15/main/conf.d/meridian.conf (via include_dir).
+# Tuned for a 4 CPU / 4 GB reference install. Resize via `meridian-nip tune-db`.
+
+# --- Connection + memory ---
+listen_addresses          = 'localhost'
+max_connections           = 100
+shared_buffers            = 1GB
+effective_cache_size      = 2GB
+work_mem                  = 16MB
+maintenance_work_mem      = 128MB
+huge_pages                = try
+
+# --- WAL + checkpoints ---
+wal_level                 = replica
+wal_compression           = on
+max_wal_size              = 2GB
+min_wal_size              = 256MB
+checkpoint_timeout        = 15min
+checkpoint_completion_target = 0.9
+archive_mode              = on
+archive_command           = '/opt/meridian/scripts/wal_archive.sh "%p" "%f"'
+
+# --- Autovacuum (hot tables: audit_events, query_history, monitor_*) ---
+autovacuum                       = on
+autovacuum_max_workers           = 3
+autovacuum_naptime               = 30s
+autovacuum_vacuum_scale_factor   = 0.1
+autovacuum_analyze_scale_factor  = 0.05
+
+# --- Logging ---
+logging_collector         = on
+log_directory             = '/var/log/postgresql'
+log_filename              = 'postgresql-%a.log'
+log_truncate_on_rotation  = on
+log_rotation_age          = 1d
+log_min_duration_statement = 250
+log_line_prefix           = '%m [%p] %u@%d '
+log_lock_waits            = on
+log_temp_files            = 16MB
+log_statement             = 'ddl'
+
+# --- Security ---
+ssl                       = off    # Meridian reaches PG via local socket only
+password_encryption       = scram-sha-256
+
+# --- Planner ---
+default_statistics_target = 200
+random_page_cost          = 1.1    # SSD assumption
+
+# --- Meridian-specific custom GUC (for tamper-evident row_hash) ---
+# The `meridian.row_hmac_key` setting is populated at connect time by the app.
+# PG 9.2+ accepts dotted custom GUCs at runtime; no registration directive needed.

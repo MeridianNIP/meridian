@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Locked out · {{ branding.display_name|default('Meridian') }}{% endblock %}
+
+{% block content %}
+<div style="max-width:560px;margin:60px auto;">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Locked out — request help</div></div>
+
+    <div id="lo-intro" style="padding:14px 16px;">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.55;">
+        Use this form only after the other paths haven't worked:
+        <ul style="margin:8px 0 0;padding-left:18px;">
+          <li><a href="/ui/forgot-password" style="color:var(--accent);">Forgot password</a> resets your password if you can still reach your email.</li>
+          <li>An admin can <strong>reset your MFA</strong> from the Users page if you've lost your authenticator and burned your backup codes.</li>
+          <li>If your IP is fail2ban-blocked, the admin can clear that from the System Health → Fail2ban card.</li>
+        </ul>
+        Submitting this form notifies an administrator out-of-band with your
+        message and a contact email. One submission per address per hour.
+      </div>
+
+      <form id="lo-form">
+        <div class="form-row">
+          <div class="field">
+            <label>Username you're trying to log in as (if known)</label>
+            <input class="input mono" name="claimed_username" maxlength="64" placeholder="optional">
+          </div>
+          <div class="field">
+            <label>Contact email (where the admin can reply)</label>
+            <input class="input" name="contact_email" type="email" required placeholder="you@example.com">
+          </div>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <label>What happened?</label>
+          <textarea class="input" name="context" rows="5" required minlength="10" maxlength="2000"
+                    placeholder="Briefly describe what you tried — e.g. 'lost my phone with the authenticator, no backup codes', or 'getting connection refused since trying to deploy code from my new laptop'."></textarea>
+        </div>
+        <div style="margin-top:12px;">
+          <button class="btn btn-primary" type="submit">Submit appeal</button>
+          <a href="/ui/login" class="btn btn-ghost" style="margin-left:8px;text-decoration:none;">Back to login</a>
+          <span id="lo-status" style="margin-left:12px;font-family:var(--mono);font-size:11px;"></span>
+        </div>
+      </form>
+    </div>
+
+    <div id="lo-success" style="display:none;padding:14px 16px;">
+      <div style="font-size:13px;color:var(--accent);margin-bottom:10px;font-weight:600;">Submitted.</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.55;">
+        An administrator has been notified. Expect a reply at the contact
+        email you provided. If you don't hear back, you may need to reach
+        them through another channel — this submission does not bypass
+        the lockout itself; it just brings it to attention.
+      </div>
+      <div style="margin-top:14px;">
+        <a href="/ui/login" class="btn btn-ghost" style="text-decoration:none;">Return to login</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const form = document.getElementById('lo-form');
+  const statusEl = document.getElementById('lo-status');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    statusEl.textContent = 'submitting…';
+    statusEl.style.color = 'var(--text-dim)';
+    const body = {};
+    new FormData(form).forEach((v, k) => { if (v) body[k] = v; });
+    const r = await fetch('/api/v1/auth/lockout-appeal', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'omit',
+      body: JSON.stringify(body),
+    });
+    let data = {}; try { data = await r.json(); } catch {}
+    if (r.ok) {
+      document.getElementById('lo-intro').style.display = 'none';
+      document.getElementById('lo-success').style.display = 'block';
+    } else if (r.status === 429) {
+      statusEl.textContent = data.error || data.detail || 'rate limited — try again later';
+      statusEl.style.color = 'var(--warn)';
+    } else {
+      statusEl.textContent = data.error || data.detail || 'submission failed';
+      statusEl.style.color = 'var(--danger)';
+    }
+  });
+})();
+</script>
+{% endblock %}
