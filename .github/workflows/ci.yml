@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# Node 20 is being removed from GitHub-hosted runners on 2026-09-16 and the
+# default is flipping to Node 24 on 2026-06-02. The "actions on Node 20"
+# warnings reference this. Opt into Node 24 NOW so any incompat surfaces
+# in normal CI runs rather than as a green→red flip on the deadline.
+# Once every action we depend on ships a release that explicitly targets
+# Node 24, this flag becomes unnecessary and can be removed.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   lint:
     name: Lint · Python + SQL + shell
