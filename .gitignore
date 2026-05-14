@@ -71,3 +71,8 @@ secrets/
 *.qcow2
 *.ova
 *.iso
+
+# --- SSH public keys (operator-local; per-build keys live in MERIDIAN_AUTHORIZED_KEY env) ---
+deploy-pubkey.pub
+*-pubkey.pub
+*.pub
