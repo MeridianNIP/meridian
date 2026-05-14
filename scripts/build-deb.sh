@@ -259,6 +259,9 @@ ok "$OUTPUT_DIR/$DEB ($(stat -c%s "$OUTPUT_DIR/$DEB") bytes)"
 info "dpkg-deb --info:"
 dpkg-deb --info "$OUTPUT_DIR/$DEB" | sed 's/^/    /'
 info "dpkg-deb --contents (top 20):"
-dpkg-deb --contents "$OUTPUT_DIR/$DEB" | head -20 | sed 's/^/    /'
+# head closes the pipe early which SIGPIPEs dpkg-deb; under `set -e`
+# that nukes the whole script. Pump through a buffer + ignore the
+# downstream exit.
+dpkg-deb --contents "$OUTPUT_DIR/$DEB" 2>/dev/null | awk 'NR<=20{print "    "$0}' || true
 
 ok "done — built $DEB"
