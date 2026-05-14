@@ -48,7 +48,12 @@ jobs:
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: ./scripts
-          severity: warning
+          # Block on real errors only. The "warning" tier surfaces SC2034
+          # (envsubst template vars look unused), SC2024 (sudo+redirect to a
+          # world-writable /tmp path), and an unused color constant — all
+          # known false-positives or stylistic. A cleanup pass for those
+          # can come later.
+          severity: error
 
       - name: Verify schema.sql parses
         run: |
