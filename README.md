@@ -66,12 +66,37 @@ external sources.
 
 ## Install
 
-Three supported install paths. Pick whichever matches what you have.
+Four supported install paths. Pick whichever matches what you have.
 
-### Quick start
+### Quick start — `apt install` (Debian 12/13 hosts)
 
-Releases ship a prebuilt **preseed-injected Debian 13 ISO** as a GitHub
-Release asset. Most users want to grab it directly:
+The shortest install path. Add the MeridianNIP apt repo, install the
+package, drop in an answers file, run the installer:
+
+```bash
+curl -fsSL https://meridiannip.com/meridiannip.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/meridiannip-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/meridiannip-archive-keyring.gpg] https://meridiannip.com/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/meridian.list
+sudo apt update
+sudo apt install meridian-nip
+
+# Then stage the answers file:
+sudo cp /opt/meridian/answers.example.env /etc/meridian/answers.local.env
+sudo $EDITOR /etc/meridian/answers.local.env
+
+# And kick off install.sh:
+sudo /opt/meridian/install.sh --unattended --config /etc/meridian/answers.local.env
+```
+
+Future versions arrive via `sudo apt upgrade meridian-nip`. Signing-key
+fingerprint: `5072 F226 10C9 2331 A8E2 428C EE4D C4BD 960D 8B36`.
+
+### Quick start — ISO (Hyper-V / VMware / VirtualBox)
+
+For Windows users or anyone who'd rather skip the Debian-install step,
+releases also ship a prebuilt **preseed-injected Debian 13 ISO** as a GitHub
+Release asset:
 
 - **Latest release**: https://github.com/MeridianNIP/meridian/releases/latest
 - **Direct ISO download**: https://github.com/MeridianNIP/meridian/releases/latest/download/debian-13.4.0-amd64-meridian-unattended.iso
