@@ -6,20 +6,7 @@ semantic versioning.
 
 ## [Unreleased]
 
-Queued for v1.0.2:
-
-### Fixed (TODO)
-- `install.sh` on `--upgrade` regenerates the PostgreSQL `meridian`
-  role password instead of reusing the existing one from
-  `/etc/meridian/meridian.conf`, then fails the post-stage connection
-  test with "password authentication failed for user meridian".
-  Surfaced 2026-05-14 on the v1.0.1 apt-upgrade-of-prod validation —
-  the previous two upgrade fixes unblocked install.sh enough to
-  reach this stage. Fix: when `--upgrade` is in effect and
-  `/etc/meridian/meridian.conf` already declares a `db_dsn` with
-  embedded password, parse it and reuse the password rather than
-  generating a new one (or skip `setup_postgresql`'s role-password
-  step entirely on upgrade).
+Nothing pending.
 
 ## [1.0.1] — 2026-05-14
 
@@ -27,6 +14,9 @@ Bug-fix release; only `install.sh` changes. No DB migrations, no app
 changes — safe to `apt upgrade meridian-nip` on any v1.0.0 install.
 Existing v1.0.0 VM appliance and ISO remain valid (the bugs only
 fire on the upgrade path, not on fresh installs).
+
+Three install.sh upgrade-path bugs were caught by validating against
+the production VM after each fix; this release bundles all three.
 
 Release page: <https://github.com/MeridianNIP/meridian/releases/tag/v1.0.1>
 
@@ -41,6 +31,12 @@ Release page: <https://github.com/MeridianNIP/meridian/releases/tag/v1.0.1>
   because the CREATE TYPE statements in schema.sql aren't IF-NOT-EXISTS
   guarded. Now skipped automatically when the public schema already
   has tables — migrate.sh handles reconciliation in that case.
+- `install.sh` regenerating the PostgreSQL `meridian` role password on
+  every `--upgrade`, which broke the post-stage connection test with
+  "password authentication failed for user meridian". On upgrade the
+  installer now parses the existing `db_dsn` from
+  `/etc/meridian/meridian.conf` and reuses that password instead of
+  generating a fresh one.
 
 ## [1.0.0] — 2026-05-14
 

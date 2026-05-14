@@ -361,8 +361,26 @@ configure_interactive() {
   '
   prompt DB_NAME "meridian" "Database name"
   prompt DB_USER "meridian" "Database role (user)"
-  DB_PASSWORD=$(gen_password 32)
-  info "DB password auto-generated (shown in summary)."
+  # On --upgrade, reuse the existing DB password from meridian.conf so the
+  # running app + new install.sh agree. Without this, every upgrade
+  # generates a fresh password, install.sh writes it to meridian.conf, the
+  # running app picks it up at restart — but the PostgreSQL role still has
+  # the OLD password, so connections fail. Surfaced 2026-05-14 on the
+  # v1.0.1 apt-upgrade-of-prod validation.
+  if [[ "$MODE" == "upgrade" && -r /etc/meridian/meridian.conf ]]; then
+    local existing_pw
+    existing_pw=$(sed -nE 's|^db_dsn[[:space:]]*=[[:space:]]*"postgresql://[^:]+:([^@]*)@.*"|\1|p' /etc/meridian/meridian.conf | head -1)
+    if [[ -n "$existing_pw" ]]; then
+      DB_PASSWORD="$existing_pw"
+      info "DB password reused from existing /etc/meridian/meridian.conf"
+    else
+      DB_PASSWORD=$(gen_password 32)
+      warn "Upgrade mode but could not parse existing DB password from meridian.conf — generating a new one"
+    fi
+  else
+    DB_PASSWORD=$(gen_password 32)
+    info "DB password auto-generated (shown in summary)."
+  fi
 
   explain "Timezone" $'
   All stored timestamps are UTC. The default display timezone for emails,
