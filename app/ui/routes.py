@@ -258,7 +258,7 @@ async def dashboard(
     # (user_id) and for user-type targets (target_key), which renders as
     # "auth.login · 81b79f88-..." -- useless to admins. Enrich each row with
     # the actor's username and, when target_type='user', the target's
-    # username, so the dashboard shows "pj · auth.login" / "admin ·
+    # username, so the dashboard shows "alice · auth.login" / "admin ·
     # user.delete · bob".
     audit_rows = recent_audit(db, limit=8)
     uids: set[_uuid.UUID] = set()

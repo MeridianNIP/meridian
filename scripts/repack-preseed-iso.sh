@@ -12,7 +12,8 @@
 #
 # Result: drop the ISO in a Hyper-V VM, power on, walk away, come back
 # in ~10 minutes to a freshly-installed Debian with SSH key already
-# authorized for the `pj` user. Then `install.sh --unattended` finishes
+# authorized for the `admin` user (when MERIDIAN_AUTHORIZED_KEY is set
+# at ISO-build time). Then `install.sh --unattended` finishes
 # the Meridian-specific provisioning.
 #
 # Usage:
@@ -62,12 +63,38 @@ chmod -R u+w "$WORK/iso"
 ok "extracted to $WORK/iso ($(du -sh "$WORK/iso" | cut -f1))"
 
 # ---------------------------------------------------------------------
-# Step 2 — drop preseed.cfg in at the ISO root. The kernel param
-# `preseed/file=/cdrom/preseed.cfg` resolves to here because the
-# installer mounts the ISO at /cdrom.
+# Step 2 — drop preseed.cfg in at the ISO root, substituting the
+# @@AUTHORIZED_KEY@@ placeholder with the operator's actual SSH
+# public key (if any). The placeholder approach means the committed
+# preseed never carries a specific user's key — each operator who
+# builds an ISO from this repo bakes in their own.
+#
+# Key source priority:
+#   1. MERIDIAN_AUTHORIZED_KEY env var (single pubkey line)
+#   2. MERIDIAN_AUTHORIZED_KEY_FILE env var (path to a key file)
+#   3. nothing — installed system has empty authorized_keys files;
+#      operator logs in once with the throwaway password
+#      (`admin / meridiannip`) and adds their own key before doing
+#      anything else.
 # ---------------------------------------------------------------------
 info "Step 2/4 — inject preseed"
-cp "$PRESEED_SRC" "$WORK/iso/preseed.cfg"
+
+if [[ -n "${MERIDIAN_AUTHORIZED_KEY:-}" ]]; then
+    AUTH_KEY="${MERIDIAN_AUTHORIZED_KEY}"
+    info "authorized key: from MERIDIAN_AUTHORIZED_KEY env var"
+elif [[ -n "${MERIDIAN_AUTHORIZED_KEY_FILE:-}" ]] && [[ -r "${MERIDIAN_AUTHORIZED_KEY_FILE}" ]]; then
+    AUTH_KEY=$(head -1 "${MERIDIAN_AUTHORIZED_KEY_FILE}" | tr -d '\n')
+    info "authorized key: from ${MERIDIAN_AUTHORIZED_KEY_FILE}"
+else
+    AUTH_KEY=""
+    warn "no MERIDIAN_AUTHORIZED_KEY set; installed system will have no SSH key authorized"
+    warn "  - log in once at console as admin / meridiannip"
+    warn "  - then add your own key via ssh-copy-id or by editing ~/.ssh/authorized_keys"
+fi
+
+# sed-substitute the placeholder. Use a delimiter that can't appear
+# inside the key (`|`).
+sed "s|@@AUTHORIZED_KEY@@|${AUTH_KEY}|g" "$PRESEED_SRC" > "$WORK/iso/preseed.cfg"
 ok "added /preseed.cfg ($(stat -c%s "$WORK/iso/preseed.cfg") bytes)"
 
 # ---------------------------------------------------------------------
