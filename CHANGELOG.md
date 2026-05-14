@@ -6,7 +6,20 @@ semantic versioning.
 
 ## [Unreleased]
 
-Nothing pending.
+Queued for v1.0.2:
+
+### Fixed (TODO)
+- `install.sh` on `--upgrade` regenerates the PostgreSQL `meridian`
+  role password instead of reusing the existing one from
+  `/etc/meridian/meridian.conf`, then fails the post-stage connection
+  test with "password authentication failed for user meridian".
+  Surfaced 2026-05-14 on the v1.0.1 apt-upgrade-of-prod validation —
+  the previous two upgrade fixes unblocked install.sh enough to
+  reach this stage. Fix: when `--upgrade` is in effect and
+  `/etc/meridian/meridian.conf` already declares a `db_dsn` with
+  embedded password, parse it and reuse the password rather than
+  generating a new one (or skip `setup_postgresql`'s role-password
+  step entirely on upgrade).
 
 ## [1.0.1] — 2026-05-14
 
