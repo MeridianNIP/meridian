@@ -614,6 +614,15 @@ NETCFG
   chmod 0644 /etc/systemd/network/10-meridian.network
   ok "Wrote /etc/systemd/network/10-meridian.network"
 
+  # Retire the preseed-written DHCP fallback. systemd-networkd loads
+  # files in lexical order and 00-* matches eth0 before 10-*, so leaving
+  # the DHCP file in place pins the interface to DHCP forever — exactly
+  # what observed on 2026-05-14 when the cutover silently never happened.
+  if [[ -f /etc/systemd/network/00-meridian-dhcp.network ]]; then
+    rm -f /etc/systemd/network/00-meridian-dhcp.network
+    ok "Removed bootstrap DHCP config (static IP now owns ${NET_IFACE})"
+  fi
+
   # Enable networkd + resolved for next boot. --now is deliberately omitted:
   # restarting networkd on the live interface would terminate this session.
   systemctl enable systemd-networkd.service  >/dev/null 2>&1 || true

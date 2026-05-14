@@ -30,7 +30,6 @@ ignore = [
     "S603",     # subprocess call with validated argv
     "S607",     # partial path — allowed binaries are known absolute paths
     "S608",     # allowing f-strings in SQL where they're wrapped in text()
-    "UP045",    # "X | None" union — keep explicit for readability
     "DTZ005",   # datetime.now() — tz-aware usage is already the norm
     "B008",     # default arg factories — FastAPI Depends() is an exception
 ]
