@@ -1597,12 +1597,27 @@ start_and_verify() {
     fi
   done
 
-  # Smoke: HTTP 200 on /healthz
-  if curl -fsS --max-time 5 "http://127.0.0.1:8000/healthz" >/dev/null; then
-    ok "App /healthz returned 200"
-  else
-    die "App /healthz failed. Check $LOG_ROOT/app-error.log"
-  fi
+  # Poll /healthz. On --upgrade, the app's DB connection pool warm-up
+  # races a single-shot curl — we saw consistent 503s for the first
+  # ~10 seconds after meridian-app restart even when the install was
+  # otherwise clean. Retry until status:ok or the deadline. Surfaced
+  # 2026-05-14 on the v1.0.1 apt-upgrade test.
+  local deadline=$((SECONDS + 30))
+  local last_status="(no response yet)"
+  while (( SECONDS < deadline )); do
+    local body
+    body=$(curl -fsS --max-time 3 "http://127.0.0.1:8000/healthz" 2>/dev/null || true)
+    if [[ -n "$body" ]]; then
+      last_status="$body"
+      if echo "$body" | grep -q '"status":"ok"'; then
+        ok "App /healthz returned status:ok"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  err "Last /healthz body: $last_status"
+  die "App /healthz did not reach status:ok within 30 seconds. Check $LOG_ROOT/app-error.log"
 }
 
 # --------------------------------------------------------------------

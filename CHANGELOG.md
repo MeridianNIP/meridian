@@ -41,14 +41,13 @@ Release page: <https://github.com/MeridianNIP/meridian/releases/tag/v1.0.1>
   "user 'admin' already exists" because it tried to recreate the
   super-admin row. Now probes for the existing username first and
   skips the seed when the row is present.
-
-### Known follow-up (not blocking)
-- `start_and_verify`'s `/healthz` check at the end of `install.sh --upgrade`
-  occasionally races the meridian-app systemd-restart's connection pool
-  warm-up and reports "db down". A manual `systemctl restart
-  meridian-app` after install completes clears it. Smaller restart-wait
-  bump queued for a future patch; not a release blocker since the app
-  recovers without operator action on its own service-restart timer.
+- `install.sh` `start_and_verify` single-shotting `curl /healthz`
+  immediately after `systemctl enable --now meridian-app` — this
+  raced the DB connection-pool warm-up on `--upgrade` and aborted
+  with "App /healthz failed" even though the install was otherwise
+  clean. Now polls `/healthz` for up to 30 seconds looking for
+  `"status":"ok"` before failing; reports the last seen body when
+  it does fail.
 
 ## [1.0.0] — 2026-05-14
 
