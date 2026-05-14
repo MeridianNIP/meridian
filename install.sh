@@ -1766,7 +1766,6 @@ main() {
   run_stage apply_logrotate
   run_stage apply_ufw
   run_stage seed_first_admin
-  run_stage activate_license
   run_stage start_and_verify
   summary
 }
