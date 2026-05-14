@@ -74,6 +74,9 @@ The shortest install path. Add the MeridianNIP apt repo, install the
 package, drop in an answers file, run the installer:
 
 ```bash
+# A Debian minbase doesn't ship curl or gpg — install them first:
+sudo apt update && sudo apt install -y curl gpg ca-certificates
+
 curl -fsSL https://meridiannip.com/meridiannip.gpg \
   | sudo gpg --dearmor -o /usr/share/keyrings/meridiannip-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/meridiannip-archive-keyring.gpg] https://meridiannip.com/apt stable main" \
