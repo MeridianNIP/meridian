@@ -6,7 +6,16 @@ semantic versioning.
 
 ## [Unreleased]
 
-Queued for v1.0.1 (next tagged release):
+Nothing pending.
+
+## [1.0.1] — 2026-05-14
+
+Bug-fix release; only `install.sh` changes. No DB migrations, no app
+changes — safe to `apt upgrade meridian-nip` on any v1.0.0 install.
+Existing v1.0.0 VM appliance and ISO remain valid (the bugs only
+fire on the upgrade path, not on fresh installs).
+
+Release page: <https://github.com/MeridianNIP/meridian/releases/tag/v1.0.1>
 
 ### Fixed
 - `install.sh` `install_os_packages` racing with dpkg lock when invoked
