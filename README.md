@@ -66,7 +66,27 @@ external sources.
 
 ## Install
 
-Four supported install paths. Pick whichever matches what you have.
+Five supported install paths. Pick whichever matches what you have.
+
+### Quick start — VM appliance (Hyper-V / VMware / KVM, fastest)
+
+Prebuilt Meridian VM. Download → import → power on → log in. No
+Debian install, no apt repo, no `install.sh`. ~5 minutes.
+
+Pick the disk format your hypervisor speaks:
+
+| Hypervisor | Asset |
+|---|---|
+| Hyper-V | [`meridian-nip-v1.0.0.vhdx.zst`](https://github.com/MeridianNIP/meridian/releases/latest/download/meridian-nip-v1.0.0.vhdx.zst) (1.1 GB; zstd-compressed, decompress before import) |
+| VMware / VirtualBox | [`meridian-nip-v1.0.0.ova`](https://github.com/MeridianNIP/meridian/releases/latest/download/meridian-nip-v1.0.0.ova) (1.4 GB; import directly) |
+| KVM / Proxmox | [`meridian-nip-v1.0.0.qcow2`](https://github.com/MeridianNIP/meridian/releases/latest/download/meridian-nip-v1.0.0.qcow2) (1.4 GB) |
+
+Verify with [`SHA256SUMS-appliance`](https://github.com/MeridianNIP/meridian/releases/latest/download/SHA256SUMS-appliance).
+Boot, find the DHCP IP, browse to `https://<ip>`, log in as `admin` /
+`password` (forced change + MFA enroll on first login). Per-appliance
+secrets (master key, row-HMAC key, SSH host keys) are regenerated at
+build time so two appliances on the same network can't impersonate
+each other.
 
 ### Quick start — `apt install` (Debian 12/13 hosts)
 

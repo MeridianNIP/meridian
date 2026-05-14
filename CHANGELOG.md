@@ -93,9 +93,13 @@ are common-law trademarks — forks must use a different name and logo.
 - Fresh-install validation pass: 30 of 32 checks green on a hands-off
   Hyper-V VM rebuild; full feature surface walked
 
+### Added — post-tag updates to the v1.0.0 release page
+- **VM appliance images** attached to the release: `meridian-nip-v1.0.0.vhdx.zst` (Hyper-V, 1.1 GB), `meridian-nip-v1.0.0.qcow2` (KVM/Proxmox, 1.4 GB), and `meridian-nip-v1.0.0.ova` (VMware/VirtualBox, 1.4 GB). Plus `SHA256SUMS-appliance` covering all three. Built from a scrubbed `meridian-appliance` VM with per-appliance secrets (master key + row-HMAC key + SSH host keys regenerated, audit/sessions cleared, DHCP networking).
+- **`scripts/build-deb.sh`** + **`scripts/publish-apt.sh`** — thin-wrapper Debian packaging + apt-repo publishing (signed via GPG ed25519 ops@meridiannip.com). Repo lives at <https://meridiannip.com/apt>.
+- **`scripts/build-ova.sh`** — vmdk → OVA packager (used in the appliance build).
+
 ### Known gaps (tracked post-1.0)
 - `docs/` portal HTML predates some 1.0 features and needs refresh (this CHANGELOG entry is the start of that)
 - No responsive CSS (desktop-only UX — explicitly declined per positioning)
 - No i18n (hardcoded English — explicitly declined per positioning)
 - WebAuthn / OIDC SSO / SCIM not implemented (TOTP + password + fail2ban is the baseline)
-- VM appliance images (`.vhdx` / `.ova` / `.qcow2`) parked — current artifact is the preseed ISO only
