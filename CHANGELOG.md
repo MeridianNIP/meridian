@@ -37,6 +37,18 @@ Release page: <https://github.com/MeridianNIP/meridian/releases/tag/v1.0.1>
   installer now parses the existing `db_dsn` from
   `/etc/meridian/meridian.conf` and reuses that password instead of
   generating a fresh one.
+- `install.sh` `seed_first_admin` aborting on `--upgrade` with
+  "user 'admin' already exists" because it tried to recreate the
+  super-admin row. Now probes for the existing username first and
+  skips the seed when the row is present.
+
+### Known follow-up (not blocking)
+- `start_and_verify`'s `/healthz` check at the end of `install.sh --upgrade`
+  occasionally races the meridian-app systemd-restart's connection pool
+  warm-up and reports "db down". A manual `systemctl restart
+  meridian-app` after install completes clears it. Smaller restart-wait
+  bump queued for a future patch; not a release blocker since the app
+  recovers without operator action on its own service-restart timer.
 
 ## [1.0.0] — 2026-05-14
 

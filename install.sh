@@ -1547,6 +1547,17 @@ generate_master_keys() {
 # --------------------------------------------------------------------
 seed_first_admin() {
   section "Seeding first admin user"
+  # Idempotent on upgrade: if the admin row already exists, don't try to
+  # recreate it. Surfaced 2026-05-14 on the v1.0.1 apt-upgrade test —
+  # `users create` errored "user 'admin' already exists" and aborted the
+  # whole installer.
+  local exists
+  exists=$(sudo -u postgres psql -tA -d "$DB_NAME" \
+    -c "SELECT 1 FROM users WHERE username = '${ADMIN_USERNAME}'" 2>/dev/null || true)
+  if [[ "$exists" == "1" ]]; then
+    info "Admin user '$ADMIN_USERNAME' already exists — skipping seed (idempotent on --upgrade)"
+    return 0
+  fi
   # Done via the meridian-nip CLI shim that the package installs.
   # NOTE: force-change-at-login is intentionally OFF so automated
   # build-out scripts (e.g. golden-image seeding of additional accounts,
