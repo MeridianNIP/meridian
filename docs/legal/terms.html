@@ -100,25 +100,14 @@ Meridian is licensed under the <strong>Apache License 2.0</strong>. That means: 
 Permissive OSS licenses without trademark protection lead to a pattern where some vendor takes the code, makes minimal changes, charges money under the original name, and degrades the brand for everyone who recognises it. Apache 2.0 Section 6 + a trademark are the standard pair of tools to prevent that without restricting actual code reuse. See: PostgreSQL, Kubernetes, Apache Cassandra — same pattern.
 </div></div>
 
-<h2>3. No license key, no activation, no expiry</h2>
-<p>Earlier releases of Meridian shipped with an Ed25519-signed license-key subsystem (commercial tier, demo tier, trial keys, etc.). <strong>That entire subsystem was removed.</strong> Migration <code>0014</code> drops the legacy license tables (<code>license</code>, <code>license_activations</code>, <code>license_verifications</code>, <code>license_revocations</code>, <code>license_warning_dismissals</code>). There is no longer any:</p>
-<ul>
-  <li>License key entry at install time (<code>install.sh</code> has no <code>license_entry</code> stage).</li>
-  <li><em>Admin → Branding → License</em> panel (removed; the page now only carries the trademark + white-label notes).</li>
-  <li>Demo / trial / paid tier distinction — every install gets every feature.</li>
-  <li><code>meridian-nip license …</code> CLI subcommands.</li>
-  <li>Phone-home / verification job (<code>license-verify</code> job removed from <code>jobs</code> table).</li>
-</ul>
-<p>If you upgraded from a pre-Apache release and still see leftover license UI, your DB is behind. Run <code>sudo /opt/meridian/scripts/migrate.sh</code>.</p>
-
-<h2>4. Restrictions that apply to everyone</h2>
+<h2>3. Restrictions that apply to everyone</h2>
 <ul>
   <li>You may not remove or alter copyright, trademark, or license notices in the software or its documentation. Apache 2.0 Section 4(c).</li>
   <li>You may not use the "MeridianNIP" name or logo on your fork or derivative (Section 6 / trademark).</li>
   <li>You may not sue MeridianNIP or other contributors over patents in this code and keep using it — that automatically terminates your patent license (Section 3).</li>
 </ul>
 
-<h2>5. Data, privacy, telemetry</h2>
+<h2>4. Data, privacy, telemetry</h2>
 <p>Meridian runs entirely on your own infrastructure. Operational data (scan results, monitor history, audit log, configuration, secrets) stays on-box. <strong>The portal makes no outbound calls to MeridianNIP or anyone else by default.</strong> The only outbound traffic the core portal performs is what you explicitly configure:</p>
 <ul>
   <li>External threat-intel API calls when an operator clicks a tool button (Censys, Shodan, VirusTotal, etc.) — all rate-limited per the safety caps in <code>app/safety/limits.py</code>.</li>
@@ -127,13 +116,13 @@ Permissive OSS licenses without trademark protection lead to a pattern where som
 </ul>
 <p>Installs configured with <code>install.sh --airgapped</code> skip even the apt / Let's Encrypt paths.</p>
 
-<h2>6. Warranty disclaimer</h2>
+<h2>5. Warranty disclaimer</h2>
 <p>Meridian is provided <strong>"AS IS"</strong> without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement. The licensee is responsible for validating that the software meets their operational and compliance needs before deploying it on production networks. See LICENSE Section 7.</p>
 
-<h2>7. Limitation of liability</h2>
+<h2>6. Limitation of liability</h2>
 <p>To the maximum extent permitted by applicable law, in no event will any contributor be liable for any indirect, incidental, special, consequential, or punitive damages arising out of or relating to the use or inability to use the software, even if advised of the possibility of such damages. See LICENSE Section 8.</p>
 
-<h2>8. Contributing</h2>
+<h2>7. Contributing</h2>
 <p>Contributions are accepted under the same Apache 2.0 terms (Section 5: any contribution submitted is automatically under the license unless you explicitly state otherwise). Project standards live in <code>CONTRIBUTING.md</code> in the source repo at <a href="https://github.com/MeridianNIP/meridian" target="_blank">github.com/MeridianNIP/meridian</a>.</p>
 
 <h2>Contact</h2>

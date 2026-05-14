@@ -88,7 +88,7 @@
 <h2>What the installer does</h2>
 <ol>
 <li><strong>Pre-flight.</strong> OS + arch check, disk + RAM floors, apt sources probe, port conflicts, existing install detection.</li>
-<li><strong>Interactive config.</strong> Portal name, FQDN, first admin, DB name/role, timezone, TLS method, scope (internal/external/both), SSH port, optional LUKS encryption. Every prompt has a multi-paragraph explanation before the input. (License entry was removed when Meridian moved to Apache 2.0 — see <a href="../legal/terms.html">License + trademark</a>.)</li>
+<li><strong>Interactive config.</strong> Portal name, FQDN, first admin, DB name/role, timezone, TLS method, scope (internal/external/both), SSH port, optional LUKS encryption. Every prompt has a multi-paragraph explanation before the input.</li>
 <li><strong>System prep.</strong> Creates <code>meridian</code> service user, <code>ddi-ssh</code> group, directory tree under <code>/opt/meridian</code>, <code>/etc/meridian</code>, <code>/var/lib/meridian</code>, <code>/var/log/meridian</code>.</li>
 <li><strong>Package install.</strong> Installs the OS-matched package set. Versions resolve to distro defaults; exact versions are recorded into the <code>version_manifest</code> table for drift detection.</li>
 <li><strong>Master key generation.</strong> Creates two 32-byte keys at <code>/etc/meridian/secrets/</code> (<code>0400</code> owned by <code>meridian</code>): the AES-GCM master for the vault and the HMAC-SHA-256 key for the tamper-evidence hash chain.</li>
