@@ -114,7 +114,7 @@ Defaults baked into the preseed ISO:
 - OS account: `admin` / `meridiannip` (change at first SSH)
 - Portal admin: `admin` / `password` (forced change + MFA enroll on
   first browser login)
-- Hostname: `meridian-test` (override via `answers.local.env`)
+- Hostname: `meridiannip` (override via `answers.local.env` if you run multiple instances)
 - Static IP: configured by `install.sh` based on `STATIC_IP` in answers
 
 ### Path 2 — VMware Workstation / Fusion / ESXi (or VirtualBox)
