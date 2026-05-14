@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+from datetime import UTC
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session as OrmSession
 
 from app.audit.logger import record as audit
 from app.auth.deps import client_ip, require_permission
 from app.config import get_settings
 from app.db import session_scope
+from app.models.user import User
+from app.network import subnet_calc
 from app.network.ping import PingRequest, PingResult, run_ping
 from app.network.scope import enforce as enforce_scope
-from app.network import subnet_calc
-from app.models.user import User
-
 
 router = APIRouter(prefix="/network", tags=["network"])
 
@@ -25,9 +25,9 @@ async def list_interfaces(
     offer a live dropdown. Read fresh from the kernel each call so a
     hot-plugged NIC or a renamed interface shows up without a restart."""
     import os
+
     ifaces: list[dict] = []
     try:
-        import socket
         # Walk /sys/class/net -- that's the kernel's live view. Tops out
         # at the current moment; next call re-reads.
         base = "/sys/class/net"
@@ -95,17 +95,22 @@ async def ping(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
     with session_scope() as db:
-        audit(db, user_id=user.id, action="network.ping",
-              target_type="host", target_key=body.target,
-              payload={
-                  "count": body.count,
-                  "loss_pct": result.stats.loss_pct,
-                  "rtt_avg": result.stats.rtt_avg,
-                  "jitter": result.stats.jitter,
-                  "returncode": result.returncode,
-              },
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="network.ping",
+            target_type="host",
+            target_key=body.target,
+            payload={
+                "count": body.count,
+                "loss_pct": result.stats.loss_pct,
+                "rtt_avg": result.stats.rtt_avg,
+                "jitter": result.stats.jitter,
+                "returncode": result.returncode,
+            },
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
     return result
 
 
@@ -124,14 +129,17 @@ async def traceroute(
     user: User = Depends(require_permission("network.ping")),
 ) -> dict:
     from app.network.traceroute import TraceRequest, run_traceroute
+
     scope = get_settings().scope_of_use
     try:
         with session_scope() as db:
             enforce_scope(db, body.target, scope)
         result = await run_traceroute(
             TraceRequest(
-                target=body.target, max_hops=body.max_hops,
-                timeout_s=body.timeout_s, per_hop_probes=body.per_hop_probes,
+                target=body.target,
+                max_hops=body.max_hops,
+                timeout_s=body.timeout_s,
+                per_hop_probes=body.per_hop_probes,
                 use_icmp=body.use_icmp,
             ),
             scope=scope if scope in ("internal", "external") else None,
@@ -140,20 +148,25 @@ async def traceroute(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
     with session_scope() as db:
-        audit(db, user_id=user.id, action="network.traceroute",
-              target_type="host", target_key=body.target,
-              payload={"max_hops": body.max_hops, "hops_seen": len(result.hops),
-                       "returncode": result.returncode},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="network.traceroute",
+            target_type="host",
+            target_key=body.target,
+            payload={
+                "max_hops": body.max_hops,
+                "hops_seen": len(result.hops),
+                "returncode": result.returncode,
+            },
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
     return {
         "command": result.command,
         "stdout": result.stdout,
         "returncode": result.returncode,
-        "hops": [
-            {"ttl": h.ttl, "host": h.host, "ip": h.ip, "rtts_ms": list(h.rtts_ms)}
-            for h in result.hops
-        ],
+        "hops": [{"ttl": h.ttl, "host": h.host, "ip": h.ip, "rtts_ms": list(h.rtts_ms)} for h in result.hops],
     }
 
 
@@ -173,11 +186,15 @@ async def http_test(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.http_test import test_url
+
     try:
         result = await test_url(
-            body.url, method=body.method, timeout_s=body.timeout_s,
+            body.url,
+            method=body.method,
+            timeout_s=body.timeout_s,
             follow_redirects=body.follow_redirects,
-            extra_headers=body.extra_headers, body=body.body,
+            extra_headers=body.extra_headers,
+            body=body.body,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
@@ -185,13 +202,21 @@ async def http_test(
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"request failed: {e}")
 
     with session_scope() as db:
-        audit(db, user_id=user.id, action="network.http_test",
-              target_type="url", target_key=body.url,
-              payload={"method": body.method, "final_status": result.final_status,
-                       "total_ms": result.total_ms,
-                       "redirects": result.redirect_count},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="network.http_test",
+            target_type="url",
+            target_key=body.url,
+            payload={
+                "method": body.method,
+                "final_status": result.final_status,
+                "total_ms": result.total_ms,
+                "redirects": result.redirect_count,
+            },
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
     return {
         "final_url": result.final_url,
         "final_status": result.final_status,
@@ -222,35 +247,44 @@ async def port_scan(
     user: User = Depends(require_permission("network.ping")),
 ) -> dict:
     from app.network.port_scan import parse_port_spec, scan
+
     scope = get_settings().scope_of_use
     try:
         with session_scope() as db:
             enforce_scope(db, body.host, scope)
         port_list = parse_port_spec(body.ports)
         result = await scan(
-            body.host, port_list,
-            timeout_s=body.timeout_s, concurrency=body.concurrency,
+            body.host,
+            port_list,
+            timeout_s=body.timeout_s,
+            concurrency=body.concurrency,
             scope=scope if scope in ("internal", "external") else None,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
     with session_scope() as db:
-        audit(db, user_id=user.id, action="network.port_scan",
-              target_type="host", target_key=body.host,
-              payload={"ports_scanned": result.ports_scanned,
-                       "open_count": len(result.open_ports),
-                       "duration_ms": result.duration_ms},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="network.port_scan",
+            target_type="host",
+            target_key=body.host,
+            payload={
+                "ports_scanned": result.ports_scanned,
+                "open_count": len(result.open_ports),
+                "duration_ms": result.duration_ms,
+            },
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
     return {
         "host": result.host,
         "ports_scanned": result.ports_scanned,
         "open_ports": list(result.open_ports),
         "duration_ms": result.duration_ms,
         "results": [
-            {"port": r.port, "state": r.state,
-             "latency_ms": r.latency_ms, "error": r.error}
+            {"port": r.port, "state": r.state, "latency_ms": r.latency_ms, "error": r.error}
             for r in result.results
         ],
     }
@@ -270,8 +304,9 @@ async def pcap(
     body: PcapInput,
     user: User = Depends(require_permission("network.tcpdump")),
 ) -> dict:
+    from datetime import datetime
     import hashlib
-    from datetime import datetime, timezone
+
     from app.models.file import FileRecord
     from app.network.pcap import capture
 
@@ -303,26 +338,31 @@ async def pcap(
                 storage_path=str(result.path),
                 category="pcap",
                 tags=["pcap", body.interface],
-                uploaded_at=datetime.now(timezone.utc),
+                uploaded_at=datetime.now(UTC),
             )
             db.add(rec)
             db.flush()
             file_id = str(rec.id)
 
     with session_scope() as db:
-        audit(db, user_id=user.id, action="network.pcap",
-              target_type="interface", target_key=body.interface,
-              payload={
-                  "duration_s": body.duration_s,
-                  "bpf": body.bpf_filter,
-                  "captured": result.packets_captured,
-                  "dropped": result.packets_dropped,
-                  "size_bytes": result.size_bytes,
-                  "returncode": result.returncode,
-                  "file_id": file_id,
-              },
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="network.pcap",
+            target_type="interface",
+            target_key=body.interface,
+            payload={
+                "duration_s": body.duration_s,
+                "bpf": body.bpf_filter,
+                "captured": result.packets_captured,
+                "dropped": result.packets_dropped,
+                "size_bytes": result.size_bytes,
+                "returncode": result.returncode,
+                "file_id": file_id,
+            },
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
 
     return {
         "capture_id": result.capture_id,
@@ -356,25 +396,36 @@ async def snmp_walk(
     user: User = Depends(require_permission("network.tcpdump")),
 ) -> dict:
     from app.network.snmp import walk
+
     try:
         with session_scope() as db:
             enforce_scope(db, body.host, get_settings().scope_of_use)
         result = await walk(
-            body.host, body.oid,
-            version=body.version, community=body.community,
+            body.host,
+            body.oid,
+            version=body.version,
+            community=body.community,
             timeout_s=body.timeout_s,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
     with session_scope() as db:
-        audit(db, user_id=user.id, action="network.snmp_walk",
-              target_type="host", target_key=body.host,
-              payload={"oid": body.oid, "version": body.version,
-                       "row_count": len(result.rows),
-                       "returncode": result.returncode},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="network.snmp_walk",
+            target_type="host",
+            target_key=body.host,
+            payload={
+                "oid": body.oid,
+                "version": body.version,
+                "row_count": len(result.rows),
+                "returncode": result.returncode,
+            },
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
     return {
         "command": result.command,
         "host": result.host,
@@ -395,26 +446,39 @@ class _IPInput(BaseModel):
 
 def _audit(user_id, action, target_key, payload, request):
     with session_scope() as db:
-        audit(db, user_id=user_id, action=action, target_type="ip",
-              target_key=target_key, payload=payload,
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user_id,
+            action=action,
+            target_type="ip",
+            target_key=target_key,
+            payload=payload,
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
 
 
 @router.post("/asn-lookup")
 async def asn_lookup_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import asn_lookup
     from app.safety.limits import require_token
+
     require_token("team_cymru")
     try:
         result = await asn_lookup(body.ip)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    _audit(user.id, "network.asn_lookup", body.ip,
-           {"asn": result.get("asn"), "as_name": result.get("as_name")}, request)
+    _audit(
+        user.id,
+        "network.asn_lookup",
+        body.ip,
+        {"asn": result.get("asn"), "as_name": result.get("as_name")},
+        request,
+    )
     return result
 
 
@@ -424,11 +488,13 @@ class _BgpInput(BaseModel):
 
 @router.post("/bgp-looking-glass")
 async def bgp_lg_route(
-    request: Request, body: _BgpInput,
+    request: Request,
+    body: _BgpInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import bgp_looking_glass
     from app.safety.limits import require_token
+
     require_token("ripestat")
     try:
         result = await bgp_looking_glass(body.target)
@@ -436,36 +502,43 @@ async def bgp_lg_route(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "network.bgp_lg", body.target,
-           {"kind": result.get("kind"), "prefixes": len(result.get("prefixes") or [])},
-           request)
+    _audit(
+        user.id,
+        "network.bgp_lg",
+        body.target,
+        {"kind": result.get("kind"), "prefixes": len(result.get("prefixes") or [])},
+        request,
+    )
     return result
 
 
 @router.post("/ip-reputation")
 async def ip_reputation_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import ip_reputation
     from app.safety.limits import require_token
+
     require_token("default")  # fan-out to 8 DNSBLs — moderate budget
     try:
         result = await ip_reputation(body.ip)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    _audit(user.id, "network.ip_reputation", body.ip,
-           {"listed_on": result.get("listed_on", 0)}, request)
+    _audit(user.id, "network.ip_reputation", body.ip, {"listed_on": result.get("listed_on", 0)}, request)
     return result
 
 
 @router.post("/ip-geolocate")
 async def ip_geolocate_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import ip_geolocate
     from app.safety.limits import require_token
+
     require_token("ipapi")
     try:
         result = await ip_geolocate(body.ip)
@@ -473,8 +546,13 @@ async def ip_geolocate_route(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "network.ip_geolocate", body.ip,
-           {"country": result.get("country"), "org": result.get("org")}, request)
+    _audit(
+        user.id,
+        "network.ip_geolocate",
+        body.ip,
+        {"country": result.get("country"), "org": result.get("org")},
+        request,
+    )
     return result
 
 
@@ -484,19 +562,28 @@ class _CveInput(BaseModel):
 
 @router.post("/cve-lookup")
 async def cve_lookup_route(
-    request: Request, body: _CveInput,
+    request: Request,
+    body: _CveInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import cve_lookup
+
     try:
         result = await cve_lookup(body.cve)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "network.cve_lookup", body.cve.upper(),
-           {"severity": (result.get("cvss") or {}).get("severity"),
-            "score": (result.get("cvss") or {}).get("score")}, request)
+    _audit(
+        user.id,
+        "network.cve_lookup",
+        body.cve.upper(),
+        {
+            "severity": (result.get("cvss") or {}).get("severity"),
+            "score": (result.get("cvss") or {}).get("score"),
+        },
+        request,
+    )
     return result
 
 
@@ -506,86 +593,93 @@ class _KevSearchInput(BaseModel):
 
 @router.post("/kev-lookup")
 async def kev_lookup_route(
-    request: Request, body: _CveInput,
+    request: Request,
+    body: _CveInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import kev_lookup
+
     try:
         result = await kev_lookup(body.cve)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.kev_lookup", body.cve.upper(),
-           {"listed": bool(result.get("listed"))}, request)
+    _audit(user.id, "threat.kev_lookup", body.cve.upper(), {"listed": bool(result.get("listed"))}, request)
     return result
 
 
 @router.post("/kev-search")
 async def kev_search_route(
-    request: Request, body: _KevSearchInput,
+    request: Request,
+    body: _KevSearchInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import kev_search
+
     try:
         result = await kev_search(body.query)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.kev_search", body.query,
-           {"matches": result.get("total_matches", 0)}, request)
+    _audit(user.id, "threat.kev_search", body.query, {"matches": result.get("total_matches", 0)}, request)
     return result
 
 
 @router.post("/epss-lookup")
 async def epss_lookup_route(
-    request: Request, body: _CveInput,
+    request: Request,
+    body: _CveInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import epss_lookup
+
     try:
         result = await epss_lookup(body.cve)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.epss_lookup", body.cve.upper(),
-           {"probability": result.get("probability")}, request)
+    _audit(
+        user.id, "threat.epss_lookup", body.cve.upper(), {"probability": result.get("probability")}, request
+    )
     return result
 
 
 @router.post("/circl-lookup")
 async def circl_lookup_route(
-    request: Request, body: _CveInput,
+    request: Request,
+    body: _CveInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import circl_lookup
+
     try:
         result = await circl_lookup(body.cve)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.circl_lookup", body.cve.upper(),
-           {"found": bool(result.get("found"))}, request)
+    _audit(user.id, "threat.circl_lookup", body.cve.upper(), {"found": bool(result.get("found"))}, request)
     return result
 
 
 @router.post("/dshield-lookup")
 async def dshield_lookup_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import dshield_lookup
+
     try:
         result = await dshield_lookup(body.ip)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.dshield_lookup", body.ip,
-           {"attacks": result.get("attacks")}, request)
+    _audit(user.id, "threat.dshield_lookup", body.ip, {"attacks": result.get("attacks")}, request)
     return result
 
 
@@ -595,17 +689,23 @@ class _HeaderAuditInput(BaseModel):
 
 @router.post("/header-audit")
 async def header_audit_route(
-    request: Request, body: _HeaderAuditInput,
+    request: Request,
+    body: _HeaderAuditInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import security_header_audit
+
     try:
         result = await security_header_audit(body.url)
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    _audit(user.id, "network.header_audit", body.url,
-           {"worst": result.get("worst"),
-            "status": result.get("final_status")}, request)
+    _audit(
+        user.id,
+        "network.header_audit",
+        body.url,
+        {"worst": result.get("worst"), "status": result.get("final_status")},
+        request,
+    )
     return result
 
 
@@ -623,6 +723,7 @@ class _QueryInput(BaseModel):
 def _handle_ti(fn_name: str, audit_key: str):
     """Wrap a threat-intel lookup: LookupError → 412 (config missing),
     ValueError → 400, httpx upstream error → 502, other → 502."""
+
     async def wrapped(result_coro, user_id, target, summary, request):
         try:
             result = await result_coro
@@ -634,17 +735,20 @@ def _handle_ti(fn_name: str, audit_key: str):
             raise HTTPException(502, f"{type(e).__name__}: {e}")
         _audit(user_id, audit_key, target, summary(result) or {}, request)
         return result
+
     wrapped.__name__ = fn_name
     return wrapped
 
 
 @router.post("/abuseipdb-lookup")
 async def abuseipdb_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import abuseipdb_lookup
     from app.safety.limits import require_token
+
     require_token("default")
     try:
         result = await abuseipdb_lookup(body.ip)
@@ -654,18 +758,19 @@ async def abuseipdb_route(
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.abuseipdb_lookup", body.ip,
-           {"confidence": result.get("confidence")}, request)
+    _audit(user.id, "threat.abuseipdb_lookup", body.ip, {"confidence": result.get("confidence")}, request)
     return result
 
 
 @router.post("/greynoise-lookup")
 async def greynoise_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import greynoise_lookup
     from app.safety.limits import require_token
+
     require_token("default")
     try:
         result = await greynoise_lookup(body.ip)
@@ -675,18 +780,21 @@ async def greynoise_route(
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.greynoise_lookup", body.ip,
-           {"classification": result.get("classification")}, request)
+    _audit(
+        user.id, "threat.greynoise_lookup", body.ip, {"classification": result.get("classification")}, request
+    )
     return result
 
 
 @router.post("/virustotal-lookup")
 async def virustotal_route(
-    request: Request, body: _TargetInput,
+    request: Request,
+    body: _TargetInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import virustotal_lookup
     from app.safety.limits import require_token
+
     require_token("virustotal")
     try:
         result = await virustotal_lookup(body.target)
@@ -696,18 +804,24 @@ async def virustotal_route(
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.virustotal_lookup", body.target,
-           {"malicious": result.get("malicious"),
-            "kind": result.get("kind")}, request)
+    _audit(
+        user.id,
+        "threat.virustotal_lookup",
+        body.target,
+        {"malicious": result.get("malicious"), "kind": result.get("kind")},
+        request,
+    )
     return result
 
 
 @router.post("/urlscan-search")
 async def urlscan_route(
-    request: Request, body: _QueryInput,
+    request: Request,
+    body: _QueryInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import urlscan_search
+
     try:
         result = await urlscan_search(body.query)
     except LookupError as e:
@@ -716,17 +830,18 @@ async def urlscan_route(
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.urlscan_search", body.query,
-           {"total": result.get("total")}, request)
+    _audit(user.id, "threat.urlscan_search", body.query, {"total": result.get("total")}, request)
     return result
 
 
 @router.post("/shodan-lookup")
 async def shodan_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import shodan_lookup
+
     try:
         result = await shodan_lookup(body.ip)
     except LookupError as e:
@@ -735,17 +850,18 @@ async def shodan_route(
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.shodan_lookup", body.ip,
-           {"ports": len(result.get("ports") or [])}, request)
+    _audit(user.id, "threat.shodan_lookup", body.ip, {"ports": len(result.get("ports") or [])}, request)
     return result
 
 
 @router.post("/censys-lookup")
 async def censys_route(
-    request: Request, body: _IPInput,
+    request: Request,
+    body: _IPInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.network.diagnostics import censys_lookup
+
     try:
         result = await censys_lookup(body.ip)
     except LookupError as e:
@@ -754,8 +870,7 @@ async def censys_route(
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(502, f"{type(e).__name__}: {e}")
-    _audit(user.id, "threat.censys_lookup", body.ip,
-           {"services": len(result.get("services") or [])}, request)
+    _audit(user.id, "threat.censys_lookup", body.ip, {"services": len(result.get("services") or [])}, request)
     return result
 
 

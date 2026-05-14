@@ -1,4 +1,5 @@
 """Admin surface for the queue / scheduler page."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -10,7 +11,6 @@ from app.audit.logger import record as audit
 from app.auth.deps import client_ip, require_permission
 from app.db import fastapi_dep_db
 from app.models.user import User
-
 
 router = APIRouter(prefix="/admin/queues", tags=["admin-queues"])
 
@@ -44,9 +44,14 @@ async def kick(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
-    audit(db, user_id=user.id, action="admin.queues.kick",
-          target_type="job", target_key=body.handler,
-          payload={"task_id": result.get("task_id"), "task": result.get("task")},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.queues.kick",
+        target_type="job",
+        target_key=body.handler,
+        payload={"task_id": result.get("task_id"), "task": result.get("task")},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result

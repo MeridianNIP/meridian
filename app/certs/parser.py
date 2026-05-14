@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+import hashlib
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -56,10 +56,8 @@ def parse_pem(pem_bytes: bytes) -> CertInfo:
     issuer_parts = [f"{a.oid._name}={a.value}" for a in cert.issuer]
     issuer = ", ".join(issuer_parts)
 
-    fingerprint = hashlib.sha256(
-        cert.public_bytes(serialization.Encoding.DER)
-    ).hexdigest().upper()
-    fp_formatted = ":".join(fingerprint[i:i + 2] for i in range(0, len(fingerprint), 2))
+    fingerprint = hashlib.sha256(cert.public_bytes(serialization.Encoding.DER)).hexdigest().upper()
+    fp_formatted = ":".join(fingerprint[i : i + 2] for i in range(0, len(fingerprint), 2))
 
     pub = cert.public_key()
     if isinstance(pub, rsa.RSAPublicKey):
@@ -77,7 +75,7 @@ def parse_pem(pem_bytes: bytes) -> CertInfo:
 
     valid_from = cert.not_valid_before_utc
     valid_until = cert.not_valid_after_utc
-    days_remaining = max(0, (valid_until - datetime.now(timezone.utc)).days)
+    days_remaining = max(0, (valid_until - datetime.now(UTC)).days)
 
     return CertInfo(
         common_name=cn,
@@ -107,14 +105,19 @@ def normalize_key_type(key_type: str | None, key_size: int | None) -> str | None
         return None
     k = key_type.lower()
     if k == "rsa" and key_size:
-        if key_size >= 4096: return "rsa4096"
-        if key_size >= 3072: return "rsa3072"
-        if key_size >= 2048: return "rsa2048"
+        if key_size >= 4096:
+            return "rsa4096"
+        if key_size >= 3072:
+            return "rsa3072"
+        if key_size >= 2048:
+            return "rsa2048"
         return None
     if "ecdsa" in k or "ec" in k or "secp" in k:
         # Curve name encodes the bit size: secp256r1 / prime256v1 → 256.
-        if "256" in k or key_size == 256: return "ecdsa_p256"
-        if "384" in k or key_size == 384: return "ecdsa_p384"
+        if "256" in k or key_size == 256:
+            return "ecdsa_p256"
+        if "384" in k or key_size == 384:
+            return "ecdsa_p384"
         return None
     if "ed25519" in k:
         return "ed25519"

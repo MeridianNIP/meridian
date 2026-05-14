@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 import httpx
@@ -12,7 +11,7 @@ class CtEntry:
     crt_sh_id: int
     issuer_name: str
     common_name: str | None
-    name_value: str                # raw multi-line SAN list
+    name_value: str  # raw multi-line SAN list
     not_before: str
     not_after: str
     entry_timestamp: str | None
@@ -33,10 +32,14 @@ def _clean_dt(s: str | None) -> str:
     return s.replace("T", " ")[:19]
 
 
-async def query_crtsh(target: str, *, limit: int = 100,
-                      include_expired: bool = True,
-                      include_subdomains: bool = True,
-                      timeout_s: float = 20.0) -> CrtShResult:
+async def query_crtsh(
+    target: str,
+    *,
+    limit: int = 100,
+    include_expired: bool = True,
+    include_subdomains: bool = True,
+    timeout_s: float = 20.0,
+) -> CrtShResult:
     """Query crt.sh's JSON endpoint for CT-logged certificates matching
     `target`.
 
@@ -51,6 +54,7 @@ async def query_crtsh(target: str, *, limit: int = 100,
       user on exhaustion.
     """
     import asyncio as _asyncio
+
     q = f"%.{target}" if include_subdomains else target
     params = {"q": q, "output": "json"}
     if not include_expired:
@@ -60,7 +64,7 @@ async def query_crtsh(target: str, *, limit: int = 100,
     # short retries with exponential backoff cover the transient case
     # without making the user re-click. Max total extra wait ~22s.
     MAX_ATTEMPTS = 6
-    backoffs = [1.0, 2.0, 3.5, 6.0, 9.0]   # seconds between attempts 1-2, 2-3, ...
+    backoffs = [1.0, 2.0, 3.5, 6.0, 9.0]  # seconds between attempts 1-2, 2-3, ...
     last_err: Exception | None = None
     data: list[dict[str, Any]] | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -87,9 +91,7 @@ async def query_crtsh(target: str, *, limit: int = 100,
                 data = r.json()
                 break
         except httpx.HTTPError as e:
-            last_err = RuntimeError(
-                f"crt.sh unreachable after {attempt} attempt(s) ({type(e).__name__})."
-            )
+            last_err = RuntimeError(f"crt.sh unreachable after {attempt} attempt(s) ({type(e).__name__}).")
             if attempt < MAX_ATTEMPTS:
                 await _asyncio.sleep(backoffs[min(attempt - 1, len(backoffs) - 1)])
                 continue
@@ -102,7 +104,7 @@ async def query_crtsh(target: str, *, limit: int = 100,
     rows: list[dict[str, Any]] = data if isinstance(data, list) else []
     rows.sort(key=lambda r: r.get("not_before", ""), reverse=True)
 
-    capped = rows[:max(1, min(limit, 1000))]
+    capped = rows[: max(1, min(limit, 1000))]
     entries = tuple(
         CtEntry(
             crt_sh_id=int(row.get("id", 0)),

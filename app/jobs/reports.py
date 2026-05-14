@@ -1,4 +1,5 @@
 """Celery beat task — ticks every minute, fires due report schedules."""
+
 from __future__ import annotations
 
 from app.celery_app import celery_app

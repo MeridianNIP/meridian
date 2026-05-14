@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -16,7 +16,6 @@ from app.auth.permissions import effective_permissions
 from app.db import fastapi_dep_db
 from app.models.session import ApiToken
 from app.models.user import User
-
 
 router = APIRouter(prefix="/settings/tokens", tags=["tokens"])
 
@@ -39,10 +38,11 @@ async def list_tokens(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> list[dict]:
-    rows = list(db.execute(
-        select(ApiToken).where(ApiToken.user_id == user.id)
-        .order_by(ApiToken.created_at.desc())
-    ).scalars())
+    rows = list(
+        db.execute(
+            select(ApiToken).where(ApiToken.user_id == user.id).order_by(ApiToken.created_at.desc())
+        ).scalars()
+    )
     return [_serialize(t) for t in rows]
 
 
@@ -63,13 +63,13 @@ async def create_token(
     # Dedupe names per user.
     existing = db.execute(
         select(ApiToken).where(
-            ApiToken.user_id == user.id, ApiToken.name == body.name,
+            ApiToken.user_id == user.id,
+            ApiToken.name == body.name,
             ApiToken.revoked_at.is_(None),
         )
     ).scalar_one_or_none()
     if existing is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            f"active token with name {body.name!r} already exists")
+        raise HTTPException(status.HTTP_409_CONFLICT, f"active token with name {body.name!r} already exists")
 
     # Scopes must be a subset of the user's effective permissions (no privilege
     # escalation via tokens).
@@ -85,10 +85,11 @@ async def create_token(
     plaintext = "mrd_" + secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(plaintext.encode()).hexdigest()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = None
     if body.expires_in_days:
         from datetime import timedelta
+
         expires = now + timedelta(days=body.expires_in_days)
 
     rec = ApiToken(
@@ -104,17 +105,27 @@ async def create_token(
     db.add(rec)
     db.flush()
 
-    audit(db, user_id=user.id, action="api_token.create",
-          target_type="api_token", target_key=body.name,
-          payload={"scopes": body.scopes,
-                   "expires_at": expires.isoformat() if expires else None,
-                   "rate_limit_per_min": body.rate_limit_per_min},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="api_token.create",
+        target_type="api_token",
+        target_key=body.name,
+        payload={
+            "scopes": body.scopes,
+            "expires_at": expires.isoformat() if expires else None,
+            "rate_limit_per_min": body.rate_limit_per_min,
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     # Plaintext is returned ONCE. Never stored; never re-shown.
-    return {**_serialize(rec), "plaintext_token": plaintext,
-            "warning": "Copy the token now — it will not be shown again."}
+    return {
+        **_serialize(rec),
+        "plaintext_token": plaintext,
+        "warning": "Copy the token now — it will not be shown again.",
+    }
 
 
 @router.post("/{token_id}/revoke")
@@ -129,9 +140,14 @@ async def revoke_token(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "token not found")
     if rec.revoked_at is not None:
         return {"ok": True, "already_revoked": True}
-    rec.revoked_at = datetime.now(timezone.utc)
-    audit(db, user_id=user.id, action="api_token.revoke",
-          target_type="api_token", target_key=rec.name,
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    rec.revoked_at = datetime.now(UTC)
+    audit(
+        db,
+        user_id=user.id,
+        action="api_token.revoke",
+        target_type="api_token",
+        target_key=rec.name,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True}

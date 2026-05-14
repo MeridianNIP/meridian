@@ -4,11 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 
-from app.auth.deps import client_ip, require_permission
+from app.auth.deps import require_permission
 from app.db import fastapi_dep_db
 from app.models.user import User
 from app.wizards.engine import list_wizards, run_wizard
-
 
 router = APIRouter(prefix="/wizards", tags=["wizards"])
 

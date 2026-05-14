@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 import re
 import uuid
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
 
 from app.config import get_settings
 from app.sandbox.runner import run
-
 
 # Linux IFNAMSIZ is 16 — 15 printable + NUL. This regex matches any legal ifname,
 # plus the tcpdump pseudo-interface "any". Reject everything else at the app layer.
@@ -23,7 +22,7 @@ _BAD_BPF_CHARS = re.compile(r"[`$;|<>\n\r\\]")
 MAX_DURATION_S = 120
 MAX_PACKETS = 100_000
 MAX_SNAPLEN = 65535
-DEFAULT_SNAPLEN = 262      # enough for ethernet + IP + TCP + a few dozen bytes of payload
+DEFAULT_SNAPLEN = 262  # enough for ethernet + IP + TCP + a few dozen bytes of payload
 
 
 @dataclass(frozen=True)
@@ -98,29 +97,37 @@ async def capture(
     """
     _validate(interface, bpf_filter, duration_s, max_packets, snaplen)
     capture_id = uuid.uuid4().hex
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     dest_dir = _pcap_root() / str(owner_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{ts}-{capture_id}.pcap"
 
     args: list[str] = [
-        "-i", interface,
-        "-w", str(dest),
-        "-s", str(snaplen),
-        "-c", str(max_packets),
-        "-G", str(duration_s),
-        "-W", "1",          # one rotation, then exit
-        "-n",               # no name resolution
-        "-q",               # quieter stderr
-        "-Z", "root",       # don't try to drop privs to unknown user inside sandbox
+        "-i",
+        interface,
+        "-w",
+        str(dest),
+        "-s",
+        str(snaplen),
+        "-c",
+        str(max_packets),
+        "-G",
+        str(duration_s),
+        "-W",
+        "1",  # one rotation, then exit
+        "-n",  # no name resolution
+        "-q",  # quieter stderr
+        "-Z",
+        "root",  # don't try to drop privs to unknown user inside sandbox
     ]
     if bpf_filter.strip():
         args += bpf_filter.strip().split()
 
     result = await run(
-        "tcpdump", args,
-        timeout_s=float(duration_s + 10),   # safety net beyond -G
-        max_output=64 * 1024,               # stderr only; file has the data
+        "tcpdump",
+        args,
+        timeout_s=float(duration_s + 10),  # safety net beyond -G
+        max_output=64 * 1024,  # stderr only; file has the data
     )
 
     captured, dropped = _parse_tcpdump_stderr(result.stderr)

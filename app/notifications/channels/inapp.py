@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session as OrmSession
@@ -23,7 +23,7 @@ def send(
         subject=subject,
         body=body,
         payload=payload or {},
-        sent_at=datetime.now(timezone.utc),
+        sent_at=datetime.now(UTC),
         status="sent",
     )
     db.add(d)

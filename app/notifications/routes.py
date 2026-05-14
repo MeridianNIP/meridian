@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import uuid
-from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session as OrmSession
 
-from app.auth.deps import current_user, require_permission
+from app.auth.deps import current_user
 from app.db import fastapi_dep_db
 from app.models.notification import NotifChannel, NotifDelivery
 from app.models.user import User
-
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -22,15 +21,22 @@ async def list_channels(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> list[dict]:
-    rows = db.execute(
-        select(NotifChannel).where(
-            (NotifChannel.user_id == user.id) | (NotifChannel.user_id.is_(None))
-        ).order_by(NotifChannel.kind, NotifChannel.description)
-    ).scalars().all()
+    rows = (
+        db.execute(
+            select(NotifChannel)
+            .where((NotifChannel.user_id == user.id) | (NotifChannel.user_id.is_(None)))
+            .order_by(NotifChannel.kind, NotifChannel.description)
+        )
+        .scalars()
+        .all()
+    )
     return [
         {
-            "id": str(c.id), "kind": c.kind, "target": c.target,
-            "description": c.description, "enabled": c.enabled,
+            "id": str(c.id),
+            "kind": c.kind,
+            "target": c.target,
+            "description": c.description,
+            "enabled": c.enabled,
             "user_scope": "global" if c.user_id is None else "personal",
         }
         for c in rows
@@ -39,19 +45,23 @@ async def list_channels(
 
 @router.get("/inbox")
 async def inbox(
-    hours: int = 72, limit: int = 100,
+    hours: int = 72,
+    limit: int = 100,
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> list[dict]:
     # Personal in-app deliveries: channels owned by the user OR global, of kind 'inapp'.
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, min(hours, 720)))
+    cutoff = datetime.now(UTC) - timedelta(hours=max(1, min(hours, 720)))
     rows = db.execute(
-        select(NotifDelivery, NotifChannel).join(NotifChannel, NotifDelivery.channel_id == NotifChannel.id)
-        .where(and_(
-            NotifChannel.kind == "inapp",
-            (NotifChannel.user_id == user.id) | (NotifChannel.user_id.is_(None)),
-            NotifDelivery.sent_at >= cutoff,
-        ))
+        select(NotifDelivery, NotifChannel)
+        .join(NotifChannel, NotifDelivery.channel_id == NotifChannel.id)
+        .where(
+            and_(
+                NotifChannel.kind == "inapp",
+                (NotifChannel.user_id == user.id) | (NotifChannel.user_id.is_(None)),
+                NotifDelivery.sent_at >= cutoff,
+            )
+        )
         .order_by(NotifDelivery.sent_at.desc())
         .limit(max(1, min(limit, 500)))
     ).all()
@@ -69,8 +79,7 @@ async def inbox(
     ]
 
 
-_ALLOWED_KINDS = {"email", "sms_twilio", "sms_gateway", "slack", "teams",
-                  "webhook", "inapp", "pagerduty"}
+_ALLOWED_KINDS = {"email", "sms_twilio", "sms_gateway", "slack", "teams", "webhook", "inapp", "pagerduty"}
 
 
 class ChannelIn(BaseModel):
@@ -79,7 +88,9 @@ class ChannelIn(BaseModel):
     description: str = Field(..., min_length=1, max_length=200)
     enabled: bool = True
     config: dict = Field(default_factory=dict)
-    global_scope: bool = Field(False, description="If true, the channel is shared across all users; requires admin")
+    global_scope: bool = Field(
+        False, description="If true, the channel is shared across all users; requires admin"
+    )
 
 
 @router.post("/channels", status_code=201)
@@ -89,23 +100,28 @@ async def create_channel(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     if body.kind not in _ALLOWED_KINDS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"kind must be one of {sorted(_ALLOWED_KINDS)}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"kind must be one of {sorted(_ALLOWED_KINDS)}")
     if body.global_scope and user.role not in ("admin", "super_admin"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "only admins can create global channels")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only admins can create global channels")
     ch = NotifChannel(
         id=uuid.uuid4(),
         user_id=None if body.global_scope else user.id,
-        kind=body.kind, target=body.target,
-        description=body.description, enabled=body.enabled,
+        kind=body.kind,
+        target=body.target,
+        description=body.description,
+        enabled=body.enabled,
         config=body.config or {},
     )
     db.add(ch)
     db.flush()
-    return {"id": str(ch.id), "kind": ch.kind, "target": ch.target,
-            "description": ch.description, "enabled": ch.enabled,
-            "user_scope": "global" if ch.user_id is None else "personal"}
+    return {
+        "id": str(ch.id),
+        "kind": ch.kind,
+        "target": ch.target,
+        "description": ch.description,
+        "enabled": ch.enabled,
+        "user_scope": "global" if ch.user_id is None else "personal",
+    }
 
 
 class ChannelPatch(BaseModel):
@@ -165,6 +181,7 @@ async def test_channel(
     if ch.user_id is not None and ch.user_id != user.id and user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your channel")
     from app.notifications.dispatcher import dispatch
+
     results = dispatch(
         db,
         event_kind="test.ping",

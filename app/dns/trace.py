@@ -16,19 +16,19 @@ Output sections:
 All queries run concurrently; total wall time ~= slowest resolver's RTT
 plus the +trace (which is sequential by design — that's its point).
 """
+
 from __future__ import annotations
 
 import asyncio
-import uuid as _uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
+import uuid as _uuid
 
 from sqlalchemy import select
 
 from app.db import session_scope
-from app.dns.dig import DigRequest, DigResult, _IPV4_RE, run_dig
+from app.dns.dig import _IPV4_RE, DigRequest, DigResult, run_dig
 from app.models.resolver import Resolver
-
 
 # Cap total resolver fanout so a misconfigured table can't DoS the
 # worker pool. 25 internal + 5 external + 4 authoritative is well
@@ -39,7 +39,7 @@ _TRACE_TIMEOUT_S = 20.0
 
 
 Status = Literal["match", "divergent", "error", "unknown"]
-Scope  = Literal["local", "house", "mine", "authoritative"]
+Scope = Literal["local", "house", "mine", "authoritative"]
 
 
 @dataclass(frozen=True)
@@ -48,23 +48,24 @@ class TraceRow:
     name: str
     resolver_ip: str
     region: str | None
-    answer: str | None           # first answer line, normalised
-    ttl: int | None              # TTL on the returned record (seconds)
+    answer: str | None  # first answer line, normalised
+    ttl: int | None  # TTL on the returned record (seconds)
     ok: bool
     status: Status
     duration_ms: int
     error: str | None
-    flushable: bool              # True when we can `rndc flushname` this
-    ad_flag: bool | None         # DNSSEC "authenticated data" flag
+    flushable: bool  # True when we can `rndc flushname` this
+    ad_flag: bool | None  # DNSSEC "authenticated data" flag
 
 
 @dataclass(frozen=True)
 class Summary:
     """Human-readable diagnosis surfaced at the top of the trace UI."""
-    headline: str                          # one-line verdict
+
+    headline: str  # one-line verdict
     severity: Literal["ok", "warn", "error", "unknown"]
-    evidence: tuple[str, ...]              # bullet-point facts that led to verdict
-    suggested_action: str | None           # one actionable next step, or None
+    evidence: tuple[str, ...]  # bullet-point facts that led to verdict
+    suggested_action: str | None  # one actionable next step, or None
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ class DnssecRow:
     DNSKEYs: KSK + ZSK, plus extras during rollover). Comparison across
     resolvers is set-based so different line ordering or returned-subset
     differences don't show as spurious divergence."""
+
     scope: Scope
     name: str
     resolver_ip: str
@@ -83,13 +85,13 @@ class DnssecRow:
     target_ttl: int | None
     target_ad: bool | None
     target_has_rrsig: bool
-    dnskey_records: tuple[str, ...]        # ALL DNSKEY records, normalised + sorted
-    ds_records: tuple[str, ...]            # ALL DS records, normalised + sorted
-    dnskey_summary: str | None             # ASCII human summary
-    ds_summary: str | None                 # ASCII human summary
+    dnskey_records: tuple[str, ...]  # ALL DNSKEY records, normalised + sorted
+    ds_records: tuple[str, ...]  # ALL DS records, normalised + sorted
+    dnskey_summary: str | None  # ASCII human summary
+    ds_summary: str | None  # ASCII human summary
     zone: str | None
     status: Status
-    divergence_reason: str | None          # why THIS row is divergent
+    divergence_reason: str | None  # why THIS row is divergent
     duration_ms: int
     error: str | None
     flushable: bool
@@ -98,14 +100,15 @@ class DnssecRow:
 @dataclass
 class TraceReport:
     """Answer-mode trace report."""
+
     target: str
     record_type: str
     mode: Literal["answer", "dnssec"]
     authoritative_answers: tuple[str, ...]
     rows: tuple[TraceRow, ...]
-    dnssec_rows: tuple[DnssecRow, ...]     # empty when mode == "answer"
-    zone: str | None                       # target's zone (dnssec mode)
-    recursion_trace: str                   # dig +trace output (may be long)
+    dnssec_rows: tuple[DnssecRow, ...]  # empty when mode == "answer"
+    zone: str | None  # target's zone (dnssec mode)
+    recursion_trace: str  # dig +trace output (may be long)
     recursion_trace_truncated: bool
     divergence: bool
     point_of_divergence: str | None
@@ -145,25 +148,31 @@ def _first_answer_and_ttl(stdout: str) -> tuple[str | None, int | None]:
     return line, None
 
 
-async def _dig(target: str, record_type: str, resolver_ip: str | None,
-               flags: tuple[str, ...]) -> DigResult:
+async def _dig(target: str, record_type: str, resolver_ip: str | None, flags: tuple[str, ...]) -> DigResult:
     # dig.py validates resolver with _IPV4_RE and rejects the empty string;
     # passing None means "use the system recursor" (no @server on the
     # command line).
-    return await run_dig(DigRequest(
-        target=target, record_type=record_type,
-        resolver=(resolver_ip or None),
-        flags=flags,
-    ))
+    return await run_dig(
+        DigRequest(
+            target=target,
+            record_type=record_type,
+            resolver=(resolver_ip or None),
+            flags=flags,
+        )
+    )
 
 
 def _timed_out_result(cmd: str) -> DigResult:
     """DigResult stand-in for asyncio-level timeouts (the sandbox itself
     also has a timeout but we wrap each call for predictability)."""
     return DigResult(
-        command=cmd, stdout="", stderr="timeout",
-        returncode=124, duration_ms=int(_PER_QUERY_TIMEOUT_S * 1000),
-        truncated=False, timed_out=True,
+        command=cmd,
+        stdout="",
+        stderr="timeout",
+        returncode=124,
+        duration_ms=int(_PER_QUERY_TIMEOUT_S * 1000),
+        truncated=False,
+        timed_out=True,
     )
 
 
@@ -175,7 +184,7 @@ async def _ad_flagged(target: str, record_type: str, resolver_ip: str | None) ->
             _dig(target, record_type, resolver_ip, ("+dnssec",)),
             timeout=_PER_QUERY_TIMEOUT_S,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return None
     if r.returncode != 0:
         return None
@@ -224,8 +233,9 @@ async def _authoritative_ns_ips(target: str) -> list[tuple[str, str]]:
         ns_res = await _dig(zone, "NS", None, ("+short",))
     except ValueError:
         return []
-    names = [ln.strip().rstrip(".") for ln in ns_res.stdout.splitlines()
-             if ln.strip() and not ln.startswith(";")]
+    names = [
+        ln.strip().rstrip(".") for ln in ns_res.stdout.splitlines() if ln.strip() and not ln.startswith(";")
+    ]
     if not names:
         return []
 
@@ -237,10 +247,11 @@ async def _authoritative_ns_ips(target: str) -> list[tuple[str, str]]:
             return await _dig(n, "A", None, ("+short",))
         except ValueError:
             return None
+
     a_results = await asyncio.gather(*[_safe_a(n) for n in names], return_exceptions=False)
 
     ips: list[tuple[str, str]] = []
-    for n, r in zip(names, a_results):
+    for n, r in zip(names, a_results, strict=False):
         if r is None:
             continue
         for ln in r.stdout.splitlines():
@@ -251,25 +262,33 @@ async def _authoritative_ns_ips(target: str) -> list[tuple[str, str]]:
     return ips
 
 
-def _load_resolvers(user_id: _uuid.UUID | None, include_external: bool,
-                    group_tag: str | None = None) -> list[Resolver]:
+def _load_resolvers(
+    user_id: _uuid.UUID | None, include_external: bool, group_tag: str | None = None
+) -> list[Resolver]:
     """House resolvers + the caller's personal resolvers, optionally
     filtered to a single `group_tag` (e.g. "Corp Cache"). An empty / None
     group_tag means no filter. `include_external` is a soft UI flag
     forwarded here for future server-side filtering."""
     with session_scope() as db:
-        cond = (Resolver.owner_user_id.is_(None))
+        cond = Resolver.owner_user_id.is_(None)
         if user_id is not None:
             from sqlalchemy import or_
+
             cond = or_(cond, Resolver.owner_user_id == user_id)
         from sqlalchemy import func
+
         stmt = select(Resolver).where(cond)
         if group_tag:
             stmt = stmt.where(Resolver.group_tag == group_tag)
-        rows = db.execute(
-            stmt.order_by(Resolver.owner_user_id.nullsfirst(), func.lower(Resolver.name))
-                .limit(_MAX_RESOLVER_FANOUT)
-        ).scalars().all()
+        rows = (
+            db.execute(
+                stmt.order_by(Resolver.owner_user_id.nullsfirst(), func.lower(Resolver.name)).limit(
+                    _MAX_RESOLVER_FANOUT
+                )
+            )
+            .scalars()
+            .all()
+        )
         return list(rows)
 
 
@@ -296,9 +315,9 @@ async def _discover_zone(target: str) -> str | None:
     return None
 
 
-async def _dnssec_probe(resolver_ip: str | None, target: str,
-                        record_type: str, zone: str | None
-                        ) -> tuple[DigResult, bool | None, bool, tuple[str, ...], tuple[str, ...]]:
+async def _dnssec_probe(
+    resolver_ip: str | None, target: str, record_type: str, zone: str | None
+) -> tuple[DigResult, bool | None, bool, tuple[str, ...], tuple[str, ...]]:
     """Fan out three +dnssec queries to one resolver: the target record
     (capturing AD + RRSIG presence), the zone's DNSKEY set, and the
     zone's DS set. Returns (target_dig, ad, has_rrsig, dnskey_records,
@@ -306,18 +325,19 @@ async def _dnssec_probe(resolver_ip: str | None, target: str,
     compare sets across resolvers (a zone usually has multiple DNSKEYs:
     KSK + ZSK + rollover extras -- sampling only the first line would
     produce spurious divergence)."""
+
     async def _q(name, rtype, flags):
         try:
             return await asyncio.wait_for(
                 _dig(name, rtype, resolver_ip, flags),
                 timeout=_PER_QUERY_TIMEOUT_S,
             )
-        except (asyncio.TimeoutError, ValueError):
+        except (TimeoutError, ValueError):
             return None
 
     tgt_task = _q(target, record_type, ("+dnssec",))
-    dk_task  = _q(zone, "DNSKEY", ("+dnssec", "+short")) if zone else asyncio.sleep(0, result=None)
-    ds_task  = _q(zone, "DS",     ("+dnssec", "+short")) if zone else asyncio.sleep(0, result=None)
+    dk_task = _q(zone, "DNSKEY", ("+dnssec", "+short")) if zone else asyncio.sleep(0, result=None)
+    ds_task = _q(zone, "DS", ("+dnssec", "+short")) if zone else asyncio.sleep(0, result=None)
     tgt, dk, ds = await asyncio.gather(tgt_task, dk_task, ds_task)
 
     # AD + RRSIG from target response
@@ -352,7 +372,10 @@ async def _dnssec_probe(resolver_ip: str | None, target: str,
 
     return (
         tgt if tgt is not None else _timed_out_result(f"dig @{resolver_ip} {target} {record_type}"),
-        ad, has_rrsig, _all_records(dk), _all_records(ds),
+        ad,
+        has_rrsig,
+        _all_records(dk),
+        _all_records(ds),
     )
 
 
@@ -370,13 +393,19 @@ def _dnskey_summary(records: tuple[str, ...]) -> str | None:
             continue
         flags, _proto, alg = parts[0], parts[1], parts[2]
         algs.add(alg)
-        if flags == "257": ksks += 1
-        elif flags == "256": zsks += 1
-        else: others += 1
+        if flags == "257":
+            ksks += 1
+        elif flags == "256":
+            zsks += 1
+        else:
+            others += 1
     pieces = []
-    if ksks:  pieces.append(f"{ksks} KSK")
-    if zsks:  pieces.append(f"{zsks} ZSK")
-    if others:pieces.append(f"{others} other")
+    if ksks:
+        pieces.append(f"{ksks} KSK")
+    if zsks:
+        pieces.append(f"{zsks} ZSK")
+    if others:
+        pieces.append(f"{others} other")
     # ASCII only -- middle-dot renders as "\xc2\xb7" in Latin-1 viewers
     # (Excel) which shows up as the mojibake "A-hat middle-dot".
     tail = f" | alg {','.join(sorted(algs))}" if algs else ""
@@ -392,10 +421,9 @@ def _ds_summary(records: tuple[str, ...]) -> str | None:
     for r in records:
         parts = r.split()
         if len(parts) >= 3:
-            algs.add(parts[1]); dts.add(parts[2])
+            algs.add(parts[1])
+            dts.add(parts[2])
     return f"{len(records)} DS | alg {','.join(sorted(algs))} digest-type {','.join(sorted(dts))}"
-
-
 
 
 def _majority(values: list[str | None]) -> str | None:
@@ -403,6 +431,7 @@ def _majority(values: list[str | None]) -> str | None:
     have an authoritative query for a given zone's DNSKEY/DS (parent-NS
     traversal is V2)."""
     from collections import Counter
+
     clean = [v for v in values if v]
     if not clean:
         return None
@@ -422,12 +451,10 @@ def _fmt_ttl(seconds: int | None) -> str:
     return f"{seconds // 86400}d"
 
 
-def _build_answer_summary(rows: list[TraceRow],
-                          auth_answers: set[str],
-                          target: str) -> Summary:
-    match   = [r for r in rows if r.status == "match" and r.scope != "authoritative"]
+def _build_answer_summary(rows: list[TraceRow], auth_answers: set[str], target: str) -> Summary:
+    match = [r for r in rows if r.status == "match" and r.scope != "authoritative"]
     diverge = [r for r in rows if r.status == "divergent" and r.scope != "authoritative"]
-    errors  = [r for r in rows if r.status == "error" and r.scope != "authoritative"]
+    errors = [r for r in rows if r.status == "error" and r.scope != "authoritative"]
     total_resolver_rows = len(match) + len(diverge) + len(errors)
 
     if not auth_answers:
@@ -464,11 +491,13 @@ def _build_answer_summary(rows: list[TraceRow],
 
     evidence = [
         f"Authoritative: {', '.join(sorted(auth_answers))}"
-            + (f"  (TTL {_fmt_ttl(auth_ttl)})" if auth_ttl is not None else ""),
+        + (f"  (TTL {_fmt_ttl(auth_ttl)})" if auth_ttl is not None else ""),
         f"Divergent: {', '.join(diverge_names)}{more}",
     ]
     if max_ttl is not None:
-        evidence.append(f"Longest divergent TTL: {_fmt_ttl(max_ttl)} (~{max_ttl}s) — worst-case wait for natural expiry.")
+        evidence.append(
+            f"Longest divergent TTL: {_fmt_ttl(max_ttl)} (~{max_ttl}s) — worst-case wait for natural expiry."
+        )
     if errors:
         evidence.append(f"{len(errors)} resolvers returned errors or timed out.")
 
@@ -477,8 +506,10 @@ def _build_answer_summary(rows: list[TraceRow],
         action = f"`rndc flushname {target}` on " + ", ".join(r.name for r in flushable)
     elif diverge:
         ttl_hint = f" (~{_fmt_ttl(max_ttl)} worst case)" if max_ttl is not None else ""
-        action = ("The divergent resolvers are external. Flush cache at the operator, or "
-                  f"wait for the TTL to expire{ttl_hint}.")
+        action = (
+            "The divergent resolvers are external. Flush cache at the operator, or "
+            f"wait for the TTL to expire{ttl_hint}."
+        )
     return Summary(
         headline=f"{len(diverge)} of {total_resolver_rows} resolvers returned an answer different from authoritative.",
         severity="warn" if not errors else "error",
@@ -487,11 +518,14 @@ def _build_answer_summary(rows: list[TraceRow],
     )
 
 
-def _build_dnssec_summary(rows: list[DnssecRow], zone: str | None,
-                          target: str) -> Summary:
+def _build_dnssec_summary(rows: list[DnssecRow], zone: str | None, target: str) -> Summary:
     if not rows:
-        return Summary(headline="No resolvers returned a DNSSEC response.",
-                       severity="error", evidence=(), suggested_action=None)
+        return Summary(
+            headline="No resolvers returned a DNSSEC response.",
+            severity="error",
+            evidence=(),
+            suggested_action=None,
+        )
     if zone is None:
         return Summary(
             headline="Could not determine the zone containing this target.",
@@ -503,18 +537,19 @@ def _build_dnssec_summary(rows: list[DnssecRow], zone: str | None,
             suggested_action=None,
         )
 
-    ad_true   = [r for r in rows if r.target_ad is True]
-    ad_false  = [r for r in rows if r.target_ad is False]
-    ad_none   = [r for r in rows if r.target_ad is None]
+    ad_true = [r for r in rows if r.target_ad is True]
+    ad_false = [r for r in rows if r.target_ad is False]
+    ad_none = [r for r in rows if r.target_ad is None]
     from collections import Counter
+
     dk_counter = Counter(r.dnskey_records for r in rows if r.dnskey_records)
-    ds_counter = Counter(r.ds_records     for r in rows if r.ds_records)
+    ds_counter = Counter(r.ds_records for r in rows if r.ds_records)
     majority_dk = dk_counter.most_common(1)[0][0] if dk_counter else ()
     majority_ds = ds_counter.most_common(1)[0][0] if ds_counter else ()
     majority_dk_set = set(majority_dk)
     majority_ds_set = set(majority_ds)
     sample_dk_summary = next((r.dnskey_summary for r in rows if r.dnskey_summary), None)
-    sample_ds_summary = next((r.ds_summary     for r in rows if r.ds_summary),     None)
+    sample_ds_summary = next((r.ds_summary for r in rows if r.ds_summary), None)
 
     # Fast happy path: one DNSKEY set, <=1 DS set, all AD flags set.
     if len(dk_counter) <= 1 and len(ds_counter) <= 1 and ad_false == [] and ad_true:
@@ -524,7 +559,9 @@ def _build_dnssec_summary(rows: list[DnssecRow], zone: str | None,
             evidence=(
                 f"{len(ad_true)} of {len(rows)} resolvers set the AD flag.",
                 f"DNSKEY: {sample_dk_summary}" if sample_dk_summary else "No DNSKEY present.",
-                f"DS: {sample_ds_summary}" if sample_ds_summary else "No DS present (zone is an apex / unsigned parent).",
+                f"DS: {sample_ds_summary}"
+                if sample_ds_summary
+                else "No DS present (zone is an apex / unsigned parent).",
             ),
             suggested_action=None,
         )
@@ -538,26 +575,34 @@ def _build_dnssec_summary(rows: list[DnssecRow], zone: str | None,
         dk = set(r.dnskey_records)
         ds = set(r.ds_records)
         if majority_dk_set and dk and not dk.issubset(majority_dk_set):
-            culprits.append(r); continue
+            culprits.append(r)
+            continue
         if majority_ds_set and ds and not ds.issubset(majority_ds_set):
-            culprits.append(r); continue
+            culprits.append(r)
+            continue
         if r.target_ad is False and ad_true:
             culprits.append(r)
 
     if culprits:
         c = culprits[0]
-        headline = (f"DNSSEC chain diverges at zone `{zone}` -- {c.name} "
-                    f"({c.resolver_ip}) disagrees with the rest.")
+        headline = (
+            f"DNSSEC chain diverges at zone `{zone}` -- {c.name} "
+            f"({c.resolver_ip}) disagrees with the rest."
+        )
         if c.dnskey_records and majority_dk and set(c.dnskey_records) != majority_dk_set:
             extras = set(c.dnskey_records) - majority_dk_set
             missing = majority_dk_set - set(c.dnskey_records)
-            if extras:  evidence.append(f"{c.name} has {len(extras)} DNSKEY(s) not in majority set.")
-            if missing: evidence.append(f"{c.name} is missing {len(missing)} DNSKEY(s) present in majority.")
+            if extras:
+                evidence.append(f"{c.name} has {len(extras)} DNSKEY(s) not in majority set.")
+            if missing:
+                evidence.append(f"{c.name} is missing {len(missing)} DNSKEY(s) present in majority.")
         if c.ds_records and majority_ds and set(c.ds_records) != majority_ds_set:
             extras = set(c.ds_records) - majority_ds_set
             missing = majority_ds_set - set(c.ds_records)
-            if extras:  evidence.append(f"{c.name} has {len(extras)} DS record(s) not in majority set.")
-            if missing: evidence.append(f"{c.name} is missing {len(missing)} DS record(s) present in majority.")
+            if extras:
+                evidence.append(f"{c.name} has {len(extras)} DS record(s) not in majority set.")
+            if missing:
+                evidence.append(f"{c.name} is missing {len(missing)} DS record(s) present in majority.")
         if c.target_ad is False:
             evidence.append(f"{c.name} did not set AD flag; {len(ad_true)} other resolvers did.")
         action = None
@@ -566,8 +611,10 @@ def _build_dnssec_summary(rows: list[DnssecRow], zone: str | None,
         elif c.scope in ("house", "mine"):
             action = f"If {c.name} is under your control, flush `{zone}` there. Otherwise wait for TTL."
         return Summary(
-            headline=headline, severity="error",
-            evidence=tuple(evidence), suggested_action=action,
+            headline=headline,
+            severity="error",
+            evidence=tuple(evidence),
+            suggested_action=action,
         )
 
     # Inconsistent but no clear culprit (e.g. all resolvers lack AD flag).
@@ -577,29 +624,35 @@ def _build_dnssec_summary(rows: list[DnssecRow], zone: str | None,
             severity="warn",
             evidence=(
                 f"{len(ad_false)} resolvers responded; none set AD.",
-                f"DNSKEY present: {'yes' if unique_dk else 'no'}. DS present: {'yes' if unique_ds else 'no'}.",
+                f"DNSKEY present: {'yes' if majority_dk_set else 'no'}. DS present: {'yes' if majority_ds_set else 'no'}.",
                 "Likely: zone is unsigned, or trust-anchor issue on the recursors, or DS missing at parent.",
             ),
-            suggested_action=(f"Check `delv @127.0.0.1 {target}` for validation detail; "
-                              f"run `dig DS {zone} @<parent-ns>` to see if DS is published."),
+            suggested_action=(
+                f"Check `delv @127.0.0.1 {target}` for validation detail; "
+                f"run `dig DS {zone} @<parent-ns>` to see if DS is published."
+            ),
         )
     return Summary(
         headline="DNSSEC state is mixed but no single resolver is obviously at fault.",
         severity="warn",
         evidence=(
             f"AD flag: true={len(ad_true)} false={len(ad_false)} unknown={len(ad_none)}.",
-            f"Unique DNSKEY values: {len(unique_dk)}.",
-            f"Unique DS values: {len(unique_ds)}.",
+            f"Unique DNSKEY values: {len(majority_dk_set)}.",
+            f"Unique DS values: {len(majority_ds_set)}.",
         ),
         suggested_action=None,
     )
 
 
-async def run_trace(target: str, record_type: str = "A", *,
-                    user_id: _uuid.UUID | None = None,
-                    include_external: bool = True,
-                    group_tag: str | None = None,
-                    mode: Literal["answer", "dnssec"] = "answer") -> TraceReport:
+async def run_trace(
+    target: str,
+    record_type: str = "A",
+    *,
+    user_id: _uuid.UUID | None = None,
+    include_external: bool = True,
+    group_tag: str | None = None,
+    mode: Literal["answer", "dnssec"] = "answer",
+) -> TraceReport:
     # --- gather targets ---------------------------------------------------
     resolvers = _load_resolvers(user_id, include_external, group_tag=group_tag)
     auth_ns = await _authoritative_ns_ips(target)
@@ -615,8 +668,10 @@ async def run_trace(target: str, record_type: str = "A", *,
         owner_user_id: _uuid.UUID | None
 
     synthetic_local = _ResolverLite(
-        name="Local recursor", ip="127.0.0.1",
-        region="Portal host", owner_user_id=None,
+        name="Local recursor",
+        ip="127.0.0.1",
+        region="Portal host",
+        owner_user_id=None,
     )
     resolver_chain: list = [synthetic_local] + list(resolvers)
 
@@ -624,12 +679,12 @@ async def run_trace(target: str, record_type: str = "A", *,
     async def _probe_one(r) -> tuple[object, DigResult, bool | None]:
         try:
             dig_res, ad = await asyncio.gather(
-                asyncio.wait_for(_dig(target, record_type, r.ip,
-                                      ("+noall", "+answer")),
-                                 timeout=_PER_QUERY_TIMEOUT_S),
+                asyncio.wait_for(
+                    _dig(target, record_type, r.ip, ("+noall", "+answer")), timeout=_PER_QUERY_TIMEOUT_S
+                ),
                 _ad_flagged(target, record_type, r.ip),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             dig_res = _timed_out_result(f"dig @{r.ip} {target} {record_type}")
             ad = None
         except ValueError as e:
@@ -638,8 +693,12 @@ async def run_trace(target: str, record_type: str = "A", *,
             # trace doesn't 400 on one bad entry.
             dig_res = DigResult(
                 command=f"dig @{r.ip} {target} {record_type}",
-                stdout="", stderr=str(e),
-                returncode=2, duration_ms=0, truncated=False, timed_out=False,
+                stdout="",
+                stderr=str(e),
+                returncode=2,
+                duration_ms=0,
+                truncated=False,
+                timed_out=False,
             )
             ad = None
         return r, dig_res, ad
@@ -650,7 +709,7 @@ async def run_trace(target: str, record_type: str = "A", *,
                 _dig(target, record_type, ns_ip, ("+noall", "+answer")),
                 timeout=_PER_QUERY_TIMEOUT_S,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             dig_res = _timed_out_result(f"dig @{ns_ip} {target} {record_type}")
         return ns_name, ns_ip, dig_res
 
@@ -663,20 +722,25 @@ async def run_trace(target: str, record_type: str = "A", *,
                 _dig(target, record_type, None, ("+trace",)),
                 timeout=_TRACE_TIMEOUT_S,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return DigResult(
                 command=f"dig {target} {record_type} +trace",
-                stdout="[+trace timed out]", stderr="timeout",
-                returncode=124, duration_ms=int(_TRACE_TIMEOUT_S * 1000),
-                truncated=False, timed_out=True,
+                stdout="[+trace timed out]",
+                stderr="timeout",
+                returncode=124,
+                duration_ms=int(_TRACE_TIMEOUT_S * 1000),
+                truncated=False,
+                timed_out=True,
             )
 
     resolver_task = asyncio.gather(*[_probe_one(r) for r in resolver_chain])
-    auth_task     = asyncio.gather(*[_probe_auth(n, ip) for n, ip in auth_ns])
-    trace_task    = asyncio.create_task(_trace())
+    auth_task = asyncio.gather(*[_probe_auth(n, ip) for n, ip in auth_ns])
+    trace_task = asyncio.create_task(_trace())
 
     resolver_probes, auth_probes, trace_res = await asyncio.gather(
-        resolver_task, auth_task, trace_task,
+        resolver_task,
+        auth_task,
+        trace_task,
     )
 
     # --- build authoritative answer set ---------------------------------
@@ -690,17 +754,22 @@ async def run_trace(target: str, record_type: str = "A", *,
             auth_answers.add(ans)
         if ttl is not None:
             auth_ttls.append(ttl)
-        auth_rows_struct.append(TraceRow(
-            scope="authoritative",
-            name=ns_name, resolver_ip=ns_ip,
-            region=None,
-            answer=ans, ttl=ttl,
-            ok=(r.returncode == 0 and ans is not None),
-            status="match" if ans else "error",
-            duration_ms=r.duration_ms,
-            error=(r.stderr.strip() or None) if r.returncode != 0 else None,
-            flushable=False, ad_flag=None,
-        ))
+        auth_rows_struct.append(
+            TraceRow(
+                scope="authoritative",
+                name=ns_name,
+                resolver_ip=ns_ip,
+                region=None,
+                answer=ans,
+                ttl=ttl,
+                ok=(r.returncode == 0 and ans is not None),
+                status="match" if ans else "error",
+                duration_ms=r.duration_ms,
+                error=(r.stderr.strip() or None) if r.returncode != 0 else None,
+                flushable=False,
+                ad_flag=None,
+            )
+        )
 
     # --- classify each resolver row -------------------------------------
     def _scope_for(res) -> Scope:
@@ -722,19 +791,22 @@ async def run_trace(target: str, record_type: str = "A", *,
             status = "match"
         else:
             status = "unknown"
-        rows.append(TraceRow(
-            scope=_scope_for(res),
-            name=res.name,
-            resolver_ip=res.ip,
-            region=getattr(res, "region", None),
-            answer=ans, ttl=ttl,
-            ok=(status == "match"),
-            status=status,
-            duration_ms=dig_res.duration_ms,
-            error=(dig_res.stderr.strip() or None) if dig_res.returncode != 0 else None,
-            flushable=(res.ip == "127.0.0.1"),
-            ad_flag=ad,
-        ))
+        rows.append(
+            TraceRow(
+                scope=_scope_for(res),
+                name=res.name,
+                resolver_ip=res.ip,
+                region=getattr(res, "region", None),
+                answer=ans,
+                ttl=ttl,
+                ok=(status == "match"),
+                status=status,
+                duration_ms=dig_res.duration_ms,
+                error=(dig_res.stderr.strip() or None) if dig_res.returncode != 0 else None,
+                flushable=(res.ip == "127.0.0.1"),
+                ad_flag=ad,
+            )
+        )
 
     # Authoritative rows come last so the UI groups: local/house/mine, then authoritative.
     rows.extend(auth_rows_struct)
@@ -757,9 +829,9 @@ async def run_trace(target: str, record_type: str = "A", *,
     zone: str | None = None
     if mode == "dnssec":
         zone = await _discover_zone(target)
+
         async def _dprobe(r):
-            t_dig, ad, has_rrsig, dk_set, ds_set = await _dnssec_probe(
-                r.ip, target, record_type, zone)
+            t_dig, ad, has_rrsig, dk_set, ds_set = await _dnssec_probe(r.ip, target, record_type, zone)
             raw_ans, ttl = _first_answer_and_ttl(t_dig.stdout)
             ans = _normalise(raw_ans)
             if t_dig.returncode != 0 or ans is None:
@@ -767,11 +839,16 @@ async def run_trace(target: str, record_type: str = "A", *,
             else:
                 status = "match"  # divergence recomputed below
             return DnssecRow(
-                scope=_scope_for(r), name=r.name, resolver_ip=r.ip,
+                scope=_scope_for(r),
+                name=r.name,
+                resolver_ip=r.ip,
                 region=getattr(r, "region", None),
-                target_answer=ans, target_ttl=ttl,
-                target_ad=ad, target_has_rrsig=has_rrsig,
-                dnskey_records=dk_set, ds_records=ds_set,
+                target_answer=ans,
+                target_ttl=ttl,
+                target_ad=ad,
+                target_has_rrsig=has_rrsig,
+                dnskey_records=dk_set,
+                ds_records=ds_set,
                 dnskey_summary=_dnskey_summary(dk_set),
                 ds_summary=_ds_summary(ds_set),
                 zone=zone,
@@ -781,6 +858,7 @@ async def run_trace(target: str, record_type: str = "A", *,
                 error=(t_dig.stderr.strip() or None) if t_dig.returncode != 0 else None,
                 flushable=(r.ip == "127.0.0.1"),
             )
+
         dnssec_rows = list(await asyncio.gather(*[_dprobe(r) for r in resolver_chain]))
         # DNSSEC-specific status: don't treat target-answer divergence as
         # "divergent" in this mode (geo-DNS causes legitimate answer
@@ -799,8 +877,9 @@ async def run_trace(target: str, record_type: str = "A", *,
         # it's a subset of the majority (dig may truncate very large
         # RRsets depending on buffer size -- subsets are still valid).
         from collections import Counter
+
         dk_counter = Counter(r.dnskey_records for r in dnssec_rows if r.dnskey_records)
-        ds_counter = Counter(r.ds_records     for r in dnssec_rows if r.ds_records)
+        ds_counter = Counter(r.ds_records for r in dnssec_rows if r.ds_records)
         majority_dk = dk_counter.most_common(1)[0][0] if dk_counter else ()
         majority_ds = ds_counter.most_common(1)[0][0] if ds_counter else ()
         majority_dk_set = set(majority_dk)
@@ -823,21 +902,25 @@ async def run_trace(target: str, record_type: str = "A", *,
             # DNSKEY divergence: this resolver has keys not in the majority
             # set OR is missing keys that the majority has.
             if majority_dk_set and dk_set:
-                extras  = dk_set - majority_dk_set
+                extras = dk_set - majority_dk_set
                 missing = majority_dk_set - dk_set
                 if extras or missing:
                     bits = []
-                    if extras:  bits.append(f"{len(extras)} extra DNSKEY not in majority set")
-                    if missing: bits.append(f"missing {len(missing)} DNSKEY present in majority")
+                    if extras:
+                        bits.append(f"{len(extras)} extra DNSKEY not in majority set")
+                    if missing:
+                        bits.append(f"missing {len(missing)} DNSKEY present in majority")
                     return "divergent", "; ".join(bits)
             # DS divergence, same logic.
             if majority_ds_set and ds_set:
-                extras  = ds_set - majority_ds_set
+                extras = ds_set - majority_ds_set
                 missing = majority_ds_set - ds_set
                 if extras or missing:
                     bits = []
-                    if extras:  bits.append(f"{len(extras)} extra DS not in majority set")
-                    if missing: bits.append(f"missing {len(missing)} DS present in majority")
+                    if extras:
+                        bits.append(f"{len(extras)} extra DS not in majority set")
+                    if missing:
+                        bits.append(f"missing {len(missing)} DS present in majority")
                     return "divergent", "; ".join(bits)
             # AD flag divergence: this resolver didn't validate even though
             # others did. This is the most common real-world DNSSEC
@@ -852,12 +935,13 @@ async def run_trace(target: str, record_type: str = "A", *,
         new_rows = []
         for row in dnssec_rows:
             st, reason = _dnssec_status(row)
-            new_rows.append(DnssecRow(
-                **{k: v for k, v in row.__dict__.items()
-                   if k not in ("status", "divergence_reason")},
-                status=st,
-                divergence_reason=reason,
-            ))
+            new_rows.append(
+                DnssecRow(
+                    **{k: v for k, v in row.__dict__.items() if k not in ("status", "divergence_reason")},
+                    status=st,
+                    divergence_reason=reason,
+                )
+            )
         dnssec_rows = new_rows
 
     # --- summary ------------------------------------------------------

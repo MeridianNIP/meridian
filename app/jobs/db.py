@@ -7,6 +7,7 @@ reach the server without the SQLAlchemy session wrapping them.
 Hot tables (seeded list) get REINDEX CONCURRENTLY weekly; VACUUM ANALYZE
 runs across the whole DB daily to keep planner stats fresh.
 """
+
 from __future__ import annotations
 
 import time
@@ -18,7 +19,6 @@ from app.audit.logger import record as audit
 from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import session_scope
-
 
 # Tables that accumulate high churn and are hottest on the query path.
 # Reindexing these weekly keeps b-tree fanout healthy without the full-DB
@@ -51,16 +51,19 @@ def vacuum_analyze() -> dict[str, Any]:
         with eng.connect() as conn:
             conn.execute(text("VACUUM (ANALYZE)"))
         ok, err = True, None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok, err = False, str(e)[:400]
     finally:
         eng.dispose()
 
     duration_s = round(time.monotonic() - start, 2)
     with session_scope() as db:
-        audit(db, action="db.vacuum_analyze",
-              payload={"ok": ok, "duration_s": duration_s, "error": err},
-              outcome="ok" if ok else "error")
+        audit(
+            db,
+            action="db.vacuum_analyze",
+            payload={"ok": ok, "duration_s": duration_s, "error": err},
+            outcome="ok" if ok else "error",
+        )
     return {"ok": ok, "duration_s": duration_s, "error": err}
 
 
@@ -77,19 +80,21 @@ def reindex_hot() -> dict[str, Any]:
                     # so this is a static string, but we keep the quoting so a
                     # future edit with an operator-supplied name is still safe.
                     conn.execute(text(f'REINDEX TABLE CONCURRENTLY "{table}"'))
-                    results[table] = {"ok": True,
-                                      "duration_s": round(time.monotonic() - start, 2)}
-                except Exception as e:  # noqa: BLE001
-                    results[table] = {"ok": False,
-                                      "error": str(e)[:300],
-                                      "duration_s": round(time.monotonic() - start, 2)}
+                    results[table] = {"ok": True, "duration_s": round(time.monotonic() - start, 2)}
+                except Exception as e:
+                    results[table] = {
+                        "ok": False,
+                        "error": str(e)[:300],
+                        "duration_s": round(time.monotonic() - start, 2),
+                    }
     finally:
         eng.dispose()
 
     ok_count = sum(1 for r in results.values() if r["ok"])
     with session_scope() as db:
-        audit(db, action="db.reindex_hot",
-              payload={"ok_count": ok_count,
-                       "total": len(_HOT_TABLES),
-                       "results": results})
+        audit(
+            db,
+            action="db.reindex_hot",
+            payload={"ok_count": ok_count, "total": len(_HOT_TABLES), "results": results},
+        )
     return {"ok_count": ok_count, "total": len(_HOT_TABLES), "results": results}

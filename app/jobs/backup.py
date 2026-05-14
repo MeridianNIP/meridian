@@ -6,16 +6,14 @@ manually and the scheduled beat trigger. If a script is missing (custom
 install path, airgapped tarball without them), the task returns an error
 dict rather than raising — so the schedule keeps ticking.
 """
+
 from __future__ import annotations
 
-import re
-import shutil
-import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+import re
+import subprocess
 from typing import Any
-
-from sqlalchemy import text
 
 from app.audit.logger import record as audit
 from app.celery_app import celery_app
@@ -27,14 +25,12 @@ def _script_path(name: str) -> Path:
     return get_settings().install_root / "scripts" / name
 
 
-def _run_script(script: Path, args: list[str] | None = None,
-                timeout_s: int = 900) -> tuple[int, str, str]:
+def _run_script(script: Path, args: list[str] | None = None, timeout_s: int = 900) -> tuple[int, str, str]:
     if not script.is_file():
         return 127, "", f"script missing: {script}"
     argv = ["sudo", "-n", str(script), *(args or [])]
     try:
-        r = subprocess.run(argv, capture_output=True, text=True,
-                           timeout=timeout_s, check=False)
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_s, check=False)
         return r.returncode, r.stdout or "", r.stderr or ""
     except (OSError, subprocess.SubprocessError) as e:
         return 127, "", f"{type(e).__name__}: {e}"
@@ -63,12 +59,18 @@ def full_db() -> dict[str, Any]:
 
     ok = rc == 0 and path is not None
     with session_scope() as db:
-        audit(db, action="backup.full_db",
-              payload={"ok": ok, "returncode": rc, "path": path,
-                       "stderr_tail": (stderr or "").strip().splitlines()[-6:]},
-              outcome="ok" if ok else "error")
-    return {"ok": ok, "returncode": rc, "path": path,
-            "stderr_tail": (stderr or "").splitlines()[-6:]}
+        audit(
+            db,
+            action="backup.full_db",
+            payload={
+                "ok": ok,
+                "returncode": rc,
+                "path": path,
+                "stderr_tail": (stderr or "").strip().splitlines()[-6:],
+            },
+            outcome="ok" if ok else "error",
+        )
+    return {"ok": ok, "returncode": rc, "path": path, "stderr_tail": (stderr or "").splitlines()[-6:]}
 
 
 # ============================================================================
@@ -83,17 +85,16 @@ def rotate() -> dict[str, Any]:
     root = get_settings().data_root / "backups" / "full"
     if not root.is_dir():
         with session_scope() as db:
-            audit(db, action="backup.rotate",
-                  payload={"skipped": f"{root} not found"})
+            audit(db, action="backup.rotate", payload={"skipped": f"{root} not found"})
         return {"skipped": f"{root} not found"}
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dailies: list[Path] = []
     weeklies: list[Path] = []
     monthlies: list[Path] = []
 
     for p in root.glob("meridian-backup-*.tar.zst"):
-        mtime = datetime.fromtimestamp(p.stat().st_mtime, timezone.utc)
+        mtime = datetime.fromtimestamp(p.stat().st_mtime, UTC)
         age = now - mtime
         if age <= timedelta(days=7):
             dailies.append(p)
@@ -114,15 +115,24 @@ def rotate() -> dict[str, Any]:
                 pass
 
     with session_scope() as db:
-        audit(db, action="backup.rotate",
-              payload={"kept_daily": min(len(dailies), 7),
-                       "kept_weekly": min(len(weeklies), 4),
-                       "kept_monthly": min(len(monthlies), 3),
-                       "deleted": len(deleted)})
-    return {"kept": {"daily": min(len(dailies), 7),
-                     "weekly": min(len(weeklies), 4),
-                     "monthly": min(len(monthlies), 3)},
-            "deleted": deleted}
+        audit(
+            db,
+            action="backup.rotate",
+            payload={
+                "kept_daily": min(len(dailies), 7),
+                "kept_weekly": min(len(weeklies), 4),
+                "kept_monthly": min(len(monthlies), 3),
+                "deleted": len(deleted),
+            },
+        )
+    return {
+        "kept": {
+            "daily": min(len(dailies), 7),
+            "weekly": min(len(weeklies), 4),
+            "monthly": min(len(monthlies), 3),
+        },
+        "deleted": deleted,
+    }
 
 
 # ============================================================================
@@ -134,9 +144,15 @@ def wal_ship() -> dict[str, Any]:
     rc, stdout, stderr = _run_script(script, timeout_s=60)
     ok = rc == 0
     with session_scope() as db:
-        audit(db, action="backup.wal_ship",
-              payload={"ok": ok, "returncode": rc,
-                       "stdout_tail": (stdout or "").splitlines()[-3:],
-                       "stderr_tail": (stderr or "").splitlines()[-3:]},
-              outcome="ok" if ok else "error")
+        audit(
+            db,
+            action="backup.wal_ship",
+            payload={
+                "ok": ok,
+                "returncode": rc,
+                "stdout_tail": (stdout or "").splitlines()[-3:],
+                "stderr_tail": (stderr or "").splitlines()[-3:],
+            },
+            outcome="ok" if ok else "error",
+        )
     return {"ok": ok, "returncode": rc}

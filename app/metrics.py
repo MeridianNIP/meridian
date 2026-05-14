@@ -14,7 +14,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-
 REGISTRY = CollectorRegistry()
 
 HTTP_REQUESTS = Counter(
@@ -37,6 +36,7 @@ DB_UP = Gauge(
     "1 if the last /metrics scrape could SELECT 1 from PostgreSQL, else 0.",
     registry=REGISTRY,
 )
+
 
 def _route_template(request: Request) -> str:
     # Use the matched route's path template (e.g. "/api/v1/devices/{id}")

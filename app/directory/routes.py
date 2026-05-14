@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -11,10 +11,9 @@ from sqlalchemy.orm import Session as OrmSession
 from app.audit.logger import record as audit
 from app.auth.deps import client_ip, require_permission
 from app.db import fastapi_dep_db
-from app.directory.ldap_client import LDAPClient, client_for
+from app.directory.ldap_client import client_for
 from app.models.directory import DirectoryIntegration
 from app.models.user import User
-
 
 router = APIRouter(prefix="/directory", tags=["directory"])
 
@@ -23,10 +22,15 @@ def _integration_or_404(db: OrmSession, integration_id: uuid.UUID | None = None)
     if integration_id is not None:
         integ = db.get(DirectoryIntegration, integration_id)
     else:
-        integ = db.execute(
-            select(DirectoryIntegration).where(DirectoryIntegration.enabled.is_(True))
-            .order_by(DirectoryIntegration.created_at.asc())
-        ).scalars().first()
+        integ = (
+            db.execute(
+                select(DirectoryIntegration)
+                .where(DirectoryIntegration.enabled.is_(True))
+                .order_by(DirectoryIntegration.created_at.asc())
+            )
+            .scalars()
+            .first()
+        )
     if integ is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no enabled directory integration configured")
     return integ
@@ -69,16 +73,21 @@ async def test_integration(
     client = client_for(db, integ)
     result = client.test()
 
-    integ.last_tested_at = datetime.now(timezone.utc)
+    integ.last_tested_at = datetime.now(UTC)
     integ.last_test_ok = result.ok
     integ.last_test_error = result.error
 
-    audit(db, user_id=user.id, action="directory.test",
-          target_type="directory", target_key=integ.name,
-          payload={"ok": result.ok, "latency_ms": result.latency_ms, "error": result.error},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"),
-          outcome="ok" if result.ok else "error")
+    audit(
+        db,
+        user_id=user.id,
+        action="directory.test",
+        target_type="directory",
+        target_key=integ.name,
+        payload={"ok": result.ok, "latency_ms": result.latency_ms, "error": result.error},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        outcome="ok" if result.ok else "error",
+    )
     return {
         "ok": result.ok,
         "latency_ms": result.latency_ms,
@@ -104,20 +113,30 @@ async def search_user(
     client = client_for(db, integ)
     try:
         results = client.search_user(body.query, limit=body.limit)
-    except Exception as e:  # noqa: BLE001
-        audit(db, user_id=user.id, action="directory.user.search",
-              target_type="directory", target_key=integ.name,
-              payload={"query": body.query, "error": f"{type(e).__name__}: {e}"},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"),
-              outcome="error")
+    except Exception as e:
+        audit(
+            db,
+            user_id=user.id,
+            action="directory.user.search",
+            target_type="directory",
+            target_key=integ.name,
+            payload={"query": body.query, "error": f"{type(e).__name__}: {e}"},
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            outcome="error",
+        )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LDAP error: {e}")
 
-    audit(db, user_id=user.id, action="directory.user.search",
-          target_type="directory", target_key=integ.name,
-          payload={"query": body.query, "results": len(results)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="directory.user.search",
+        target_type="directory",
+        target_key=integ.name,
+        payload={"query": body.query, "results": len(results)},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"integration": integ.name, "query": body.query, "count": len(results), "results": results}
 
 
@@ -137,15 +156,20 @@ async def get_user(
     client = client_for(db, integ)
     try:
         entry = client.get_user_by_dn(body.dn)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LDAP error: {e}")
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "DN not found")
 
-    audit(db, user_id=user.id, action="directory.user.get",
-          target_type="directory_user", target_key=body.dn,
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="directory.user.get",
+        target_type="directory_user",
+        target_key=body.dn,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"integration": integ.name, "entry": entry}
 
 
@@ -166,14 +190,19 @@ async def search_group(
     client = client_for(db, integ)
     try:
         results = client.search_group(body.query, limit=body.limit)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LDAP error: {e}")
 
-    audit(db, user_id=user.id, action="directory.group.search",
-          target_type="directory", target_key=integ.name,
-          payload={"query": body.query, "results": len(results)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="directory.group.search",
+        target_type="directory",
+        target_key=integ.name,
+        payload={"query": body.query, "results": len(results)},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"integration": integ.name, "query": body.query, "count": len(results), "results": results}
 
 
@@ -182,10 +211,12 @@ async def search_group(
 # `action` = the AD verb and `target_key` = the user's DN. A second admin
 # approves it. Then the client calls the endpoint below with the DN, and the
 # require_approval dependency verifies the signed-off approval exists.
-from app.approvals.engine import ApprovalError
 from app.auth.deps import require_approval
 from app.directory.writes import (
-    DirectoryWriteError, disable_account, reset_password, unlock_account,
+    DirectoryWriteError,
+    disable_account,
+    reset_password,
+    unlock_account,
 )
 
 
@@ -207,18 +238,30 @@ async def unlock_user(
     try:
         result = unlock_account(client, body.dn)
     except DirectoryWriteError as e:
-        audit(db, user_id=user.id, action="ad.user.unlock",
-              target_type="directory_user", target_key=body.dn,
-              approval_id=approval.id,
-              payload={"error": str(e)},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"),
-              outcome="error")
+        audit(
+            db,
+            user_id=user.id,
+            action="ad.user.unlock",
+            target_type="directory_user",
+            target_key=body.dn,
+            approval_id=approval.id,
+            payload={"error": str(e)},
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            outcome="error",
+        )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e))
-    audit(db, user_id=user.id, action="ad.user.unlock",
-          target_type="directory_user", target_key=body.dn,
-          approval_id=approval.id, payload=result,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="ad.user.unlock",
+        target_type="directory_user",
+        target_key=body.dn,
+        approval_id=approval.id,
+        payload=result,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result
 
 
@@ -238,21 +281,35 @@ async def reset_user_password(
     integ = _integration_or_404(db, body.integration_id)
     client = client_for(db, integ)
     try:
-        result = reset_password(client, body.dn, body.new_password,
-                                force_change=body.force_change_at_next_logon)
+        result = reset_password(
+            client, body.dn, body.new_password, force_change=body.force_change_at_next_logon
+        )
     except DirectoryWriteError as e:
-        audit(db, user_id=user.id, action="ad.user.reset_password",
-              target_type="directory_user", target_key=body.dn,
-              approval_id=approval.id,
-              payload={"error": str(e), "force_change": body.force_change_at_next_logon},
-              ip=client_ip(request), user_agent=request.headers.get("user-agent"),
-              outcome="error")
+        audit(
+            db,
+            user_id=user.id,
+            action="ad.user.reset_password",
+            target_type="directory_user",
+            target_key=body.dn,
+            approval_id=approval.id,
+            payload={"error": str(e), "force_change": body.force_change_at_next_logon},
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            outcome="error",
+        )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e))
     # DO NOT log the plaintext password — `result` already excludes it.
-    audit(db, user_id=user.id, action="ad.user.reset_password",
-          target_type="directory_user", target_key=body.dn,
-          approval_id=approval.id, payload=result,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="ad.user.reset_password",
+        target_type="directory_user",
+        target_key=body.dn,
+        approval_id=approval.id,
+        payload=result,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result
 
 
@@ -269,15 +326,28 @@ async def disable_user(
     try:
         result = disable_account(client, body.dn)
     except DirectoryWriteError as e:
-        audit(db, user_id=user.id, action="ad.user.disable",
-              target_type="directory_user", target_key=body.dn,
-              approval_id=approval.id,
-              payload={"error": str(e)},
-              ip=client_ip(request), user_agent=request.headers.get("user-agent"),
-              outcome="error")
+        audit(
+            db,
+            user_id=user.id,
+            action="ad.user.disable",
+            target_type="directory_user",
+            target_key=body.dn,
+            approval_id=approval.id,
+            payload={"error": str(e)},
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            outcome="error",
+        )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e))
-    audit(db, user_id=user.id, action="ad.user.disable",
-          target_type="directory_user", target_key=body.dn,
-          approval_id=approval.id, payload=result,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="ad.user.disable",
+        target_type="directory_user",
+        target_key=body.dn,
+        approval_id=approval.id,
+        payload=result,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import hmac
 import json
-from functools import lru_cache
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
 
 from app.config import get_settings, load_key
-
 
 TAMPER_EVIDENT_TABLES = (
     "audit_events",
@@ -38,12 +37,13 @@ def canonicalize(fields: dict[str, Any]) -> bytes:
 
     def default(o: Any) -> Any:
         if isinstance(o, _dt.datetime) and o.tzinfo is not None:
-            return o.astimezone(_dt.timezone.utc).isoformat()
+            return o.astimezone(_dt.UTC).isoformat()
         if hasattr(o, "isoformat"):
             return o.isoformat()
         if isinstance(o, (bytes, bytearray)):
             return o.hex()
         return str(o)
+
     return json.dumps(fields, sort_keys=True, separators=(",", ":"), default=default).encode()
 
 
@@ -62,8 +62,7 @@ def prev_row_hash(db: OrmSession, table: str) -> bytes | None:
     # subsequent audit event's row_hash. Every tamper-evident table has
     # a BIGSERIAL `id` column.
     row = db.execute(
-        text(f"SELECT row_hash FROM {table} "
-             f"WHERE row_hash IS NOT NULL ORDER BY id DESC LIMIT 1")
+        text(f"SELECT row_hash FROM {table} " f"WHERE row_hash IS NOT NULL ORDER BY id DESC LIMIT 1")
     ).scalar_one_or_none()
     # psycopg2 returns BYTEA as memoryview; cast so downstream callers
     # (row_hash, equality checks) see bytes. On Python 3.13 the two types

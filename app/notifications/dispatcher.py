@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import uuid
+from datetime import UTC
 from typing import Any
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -16,20 +17,25 @@ def _handler_for(kind: str):
     # Delayed imports avoid circular loading during app startup.
     if kind == "inapp":
         from app.notifications.channels import inapp
+
         return inapp.send
     if kind == "email":
         from app.notifications.channels import email
+
         return email.send
     if kind in ("sms_twilio", "sms"):
         from app.notifications.channels import sms
+
         return sms.send
     if kind == "sms_gateway":
         # SMS-via-carrier-email gateway (e.g. number@txt.att.net) — same
         # delivery as plain email, just to a carrier MX.
         from app.notifications.channels import email
+
         return email.send
     if kind in ("webhook", "slack", "teams"):
         from app.notifications.channels import webhook
+
         return webhook.send
     return None
 
@@ -44,8 +50,8 @@ def _synthesize_email_channel(address: str, *, label: str) -> NotifChannel:
     send and report it back to the caller — same behavior as if the
     admin had configured an email channel with bad SMTP settings.
     """
+    from datetime import datetime
     import os
-    from datetime import datetime, timezone
 
     ch = NotifChannel(
         id=uuid.uuid4(),
@@ -62,8 +68,8 @@ def _synthesize_email_channel(address: str, *, label: str) -> NotifChannel:
         secret_id=None,
         enabled=True,
         user_id=None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     return ch
 
@@ -72,8 +78,8 @@ def _synthesize_sms_channel(number: str, *, label: str) -> NotifChannel:
     """Same idea as _synthesize_email_channel but for SMS. Uses env-var
     Twilio credentials; the SMS handler falls back to `skipped` if they
     aren't configured, so this is a no-op when no provider is wired."""
+    from datetime import datetime
     import os
-    from datetime import datetime, timezone
 
     return NotifChannel(
         id=uuid.uuid4(),
@@ -82,14 +88,14 @@ def _synthesize_sms_channel(number: str, *, label: str) -> NotifChannel:
         target=number,
         config={
             "twilio_account_sid": os.environ.get("TWILIO_ACCOUNT_SID"),
-            "twilio_auth_token":  os.environ.get("TWILIO_AUTH_TOKEN"),
-            "twilio_from":        os.environ.get("TWILIO_FROM"),
+            "twilio_auth_token": os.environ.get("TWILIO_AUTH_TOKEN"),
+            "twilio_from": os.environ.get("TWILIO_FROM"),
         },
         secret_id=None,
         enabled=True,
         user_id=None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -132,6 +138,7 @@ def dispatch(
     synthesized = []
     if user_id is not None and channel_ids is None:
         from app.models.user import User
+
         target = db.get(User, user_id)
         if target is not None:
             if not any(ch.kind == "email" for ch in channels):
@@ -157,9 +164,8 @@ def dispatch(
             out.append(f"{ch.kind}:unsupported")
             continue
         try:
-            delivery = handler(db, channel=ch, subject=subject, body=body,
-                               payload=merged_payload)
+            delivery = handler(db, channel=ch, subject=subject, body=body, payload=merged_payload)
             out.append(f"{ch.kind}:{delivery.status}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             out.append(f"{ch.kind}:error:{type(e).__name__}")
     return out

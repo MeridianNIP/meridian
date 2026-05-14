@@ -1,7 +1,8 @@
 """Scheduled device backup + snapshot retention."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
@@ -46,18 +47,22 @@ def retention() -> dict[str, Any]:
     """
     with session_scope() as db:
         keep_days = _keep_days(db, "device_snapshots", 365)
-        cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+        cutoff = datetime.now(UTC) - timedelta(days=keep_days)
 
         # Delete by age (global cap).
-        aged = db.execute(text("""
+        aged = db.execute(
+            text("""
             DELETE FROM device_config_snapshots WHERE ts < :cutoff
-        """), {"cutoff": cutoff})
+        """),
+            {"cutoff": cutoff},
+        )
         by_age = aged.rowcount or 0
 
         # Delete by per-device count — each device's retain_snapshots_count
         # column sets its own keep-N. Joining network_devices inline lets
         # us use a different N for every device in a single statement.
-        trimmed = db.execute(text("""
+        trimmed = db.execute(
+            text("""
             DELETE FROM device_config_snapshots
              WHERE id IN (
                SELECT id FROM (
@@ -70,13 +75,18 @@ def retention() -> dict[str, Any]:
                ) q
                WHERE q.rn > q.keep_n
              )
-        """))
+        """)
+        )
         by_count = trimmed.rowcount or 0
 
-        audit(db, action="device.snapshots.retention",
-              payload={"by_age": by_age, "by_count": by_count,
-                       "keep_days": keep_days,
-                       "count_source": "per-device retain_snapshots_count"})
-        return {"rows_deleted_by_age": by_age,
-                "rows_deleted_by_count": by_count,
-                "keep_days": keep_days}
+        audit(
+            db,
+            action="device.snapshots.retention",
+            payload={
+                "by_age": by_age,
+                "by_count": by_count,
+                "keep_days": keep_days,
+                "count_source": "per-device retain_snapshots_count",
+            },
+        )
+        return {"rows_deleted_by_age": by_age, "rows_deleted_by_count": by_count, "keep_days": keep_days}

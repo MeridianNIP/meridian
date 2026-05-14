@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -12,14 +12,13 @@ from app.certs.watchlist import fetch_remote_cert
 from app.db import session_scope
 from app.models.cert import Certificate
 
-
 _THRESHOLDS = (30, 14, 7, 3, 1)
 
 
 @celery_app.task(name="meridian.jobs.cert.expiry_check")
 def expiry_check() -> dict[str, Any]:
     """Refresh every monitored cert + emit escalation events at threshold crossings."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     fired: list[dict[str, Any]] = []
 
     # Per-cert channel routing — populated as each refresh lands.
@@ -30,7 +29,7 @@ def expiry_check() -> dict[str, Any]:
         cn = cert.common_name or ""
         if cn and not cn.startswith("*"):
             return cn
-        for san in (cert.sans or []):
+        for san in cert.sans or []:
             if san and not san.startswith("*"):
                 return san
         return cn[2:] if cn.startswith("*.") else cn
@@ -39,7 +38,7 @@ def expiry_check() -> dict[str, Any]:
         host = _host_for(c)
         try:
             info = await fetch_remote_cert(host, 443)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             c.last_renew_status = f"fetch_failed ({host}): {e}"
             return
         old_fp = c.fingerprint_sha256
@@ -48,26 +47,32 @@ def expiry_check() -> dict[str, Any]:
         c.issuer = info.issuer
         c.leaf_pem = info.leaf_pem
         if old_fp and old_fp != info.fingerprint_sha256:
-            fp_changes.append({
-                "cn": c.common_name, "old_fp": old_fp,
-                "new_fp": info.fingerprint_sha256,
-                "channels": list(c.notify_channels or []),
-            })
+            fp_changes.append(
+                {
+                    "cn": c.common_name,
+                    "old_fp": old_fp,
+                    "new_fp": info.fingerprint_sha256,
+                    "channels": list(c.notify_channels or []),
+                }
+            )
 
     with session_scope() as db:
-        monitored = db.execute(
-            select(Certificate).where(Certificate.cert_type == "monitored")
-        ).scalars().all()
+        monitored = (
+            db.execute(select(Certificate).where(Certificate.cert_type == "monitored")).scalars().all()
+        )
         if monitored:
             # Bound concurrency — without this, a portfolio of 1000 monitored
             # certs would open 1000 simultaneous TLS connections every sweep,
             # which is a DDoS-against-self at worst and a noisy thunderclap
             # against the cert hosts at minimum.
             from app.safety.limits import CERT_REFRESH_CONCURRENCY, bounded_gather
-            asyncio.run(bounded_gather(
-                (_refresh(c) for c in monitored),
-                max_workers=CERT_REFRESH_CONCURRENCY,
-            ))
+
+            asyncio.run(
+                bounded_gather(
+                    (_refresh(c) for c in monitored),
+                    max_workers=CERT_REFRESH_CONCURRENCY,
+                )
+            )
 
         for c in monitored:
             cert_channels[c.common_name] = list(c.notify_channels or [])
@@ -76,11 +81,21 @@ def expiry_check() -> dict[str, Any]:
             days = max(0, (c.valid_until - now).days)
             for t in _THRESHOLDS:
                 if days == t:
-                    audit(db, action="cert.expiry.threshold",
-                          target_type="cert", target_key=c.common_name,
-                          payload={"days_remaining": days, "threshold": t})
-                    fired.append({"cn": c.common_name, "threshold": t, "days": days,
-                                  "channels": list(c.notify_channels or [])})
+                    audit(
+                        db,
+                        action="cert.expiry.threshold",
+                        target_type="cert",
+                        target_key=c.common_name,
+                        payload={"days_remaining": days, "threshold": t},
+                    )
+                    fired.append(
+                        {
+                            "cn": c.common_name,
+                            "threshold": t,
+                            "days": days,
+                            "channels": list(c.notify_channels or []),
+                        }
+                    )
                     break
 
         # Fingerprint-change alerts — route through each cert's own channels
@@ -88,8 +103,10 @@ def expiry_check() -> dict[str, Any]:
         for ev in fp_changes:
             try:
                 from app.notifications.dispatcher import dispatch
+
                 dispatch(
-                    db, event_kind="cert.fingerprint_changed",
+                    db,
+                    event_kind="cert.fingerprint_changed",
                     subject=f"[Meridian] cert fingerprint changed: {ev['cn']}",
                     body=(
                         f"Common name: {ev['cn']}\n"
@@ -98,11 +115,10 @@ def expiry_check() -> dict[str, Any]:
                         f"If a rotation wasn't expected, this may indicate a "
                         f"MITM, unplanned re-issue, or hijack."
                     ),
-                    payload={"cn": ev["cn"], "old_fp": ev["old_fp"],
-                             "new_fp": ev["new_fp"]},
+                    payload={"cn": ev["cn"], "old_fp": ev["old_fp"], "new_fp": ev["new_fp"]},
                     channel_ids=ev["channels"] or None,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
         if fired:
@@ -110,42 +126,55 @@ def expiry_check() -> dict[str, Any]:
             # should go to, so a cert with its own notify_channels doesn't
             # also spam the global default list.
             from collections import defaultdict
+
             by_channels: dict[tuple, list] = defaultdict(list)
             for e in fired:
                 key = tuple(sorted(str(c) for c in e.get("channels") or []))
                 by_channels[key].append(e)
             try:
                 from app.notifications.dispatcher import dispatch
+
                 for key, group in by_channels.items():
                     subject = f"{len(group)} certificate(s) near expiry"
                     body = "\n".join(
-                        f"{e['cn']} · {e['days']} day(s) · threshold {e['threshold']}"
-                        for e in group
+                        f"{e['cn']} · {e['days']} day(s) · threshold {e['threshold']}" for e in group
                     )
                     dispatch(
-                        db, event_kind="cert.expiring",
-                        subject=subject, body=body,
-                        payload={"fired": [{"cn": e["cn"], "days": e["days"],
-                                            "threshold": e["threshold"]}
-                                           for e in group]},
+                        db,
+                        event_kind="cert.expiring",
+                        subject=subject,
+                        body=body,
+                        payload={
+                            "fired": [
+                                {"cn": e["cn"], "days": e["days"], "threshold": e["threshold"]} for e in group
+                            ]
+                        },
                         channel_ids=list(key) or None,
                     )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             try:
                 from app.webhooks.dispatcher import fanout
+
                 subject = f"{len(fired)} certificate(s) near expiry"
-                body = "\n".join(f"{e['cn']} · {e['days']} day(s) · threshold {e['threshold']}"
-                                 for e in fired)
-                fanout(db, event="cert.expiring", subject=subject, body=body,
-                       payload={"fired": [{"cn": e["cn"], "days": e["days"],
-                                           "threshold": e["threshold"]}
-                                          for e in fired]})
-            except Exception:  # noqa: BLE001
+                body = "\n".join(
+                    f"{e['cn']} · {e['days']} day(s) · threshold {e['threshold']}" for e in fired
+                )
+                fanout(
+                    db,
+                    event="cert.expiring",
+                    subject=subject,
+                    body=body,
+                    payload={
+                        "fired": [
+                            {"cn": e["cn"], "days": e["days"], "threshold": e["threshold"]} for e in fired
+                        ]
+                    },
+                )
+            except Exception:
                 pass
 
-        return {"checked": len(monitored), "fired": fired,
-                "fingerprint_changes": len(fp_changes)}
+        return {"checked": len(monitored), "fired": fired, "fingerprint_changes": len(fp_changes)}
 
 
 # ============================================================================
@@ -165,17 +194,14 @@ def auto_renew() -> dict[str, Any]:
     for cert_type='internal' without ACME, emit a notification so ops renews
     out-of-band.
     """
-    import subprocess
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window = timedelta(days=_DEFAULT_RENEW_WINDOW_DAYS)
     attempted: list[dict[str, Any]] = []
     manual_due: list[dict[str, Any]] = []
 
     with session_scope() as db:
-        candidates = db.execute(
-            select(Certificate).where(Certificate.auto_renew.is_(True))
-        ).scalars().all()
+        candidates = db.execute(select(Certificate).where(Certificate.auto_renew.is_(True))).scalars().all()
 
         for c in candidates:
             if c.valid_until is None:
@@ -189,45 +215,61 @@ def auto_renew() -> dict[str, Any]:
                 status = "ok" if rc == 0 else "failed"
                 c.last_renew_status = status + (f": {stderr_tail}" if stderr_tail else "")
                 c.last_renew_at = now
-                attempted.append({"cn": c.common_name, "status": status,
-                                  "rc": rc, "stderr_tail": stderr_tail})
-                audit(db, action="cert.auto_renew",
-                      target_type="cert", target_key=c.common_name,
-                      payload={"days_remaining": remaining.days, "rc": rc,
-                               "status": status, "stderr_tail": stderr_tail},
-                      outcome="ok" if rc == 0 else "error")
+                attempted.append(
+                    {"cn": c.common_name, "status": status, "rc": rc, "stderr_tail": stderr_tail}
+                )
+                audit(
+                    db,
+                    action="cert.auto_renew",
+                    target_type="cert",
+                    target_key=c.common_name,
+                    payload={
+                        "days_remaining": remaining.days,
+                        "rc": rc,
+                        "status": status,
+                        "stderr_tail": stderr_tail,
+                    },
+                    outcome="ok" if rc == 0 else "error",
+                )
             else:
-                manual_due.append({"cn": c.common_name,
-                                   "days_remaining": remaining.days,
-                                   "cert_type": c.cert_type})
+                manual_due.append(
+                    {"cn": c.common_name, "days_remaining": remaining.days, "cert_type": c.cert_type}
+                )
 
         if manual_due:
             try:
                 from app.notifications.dispatcher import dispatch
+
                 dispatch(
-                    db, event_kind="cert.renew_manual",
+                    db,
+                    event_kind="cert.renew_manual",
                     subject=f"{len(manual_due)} cert(s) need manual renewal",
-                    body="\n".join(f"{m['cn']} · {m['days_remaining']} day(s) · {m['cert_type']}"
-                                   for m in manual_due),
+                    body="\n".join(
+                        f"{m['cn']} · {m['days_remaining']} day(s) · {m['cert_type']}" for m in manual_due
+                    ),
                     payload={"certs": manual_due},
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
-    return {"candidates": len(attempted) + len(manual_due),
-            "attempted": attempted, "manual_due": manual_due}
+    return {"candidates": len(attempted) + len(manual_due), "attempted": attempted, "manual_due": manual_due}
 
 
 def _certbot_renew(domain: str) -> tuple[int, str]:
-    import shutil, subprocess
+    import shutil
+    import subprocess
+
     if not shutil.which("certbot"):
         return (127, "certbot not on PATH")
     try:
         r = subprocess.run(
             ["certbot", "renew", "--cert-name", domain, "--quiet"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
         )
-        tail = ((r.stderr or r.stdout or "").strip().splitlines()[-3:])
+        tail = (r.stderr or r.stdout or "").strip().splitlines()[-3:]
         return (r.returncode, " · ".join(tail)[:400])
     except (OSError, subprocess.SubprocessError) as e:
         return (127, f"{type(e).__name__}: {e}")

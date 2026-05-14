@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -60,7 +60,9 @@ class Branding(Base):
     session_idle_timeout_default_min: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     session_idle_timeout_max_min: Mapped[int] = mapped_column(Integer, nullable=False, default=1440)
     session_idle_timeout_options: Mapped[list[int]] = mapped_column(
-        ARRAY(Integer), nullable=False, default=lambda: [10, 30, 60, 120, 0],
+        ARRAY(Integer),
+        nullable=False,
+        default=lambda: [10, 30, 60, 120, 0],
     )
     session_idle_never_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     session_idle_custom_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -74,7 +76,8 @@ class Branding(Base):
     # MFA policy
     mfa_requirement: Mapped[str] = mapped_column(Text, nullable=False, default="admins_only")
     mfa_allowed_methods: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), nullable=False, default=lambda: ["totp"])
+        ARRAY(Text), nullable=False, default=lambda: ["totp"]
+    )
     mfa_backup_codes_count: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
 
     # Account lockout
@@ -96,10 +99,12 @@ class Branding(Base):
 
     # Audit
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
     )
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"),
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
     )
 
 
@@ -107,6 +112,7 @@ def load(db) -> Branding:
     """Fetch the single branding row. Raises KeyError if the table is empty,
     which only happens on a not-yet-seeded install."""
     from sqlalchemy import select
+
     row = db.execute(select(Branding).where(Branding.id == 1)).scalar_one_or_none()
     if row is None:
         raise KeyError("branding row not found · run install.sh to seed the database")

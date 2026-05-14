@@ -25,11 +25,12 @@ defaults must be safe. An admin who raises a cap intentionally is
 responsible for the consequences, but the OUT-OF-THE-BOX deployment
 cannot become a DDoS source.
 """
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Iterable, TypeVar
-
+from collections.abc import Awaitable, Iterable
+from typing import TypeVar
 
 # ============================================================================
 # Floors / ceilings — alphabetical by feature area.
@@ -37,66 +38,67 @@ from typing import Any, Awaitable, Iterable, TypeVar
 
 # --- Background scheduled jobs --------------------------------------------
 # Refresh intervals for periodic jobs (Celery beat / redbeat).
-CERT_REFRESH_INTERVAL_S       = 6 * 3600    # cert expiry sweep: 4x per day
-THREAT_FEED_REFRESH_S         = 6 * 3600    # threat-intel refresh: 4x per day
-INTEGRITY_SCAN_INTERVAL_S     = 24 * 3600   # audit-row HMAC scan: once per day
+CERT_REFRESH_INTERVAL_S = 6 * 3600  # cert expiry sweep: 4x per day
+THREAT_FEED_REFRESH_S = 6 * 3600  # threat-intel refresh: 4x per day
+INTEGRITY_SCAN_INTERVAL_S = 24 * 3600  # audit-row HMAC scan: once per day
 
 # --- DNS tools ------------------------------------------------------------
-PROPAGATION_MAX_RESOLVERS     = 32    # cap fan-out even if user adds 200 to panel
+PROPAGATION_MAX_RESOLVERS = 32  # cap fan-out even if user adds 200 to panel
 PROPAGATION_PER_RESOLVER_TIMEOUT_S = 3
-PROPAGATION_CONCURRENCY       = 16    # max simultaneous dig sockets
+PROPAGATION_CONCURRENCY = 16  # max simultaneous dig sockets
 
-REVERSE_DNS_MAX_HOSTS         = 1024  # per-request ceiling for batch PTR
-REVERSE_DNS_CONCURRENCY       = 16
+REVERSE_DNS_MAX_HOSTS = 1024  # per-request ceiling for batch PTR
+REVERSE_DNS_CONCURRENCY = 16
 
-WHOIS_BULK_MAX                = 200   # already enforced in routes; mirrored here
-WHOIS_CONCURRENCY             = 4     # WHOIS servers hate concurrency
+WHOIS_BULK_MAX = 200  # already enforced in routes; mirrored here
+WHOIS_CONCURRENCY = 4  # WHOIS servers hate concurrency
 
-TYPOSQUAT_MAX_VARIANTS        = 500
-TYPOSQUAT_CONCURRENCY         = 16
+TYPOSQUAT_MAX_VARIANTS = 500
+TYPOSQUAT_CONCURRENCY = 16
 
 # --- Network tools --------------------------------------------------------
-PING_COUNT_MAX                = 100
-PING_INTERVAL_FLOOR_S         = 0.2
-PING_INTERVAL_CEILING_S       = 30.0
+PING_COUNT_MAX = 100
+PING_INTERVAL_FLOOR_S = 0.2
+PING_INTERVAL_CEILING_S = 30.0
 
-TRACEROUTE_MAX_HOPS           = 64
-TRACEROUTE_PROBES_MAX         = 5
+TRACEROUTE_MAX_HOPS = 64
+TRACEROUTE_PROBES_MAX = 5
 
-PORT_SCAN_MAX_PORTS           = 1024
-PORT_SCAN_CONCURRENCY_MAX     = 256
+PORT_SCAN_MAX_PORTS = 1024
+PORT_SCAN_CONCURRENCY_MAX = 256
 
-HTTP_TEST_MAX_REDIRECTS       = 10
-HTTP_TEST_TIMEOUT_CEILING_S   = 60     # don't let a user pin a worker for hours
+HTTP_TEST_MAX_REDIRECTS = 10
+HTTP_TEST_TIMEOUT_CEILING_S = 60  # don't let a user pin a worker for hours
 
 # --- Monitors -------------------------------------------------------------
-MONITOR_INTERVAL_FLOOR_S      = 30     # never poll faster than every 30s
-MONITOR_INTERVAL_CEILING_S    = 3600   # never queue a check less often than 1/hr
-MONITOR_PER_CHECK_TIMEOUT_S   = 30     # any single probe wall-clock cap
+MONITOR_INTERVAL_FLOOR_S = 30  # never poll faster than every 30s
+MONITOR_INTERVAL_CEILING_S = 3600  # never queue a check less often than 1/hr
+MONITOR_PER_CHECK_TIMEOUT_S = 30  # any single probe wall-clock cap
 
 # --- Cert portfolio sweep --------------------------------------------------
-CERT_REFRESH_CONCURRENCY      = 10     # parallel TLS handshakes / OCSP probes
+CERT_REFRESH_CONCURRENCY = 10  # parallel TLS handshakes / OCSP probes
 
 # --- External API integrations (per-process, in-memory rate limit) ---------
 # Each external integration gets a token bucket with this many tokens per
 # minute. If a user hammers the endpoint, requests beyond the budget queue
 # briefly and then 429. Defends against a buggy retry loop in user code.
 EXTERNAL_API_TOKENS_PER_MIN = {
-    "censys":        30,
-    "shodan":        30,
-    "virustotal":    30,
-    "ripestat":      60,   # public, generous
-    "team_cymru":    60,
-    "ipapi":         30,
-    "bgpview":       30,
-    "crtsh":         60,
-    "default":       30,   # fallback for any integration not listed
+    "censys": 30,
+    "shodan": 30,
+    "virustotal": 30,
+    "ripestat": 60,  # public, generous
+    "team_cymru": 60,
+    "ipapi": 30,
+    "bgpview": 30,
+    "crtsh": 60,
+    "default": 30,  # fallback for any integration not listed
 }
 
 
 # ============================================================================
 # Helpers
 # ============================================================================
+
 
 def clamp(value: float | int, *, floor: float | int, ceiling: float | int) -> float | int:
     """Runtime clamp — survives a malicious admin editing the DB row.
@@ -145,16 +147,15 @@ async def bounded_gather(
 # UI can't escape via direct API hits.
 
 import time
-from collections import defaultdict
 
 
 class _Bucket:
     __slots__ = ("tokens", "last_refill", "rate", "capacity")
 
     def __init__(self, rate_per_minute: int):
-        self.rate     = rate_per_minute / 60.0   # tokens per second
-        self.capacity = float(rate_per_minute)   # burst = 1 minute's worth
-        self.tokens   = self.capacity
+        self.rate = rate_per_minute / 60.0  # tokens per second
+        self.capacity = float(rate_per_minute)  # burst = 1 minute's worth
+        self.tokens = self.capacity
         self.last_refill = time.monotonic()
 
     def try_acquire(self) -> bool:
@@ -177,8 +178,7 @@ def acquire_token(api_name: str) -> bool:
     queue + retry). The bucket is process-local — for multi-worker
     deployments this is per-worker; still good enough to defeat the
     "user clicks button 1000 times" class of misuse."""
-    rate = EXTERNAL_API_TOKENS_PER_MIN.get(api_name,
-                                            EXTERNAL_API_TOKENS_PER_MIN["default"])
+    rate = EXTERNAL_API_TOKENS_PER_MIN.get(api_name, EXTERNAL_API_TOKENS_PER_MIN["default"])
     b = _BUCKETS.get(api_name)
     if b is None or b.rate != rate / 60.0:
         b = _Bucket(rate)
@@ -193,6 +193,7 @@ def require_token(api_name: str) -> None:
     if acquire_token(api_name):
         return
     from fastapi import HTTPException, status
+
     raise HTTPException(
         status.HTTP_429_TOO_MANY_REQUESTS,
         f"rate limit exceeded for {api_name}; default budget "

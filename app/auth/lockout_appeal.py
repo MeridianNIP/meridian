@@ -19,21 +19,21 @@ documented gap in `docs/admin/lockout-recovery.md` — full mitigation
 requires switching the relevant jails away from `iptables-allports`,
 which is an operator-level decision.
 """
+
 from __future__ import annotations
 
-import time
 from collections import deque
 from threading import Lock
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
 
-from app.auth.deps import client_ip
 from app.audit.logger import record as audit
+from app.auth.deps import client_ip
 from app.db import fastapi_dep_db
-
 
 router = APIRouter(prefix="/auth", tags=["auth-lockout-appeal"])
 
@@ -92,29 +92,38 @@ async def submit_appeal(
         },
     ).scalar_one()
 
-    audit(db, user_id=None, action="auth.lockout_appeal.submitted",
-          target_type="lockout_appeal", target_key=str(appeal_id),
-          payload={"claimed_username": body.claimed_username,
-                   "contact_email": body.contact_email},
-          ip=ip, user_agent=ua, outcome="ok")
+    audit(
+        db,
+        user_id=None,
+        action="auth.lockout_appeal.submitted",
+        target_type="lockout_appeal",
+        target_key=str(appeal_id),
+        payload={"claimed_username": body.claimed_username, "contact_email": body.contact_email},
+        ip=ip,
+        user_agent=ua,
+        outcome="ok",
+    )
 
     # Best-effort admin notification. The notifications dispatcher already
     # knows how to fan out to email + in-portal inbox; we just emit an
     # event and let it route. Failure here is non-fatal.
     try:
         from app.notifications.dispatcher import dispatch
+
         ctx_preview = body.context[:300]
         dispatch(
             db,
             event_kind="auth.lockout_appeal",
             subject=f"[Meridian] lockout appeal from {ip}",
-            body=(f"A user submitted a lockout appeal via /ui/locked-out.\n\n"
-                  f"  Appeal ID:        {appeal_id}\n"
-                  f"  Source IP:        {ip}\n"
-                  f"  Claimed username: {body.claimed_username or '(not provided)'}\n"
-                  f"  Contact email:    {body.contact_email or '(not provided)'}\n"
-                  f"  Context:\n    {ctx_preview}\n\n"
-                  f"Review at /ui/admin/appeals."),
+            body=(
+                f"A user submitted a lockout appeal via /ui/locked-out.\n\n"
+                f"  Appeal ID:        {appeal_id}\n"
+                f"  Source IP:        {ip}\n"
+                f"  Claimed username: {body.claimed_username or '(not provided)'}\n"
+                f"  Contact email:    {body.contact_email or '(not provided)'}\n"
+                f"  Context:\n    {ctx_preview}\n\n"
+                f"Review at /ui/admin/appeals."
+            ),
             payload={
                 "appeal_id": str(appeal_id),
                 "ip": ip,
@@ -127,6 +136,8 @@ async def submit_appeal(
         # shouldn't block submission.
         pass
 
-    return {"ok": True,
-            "appeal_id": str(appeal_id),
-            "message": "Submitted. An admin will reach out via the contact channel you provided."}
+    return {
+        "ok": True,
+        "appeal_id": str(appeal_id),
+        "message": "Submitted. An admin will reach out via the contact channel you provided.",
+    }

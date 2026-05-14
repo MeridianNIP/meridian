@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import uuid
-from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -13,7 +13,6 @@ from app.auth.deps import client_ip, current_user
 from app.db import fastapi_dep_db
 from app.models.monitor import Monitor, MonitorIncident, MonitorSample
 from app.models.user import User
-
 
 router = APIRouter(prefix="/monitors", tags=["monitors"])
 
@@ -61,11 +60,15 @@ async def list_monitors(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> list[Monitor]:
     # Everyone sees their own monitors + any with owner_id IS NULL (shared).
-    rows = db.execute(
-        select(Monitor).where(
-            (Monitor.owner_id == user.id) | (Monitor.owner_id.is_(None))
-        ).order_by(Monitor.name)
-    ).scalars().all()
+    rows = (
+        db.execute(
+            select(Monitor)
+            .where((Monitor.owner_id == user.id) | (Monitor.owner_id.is_(None)))
+            .order_by(Monitor.name)
+        )
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 
@@ -98,11 +101,16 @@ async def create_monitor(
     )
     db.add(m)
     db.flush()
-    audit(db, user_id=user.id, action="monitor.create",
-          target_type="monitor", target_key=str(m.id),
-          payload={"name": m.name, "kind": m.kind, "target": m.target},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="monitor.create",
+        target_type="monitor",
+        target_key=str(m.id),
+        payload={"name": m.name, "kind": m.kind, "target": m.target},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     # Kick an initial probe so the operator sees a status/value row as
     # soon as the Create button returns, rather than waiting up to one
@@ -112,17 +120,19 @@ async def create_monitor(
     # called from a running event loop" and the old except-pass was
     # swallowing that failure silently.
     if m.enabled:
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         from app.monitors.collector import _sample_one
+
         try:
-            await _sample_one(db, m, now=datetime.now(timezone.utc))
-        except Exception as exc:  # noqa: BLE001
+            await _sample_one(db, m, now=datetime.now(UTC))
+        except Exception as exc:
             # Probe-level failures (bad target, DNS miss, socket error)
             # still leave the monitor created — Celery beat will retry.
             # Surface the error for log visibility; the create succeeds.
             import logging
-            logging.getLogger(__name__).warning(
-                "initial monitor probe failed for %s: %s", m.id, exc)
+
+            logging.getLogger(__name__).warning("initial monitor probe failed for %s: %s", m.id, exc)
     return m
 
 
@@ -156,26 +166,41 @@ async def update_monitor(
     if m.owner_id is not None and m.owner_id != user.id and user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your monitor")
     changed: dict = {}
-    for field in ("name", "kind", "target", "interval_seconds",
-                  "timeout_seconds", "enabled", "config",
-                  "fail_threshold", "recovery_notify",
-                  "quiet_hours_start", "quiet_hours_end",
-                  "renotify_interval_min"):
+    for field in (
+        "name",
+        "kind",
+        "target",
+        "interval_seconds",
+        "timeout_seconds",
+        "enabled",
+        "config",
+        "fail_threshold",
+        "recovery_notify",
+        "quiet_hours_start",
+        "quiet_hours_end",
+        "renotify_interval_min",
+    ):
         val = getattr(body, field)
         if val is not None:
             if field == "kind" and val not in _ALLOWED_KINDS:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                                    f"kind must be one of {sorted(_ALLOWED_KINDS)}")
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, f"kind must be one of {sorted(_ALLOWED_KINDS)}"
+                )
             setattr(m, field, val)
             changed[field] = val
     if body.notify_channels is not None:
         m.notify_channels = list(body.notify_channels)
         changed["notify_channels"] = len(m.notify_channels)
-    audit(db, user_id=user.id, action="monitor.update",
-          target_type="monitor", target_key=str(monitor_id),
-          payload={"changed": sorted(changed.keys())},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="monitor.update",
+        target_type="monitor",
+        target_key=str(monitor_id),
+        payload={"changed": sorted(changed.keys())},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     db.flush()
     return m
 
@@ -193,11 +218,16 @@ async def delete_monitor(
     if m.owner_id is not None and m.owner_id != user.id and user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your monitor")
     db.delete(m)
-    audit(db, user_id=user.id, action="monitor.delete",
-          target_type="monitor", target_key=str(monitor_id),
-          payload={"name": m.name},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="monitor.delete",
+        target_type="monitor",
+        target_key=str(monitor_id),
+        payload={"name": m.name},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 @router.get("/{monitor_id}/samples")
@@ -212,18 +242,19 @@ async def recent_samples(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "monitor not found")
     if m.owner_id is not None and m.owner_id != user.id and user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your monitor")
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, min(hours, 168)))
-    rows = db.execute(
-        select(MonitorSample).where(
-            and_(MonitorSample.monitor_id == monitor_id, MonitorSample.ts >= cutoff)
-        ).order_by(MonitorSample.ts.asc())
-    ).scalars().all()
+    cutoff = datetime.now(UTC) - timedelta(hours=max(1, min(hours, 168)))
+    rows = (
+        db.execute(
+            select(MonitorSample)
+            .where(and_(MonitorSample.monitor_id == monitor_id, MonitorSample.ts >= cutoff))
+            .order_by(MonitorSample.ts.asc())
+        )
+        .scalars()
+        .all()
+    )
     return {
         "monitor_id": str(monitor_id),
-        "samples": [
-            {"ts": s.ts.isoformat(), "status": s.status, "value": s.value}
-            for s in rows
-        ],
+        "samples": [{"ts": s.ts.isoformat(), "status": s.status, "value": s.value} for s in rows],
     }
 
 
@@ -233,10 +264,16 @@ async def recent_incidents(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
-    rows = db.execute(
-        select(MonitorIncident).where(MonitorIncident.monitor_id == monitor_id)
-        .order_by(desc(MonitorIncident.opened_at)).limit(50)
-    ).scalars().all()
+    rows = (
+        db.execute(
+            select(MonitorIncident)
+            .where(MonitorIncident.monitor_id == monitor_id)
+            .order_by(desc(MonitorIncident.opened_at))
+            .limit(50)
+        )
+        .scalars()
+        .all()
+    )
     return {
         "incidents": [
             {
@@ -264,9 +301,13 @@ async def toggle(
     if m.owner_id is not None and m.owner_id != user.id and user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your monitor")
     m.enabled = not m.enabled
-    audit(db, user_id=user.id,
-          action="monitor.enable" if m.enabled else "monitor.disable",
-          target_type="monitor", target_key=str(monitor_id),
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="monitor.enable" if m.enabled else "monitor.disable",
+        target_type="monitor",
+        target_key=str(monitor_id),
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"id": str(m.id), "enabled": m.enabled}

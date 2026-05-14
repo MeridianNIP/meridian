@@ -3,7 +3,6 @@ from __future__ import annotations
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHash, VerifyMismatchError
 
-
 _hasher = PasswordHasher(
     time_cost=3,
     memory_cost=64 * 1024,

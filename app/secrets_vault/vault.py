@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import hashlib
 import os
-from functools import lru_cache
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.config import get_settings, load_key
-
 
 _NONCE_LEN = 12
 

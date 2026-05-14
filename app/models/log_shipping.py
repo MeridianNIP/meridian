@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -20,6 +20,7 @@ class LogShippingDestination(Base, TimestampMixin):
     Secret material (HEC token, API key, mTLS key) lives in the vault
     and is referenced by `auth_secret_id`.
     """
+
     __tablename__ = "log_shipping_destinations"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -28,11 +29,10 @@ class LogShippingDestination(Base, TimestampMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)  # URL or host:port
     transport: Mapped[str] = mapped_column(Text, nullable=False, default="tcp")  # tcp|udp|tls|https
-    facility: Mapped[str | None] = mapped_column(Text)          # syslog facility (local0..local7)
+    facility: Mapped[str | None] = mapped_column(Text)  # syslog facility (local0..local7)
     index_or_sourcetype: Mapped[str | None] = mapped_column(Text)  # splunk index / ECS index pattern
-    auth_secret_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("secrets.id"))
-    ca_cert_path: Mapped[str | None] = mapped_column(Text)      # optional TLS CA bundle
+    auth_secret_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("secrets.id"))
+    ca_cert_path: Mapped[str | None] = mapped_column(Text)  # optional TLS CA bundle
     event_filter: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     # categories to include; empty = everything
     batch_size: Mapped[int] = mapped_column(Integer, nullable=False, default=100)

@@ -10,7 +10,6 @@ from app.auth.deps import client_ip, require_permission
 from app.db import fastapi_dep_db
 from app.models.user import User
 
-
 router = APIRouter(prefix="/admin/health", tags=["admin-health"])
 
 
@@ -61,13 +60,21 @@ async def post_repair(
 
     result = repair(body.action, db)
 
-    audit(db, user_id=user.id, action="admin.system.repair",
-          target_type="repair_action", target_key=body.action,
-          payload={"ok": result.ok, "detail": result.detail[:400],
-                   "output_preview": (result.output or "")[:200]},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"),
-          outcome="ok" if result.ok else "error")
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.system.repair",
+        target_type="repair_action",
+        target_key=body.action,
+        payload={
+            "ok": result.ok,
+            "detail": result.detail[:400],
+            "output_preview": (result.output or "")[:200],
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        outcome="ok" if result.ok else "error",
+    )
 
     return {
         "action": result.action,
@@ -86,8 +93,8 @@ async def get_tls_audit(
     Useful for the admin panel's TLS card which wants the full detail
     (protocols, cipher, OCSP, HSTS) not just the grade rollup."""
     import json
-    import subprocess
     from pathlib import Path
+    import subprocess
 
     from app.config import get_settings
 
@@ -97,17 +104,20 @@ async def get_tls_audit(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "no portal_domain configured")
     script = Path(s.install_root) / "scripts" / "audit-tls.sh"
     if not script.is_file():
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            f"audit script not deployed: {script}")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"audit script not deployed: {script}")
     try:
         r = subprocess.run(
             ["bash", str(script), "--host", target, "--port", "443"],
-            capture_output=True, text=True, timeout=45,
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "audit timed out")
     try:
         return json.loads(r.stdout)
-    except Exception:  # noqa: BLE001
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                            f"unparseable audit output: {r.stderr[:200] or r.stdout[:200]}")
+    except Exception:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"unparseable audit output: {r.stderr[:200] or r.stdout[:200]}"
+        )

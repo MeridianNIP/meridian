@@ -18,11 +18,11 @@ DKIM parser:
   * validate p= as well-formed base64 RSA / Ed25519 key
   * derive key bit length, flag weak (<2048-bit RSA)
 """
+
 from __future__ import annotations
 
 import base64
 import re
-from typing import Any
 
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
@@ -30,7 +30,6 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
 from app.dns.dig import DigRequest, run_dig
 from app.wizards.engine import Suggestion, WizardContext, WizardStep, wizard
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,36 +73,61 @@ async def spf_parser(ctx: WizardContext) -> list[Suggestion]:
     spf_records = [rec for rec in _txt_strings(r.stdout) if rec.startswith("v=spf1")]
 
     if not spf_records:
-        ctx.add(WizardStep(name="SPF record", outcome="fail",
-                           message=f"No v=spf1 TXT record at {domain}."))
-        return [Suggestion(priority="critical", title="Publish an SPF record",
-                           detail="Start with v=spf1 include:<provider> ~all. Move to -all once legitimate senders are enumerated.")]
+        ctx.add(WizardStep(name="SPF record", outcome="fail", message=f"No v=spf1 TXT record at {domain}."))
+        return [
+            Suggestion(
+                priority="critical",
+                title="Publish an SPF record",
+                detail="Start with v=spf1 include:<provider> ~all. Move to -all once legitimate senders are enumerated.",
+            )
+        ]
     if len(spf_records) > 1:
-        ctx.add(WizardStep(name="SPF record count", outcome="fail",
-                           message=f"{len(spf_records)} SPF records found — RFC 7208 requires exactly one. Receivers will treat this as PermError.",
-                           detail={"records": spf_records}))
-        return [Suggestion(priority="critical", title="Collapse to a single SPF record",
-                           detail="Merge overlapping mechanisms; remove deprecated records. Multiple v=spf1 records = automatic auth failure.")]
+        ctx.add(
+            WizardStep(
+                name="SPF record count",
+                outcome="fail",
+                message=f"{len(spf_records)} SPF records found — RFC 7208 requires exactly one. Receivers will treat this as PermError.",
+                detail={"records": spf_records},
+            )
+        )
+        return [
+            Suggestion(
+                priority="critical",
+                title="Collapse to a single SPF record",
+                detail="Merge overlapping mechanisms; remove deprecated records. Multiple v=spf1 records = automatic auth failure.",
+            )
+        ]
 
     record = spf_records[0]
-    ctx.add(WizardStep(name="SPF record", outcome="ok",
-                       message=f"Single SPF record found ({len(record)} chars)",
-                       detail={"raw": record}))
+    ctx.add(
+        WizardStep(
+            name="SPF record",
+            outcome="ok",
+            message=f"Single SPF record found ({len(record)} chars)",
+            detail={"raw": record},
+        )
+    )
 
     tokens = record.split()
     qualifier_all = next((t for t in tokens if t.lstrip("+-~?").lower() == "all"), None)
     if qualifier_all:
         prefix = qualifier_all[0] if qualifier_all[0] in "+-~?" else "+"
-        meaning = {"+": "pass (allows everyone — accepts forged mail)",
-                   "-": "hard-fail (recommended)",
-                   "~": "soft-fail (sandbox / spam-folder)",
-                   "?": "neutral (treat as if no SPF — almost as bad as +all)"}[prefix]
+        meaning = {
+            "+": "pass (allows everyone — accepts forged mail)",
+            "-": "hard-fail (recommended)",
+            "~": "soft-fail (sandbox / spam-folder)",
+            "?": "neutral (treat as if no SPF — almost as bad as +all)",
+        }[prefix]
         outcome = "fail" if prefix == "+" else ("warn" if prefix == "?" else "ok")
-        ctx.add(WizardStep(name=f"Final mechanism ({qualifier_all})", outcome=outcome,
-                           message=meaning))
+        ctx.add(WizardStep(name=f"Final mechanism ({qualifier_all})", outcome=outcome, message=meaning))
     else:
-        ctx.add(WizardStep(name="Final mechanism", outcome="warn",
-                           message="No 'all' mechanism — RFC 7208 says behaviour is implementation-defined, treat as ?all."))
+        ctx.add(
+            WizardStep(
+                name="Final mechanism",
+                outcome="warn",
+                message="No 'all' mechanism — RFC 7208 says behaviour is implementation-defined, treat as ?all.",
+            )
+        )
 
     # DNS-lookup count, including transitive includes.
     direct = _count_dns_mechs(record)
@@ -118,23 +142,40 @@ async def spf_parser(ctx: WizardContext) -> list[Suggestion]:
         chased[inc] = sub_lookups
         total += sub_lookups
 
-    ctx.add(WizardStep(
-        name="DNS-mechanism lookup count",
-        outcome="fail" if total > 10 else ("warn" if total > 8 else "ok"),
-        message=f"{total} (direct={direct}, in includes/redirects={sum(chased.values())}); RFC 7208 caps at 10",
-        detail={"direct": direct, "chased": chased},
-    ))
+    ctx.add(
+        WizardStep(
+            name="DNS-mechanism lookup count",
+            outcome="fail" if total > 10 else ("warn" if total > 8 else "ok"),
+            message=f"{total} (direct={direct}, in includes/redirects={sum(chased.values())}); RFC 7208 caps at 10",
+            detail={"direct": direct, "chased": chased},
+        )
+    )
 
     sug: list[Suggestion] = []
     if qualifier_all and qualifier_all.startswith("+"):
-        sug.append(Suggestion(priority="critical", title="Replace +all with -all or ~all",
-                              detail="+all tells receivers every host on the internet is a legitimate sender for this domain. Switch to -all (hard fail) or ~all (soft fail) immediately."))
+        sug.append(
+            Suggestion(
+                priority="critical",
+                title="Replace +all with -all or ~all",
+                detail="+all tells receivers every host on the internet is a legitimate sender for this domain. Switch to -all (hard fail) or ~all (soft fail) immediately.",
+            )
+        )
     if total > 10:
-        sug.append(Suggestion(priority="critical", title="Reduce DNS lookups to ≤10",
-                              detail="Flatten includes via SPF flatteners or remove unused senders. Over the limit, every receiver short-circuits to PermError and stops evaluating."))
+        sug.append(
+            Suggestion(
+                priority="critical",
+                title="Reduce DNS lookups to ≤10",
+                detail="Flatten includes via SPF flatteners or remove unused senders. Over the limit, every receiver short-circuits to PermError and stops evaluating.",
+            )
+        )
     elif total > 8:
-        sug.append(Suggestion(priority="recommended", title="Reduce SPF lookups before hitting 10",
-                              detail="At 9–10 lookups you have no headroom. Adding one more provider would break SPF."))
+        sug.append(
+            Suggestion(
+                priority="recommended",
+                title="Reduce SPF lookups before hitting 10",
+                detail="At 9–10 lookups you have no headroom. Adding one more provider would break SPF.",
+            )
+        )
     return sug
 
 
@@ -156,8 +197,13 @@ async def dkim_parser(ctx: WizardContext) -> list[Suggestion]:
     if "@" in raw:
         selector, domain = raw.split("@", 1)
         if not _DKIM_SELECTOR_RE.match(selector):
-            ctx.add(WizardStep(name="Selector", outcome="fail",
-                               message=f"Selector {selector!r} is not a valid DNS label."))
+            ctx.add(
+                WizardStep(
+                    name="Selector",
+                    outcome="fail",
+                    message=f"Selector {selector!r} is not a valid DNS label.",
+                )
+            )
             return []
         target = f"{selector}._domainkey.{domain}"
     else:
@@ -168,14 +214,19 @@ async def dkim_parser(ctx: WizardContext) -> list[Suggestion]:
     dkim_rows = [row for row in rows if "v=DKIM1" in row or "p=" in row]
 
     if not dkim_rows:
-        ctx.add(WizardStep(name="DKIM TXT record", outcome="fail",
-                           message=f"No DKIM record at {target}."))
-        return [Suggestion(priority="critical", title="Publish the DKIM TXT record",
-                           detail="Your mail provider's docs will give you the v=DKIM1; k=rsa; p=… record. Until it's published, downstream receivers can't verify your DKIM signatures.")]
+        ctx.add(WizardStep(name="DKIM TXT record", outcome="fail", message=f"No DKIM record at {target}."))
+        return [
+            Suggestion(
+                priority="critical",
+                title="Publish the DKIM TXT record",
+                detail="Your mail provider's docs will give you the v=DKIM1; k=rsa; p=… record. Until it's published, downstream receivers can't verify your DKIM signatures.",
+            )
+        ]
 
     record = dkim_rows[0]
-    ctx.add(WizardStep(name="DKIM TXT record", outcome="ok",
-                       message=f"Found at {target}", detail={"raw": record}))
+    ctx.add(
+        WizardStep(name="DKIM TXT record", outcome="ok", message=f"Found at {target}", detail={"raw": record})
+    )
 
     tags: dict[str, str] = {}
     for piece in record.split(";"):
@@ -189,13 +240,28 @@ async def dkim_parser(ctx: WizardContext) -> list[Suggestion]:
     key_type = tags.get("k", "rsa").lower()
     pub_b64 = tags.get("p", "")
     if version and version != "DKIM1":
-        ctx.add(WizardStep(name="DKIM version", outcome="warn",
-                           message=f"Unexpected v= value {version!r}; expected DKIM1."))
+        ctx.add(
+            WizardStep(
+                name="DKIM version",
+                outcome="warn",
+                message=f"Unexpected v= value {version!r}; expected DKIM1.",
+            )
+        )
     if not pub_b64:
-        ctx.add(WizardStep(name="Public key (p=)", outcome="fail",
-                           message="Empty p= tag — selector has been revoked. Senders signing with this selector will fail DKIM."))
-        return [Suggestion(priority="critical", title="Restore the public key",
-                           detail="An empty p= explicitly signals revocation. Republish the key or rotate to a new selector.")]
+        ctx.add(
+            WizardStep(
+                name="Public key (p=)",
+                outcome="fail",
+                message="Empty p= tag — selector has been revoked. Senders signing with this selector will fail DKIM.",
+            )
+        )
+        return [
+            Suggestion(
+                priority="critical",
+                title="Restore the public key",
+                detail="An empty p= explicitly signals revocation. Republish the key or rotate to a new selector.",
+            )
+        ]
 
     bits = _key_bits_or_none(pub_b64, key_type)
     bits_msg = f"{key_type.upper()} {bits}-bit" if bits else f"{key_type.upper()} (bit length undetermined)"
@@ -205,14 +271,24 @@ async def dkim_parser(ctx: WizardContext) -> list[Suggestion]:
         outcome = "warn"
     else:
         outcome = "ok"
-    ctx.add(WizardStep(name="Key strength", outcome=outcome, message=bits_msg,
-                       detail={"key_type": key_type, "bits": bits}))
+    ctx.add(
+        WizardStep(
+            name="Key strength",
+            outcome=outcome,
+            message=bits_msg,
+            detail={"key_type": key_type, "bits": bits},
+        )
+    )
 
     sug: list[Suggestion] = []
     if key_type == "rsa" and bits is not None and bits < 2048:
-        sug.append(Suggestion(priority="recommended",
-                              title="Rotate to a 2048-bit RSA key",
-                              detail="Anything under 2048-bit RSA is considered weak by modern receivers. Use Ed25519 if your provider supports k=ed25519."))
+        sug.append(
+            Suggestion(
+                priority="recommended",
+                title="Rotate to a 2048-bit RSA key",
+                detail="Anything under 2048-bit RSA is considered weak by modern receivers. Use Ed25519 if your provider supports k=ed25519.",
+            )
+        )
     return sug
 
 

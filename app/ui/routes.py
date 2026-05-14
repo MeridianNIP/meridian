@@ -1,27 +1,25 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
+import uuid as _uuid
 
-from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as OrmSession
 
-import uuid as _uuid
-
-from app.audit.logger import record as audit, recent as recent_audit
-from app.models.audit import AuditEvent
+from app.audit.logger import recent as recent_audit
+from app.audit.logger import record as audit
 from app.auth.deps import SESSION_COOKIE, client_ip, current_user, require_permission
 from app.auth.mfa import decrypt_totp_secret, verify_totp
 from app.auth.password import hash_password, needs_rehash, verify_password
-from app.auth.session_manager import mint_session, resolve_session, revoke_session
+from app.auth.session_manager import mint_session, revoke_session
 from app.config import get_settings
 from app.db import fastapi_dep_db
 from app.models.session import Session as SessionModel
 from app.models.user import User
-
 
 router = APIRouter(prefix="/ui", tags=["ui"])
 _templates: Jinja2Templates | None = None
@@ -30,19 +28,22 @@ _templates: Jinja2Templates | None = None
 def templates() -> Jinja2Templates:
     global _templates
     if _templates is None:
-        _templates = Jinja2Templates(
-            directory=str(get_settings().install_root / "app" / "templates")
-        )
+        _templates = Jinja2Templates(directory=str(get_settings().install_root / "app" / "templates"))
         # Teach `| tojson` and json.dumps about the types we pass through
         # contexts: UUID → str, datetime → isoformat. Without this every
         # `{{ row.id | tojson }}` on a UUID column 500s.
-        import json, uuid, datetime
-        from jinja2 import pass_environment
+        import datetime
+        import json
+        import uuid
+
         class _Enc(json.JSONEncoder):
             def default(self, o):
-                if isinstance(o, uuid.UUID): return str(o)
-                if isinstance(o, (datetime.datetime, datetime.date)): return o.isoformat()
+                if isinstance(o, uuid.UUID):
+                    return str(o)
+                if isinstance(o, (datetime.datetime, datetime.date)):
+                    return o.isoformat()
                 return super().default(o)
+
         _templates.env.policies["json.dumps_kwargs"] = {"cls": _Enc, "sort_keys": True}
     return _templates
 
@@ -66,26 +67,31 @@ def _base_ctx(
         "aup_show_footer_link": True,
     }
     try:
+        from app.db import (
+            fastapi_dep_db,  # noqa: F401  (ensures engine init)
+            session_scope,
+        )
         from app.models.branding import load as load_branding
-        from app.db import fastapi_dep_db  # noqa: F401  (ensures engine init)
-        from app.db import session_scope
+
         with session_scope() as ro:
             b = load_branding(ro)
-            branding.update({
-                "display_name":       b.display_name,
-                "short_name":         b.short_name,
-                "support_email":      b.support_email,
-                "support_url":        b.support_url,
-                "privacy_url":        b.privacy_url,
-                "imprint_url":        b.imprint_url,
-                "logo_click_url":     b.logo_click_url,
-                "logo_click_target":  b.logo_click_target,
-                "pre_login_warning":  b.pre_login_warning,
-                "aup_show_footer_link": b.aup_show_footer_link,
-                "theme":              b.theme,
-                "accent_hex":         b.accent_hex,
-                "vendor_attribution_hidden": b.vendor_attribution_hidden,
-            })
+            branding.update(
+                {
+                    "display_name": b.display_name,
+                    "short_name": b.short_name,
+                    "support_email": b.support_email,
+                    "support_url": b.support_url,
+                    "privacy_url": b.privacy_url,
+                    "imprint_url": b.imprint_url,
+                    "logo_click_url": b.logo_click_url,
+                    "logo_click_target": b.logo_click_target,
+                    "pre_login_warning": b.pre_login_warning,
+                    "aup_show_footer_link": b.aup_show_footer_link,
+                    "theme": b.theme,
+                    "accent_hex": b.accent_hex,
+                    "vendor_attribution_hidden": b.vendor_attribution_hidden,
+                }
+            )
     except (KeyError, Exception):
         # During startup races / dry runs, fall back to the hardcoded defaults.
         pass
@@ -93,8 +99,7 @@ def _base_ctx(
     # the topbar countdown + auto-logout-on-expiry. 0 means "never expire".
     idle_min: int | None = None
     if user is not None:
-        idle_min = (getattr(user, "idle_timeout_override_min", None)
-                    or settings.idle_timeout_default_min)
+        idle_min = getattr(user, "idle_timeout_override_min", None) or settings.idle_timeout_default_min
 
     # Effective display timezone. Precedence:
     #   user.timezone → branding.timezone → settings.timezone → 'UTC'
@@ -177,11 +182,15 @@ async def login_submit(
     user = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
 
     def _fail(reason: str, msg: str, ctx_user: User | None = None) -> Response:
-        audit(db,
-              user_id=ctx_user.id if ctx_user else None,
-              action="auth.login.failed",
-              payload={"username": username, "reason": reason, "src": ip or "-"},
-              ip=ip, user_agent=ua, outcome="denied")
+        audit(
+            db,
+            user_id=ctx_user.id if ctx_user else None,
+            action="auth.login.failed",
+            payload={"username": username, "reason": reason, "src": ip or "-"},
+            ip=ip,
+            user_agent=ua,
+            outcome="denied",
+        )
         ctx = _base_ctx(request, error=msg, username=username, next=next)
         return templates().TemplateResponse("login.html", ctx, status_code=401)
 
@@ -191,8 +200,10 @@ async def login_submit(
         user.failed_login_count = (user.failed_login_count or 0) + 1
         return _fail("bad_password", "Invalid credentials.", user)
     if user.mfa_enrolled:
-        if not mfa_code or user.mfa_secret_enc is None or not verify_totp(
-            decrypt_totp_secret(user.mfa_secret_enc), mfa_code
+        if (
+            not mfa_code
+            or user.mfa_secret_enc is None
+            or not verify_totp(decrypt_totp_secret(user.mfa_secret_enc), mfa_code)
         ):
             return _fail("bad_mfa", "Invalid MFA code.", user)
 
@@ -201,8 +212,12 @@ async def login_submit(
 
     idle_min = user.idle_timeout_override_min or get_settings().idle_timeout_default_min
     _, token = mint_session(
-        db, user, auth_method="credential",
-        ip=ip, user_agent=ua, idle_timeout_min=idle_min,
+        db,
+        user,
+        auth_method="credential",
+        ip=ip,
+        user_agent=ua,
+        idle_timeout_min=idle_min,
     )
 
     # If the account was created with force_change_password (new local
@@ -213,9 +228,13 @@ async def login_submit(
     target = "/ui/settings?force_change_password=1" if force_change else (next or "/ui/dashboard")
     response = RedirectResponse(url=target, status_code=303)
     response.set_cookie(
-        SESSION_COOKIE, token,
-        httponly=True, secure=True, samesite="lax",
-        max_age=60 * 60 * 24, path="/",
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=60 * 60 * 24,
+        path="/",
     )
     return response
 
@@ -229,8 +248,13 @@ async def logout(
     sid = getattr(request.state, "session_id", None)
     if sid:
         revoke_session(db, sid, reason="user_logout", by=user.id)
-    audit(db, user_id=user.id, action="auth.logout",
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="auth.logout",
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     r = RedirectResponse(url="/ui/login", status_code=303)
     r.delete_cookie(SESSION_COOKIE, path="/")
     return r
@@ -244,14 +268,15 @@ async def dashboard(
 ):
     # Minimal stats for the first cut; full metrics come in the monitors module.
     active_sessions = db.execute(
-        select(func.count()).select_from(SessionModel)
+        select(func.count())
+        .select_from(SessionModel)
         .where(SessionModel.user_id == user.id, SessionModel.revoked_at.is_(None))
     ).scalar_one()
     stats = {
-        "queries_today": 0,       # populated in the next pass from query_history
+        "queries_today": 0,  # populated in the next pass from query_history
         "query_delta": "—",
         "sessions": active_sessions,
-        "alerts": 0,              # populated from monitor_incidents later
+        "alerts": 0,  # populated from monitor_incidents later
     }
 
     # Dashboard recent-activity feed. Raw audit rows store UUIDs for actor
@@ -294,28 +319,33 @@ async def dashboard(
                 target_display = None
             except ValueError:
                 target_display = ev.target_key
-        recent_activity.append({
-            "ts": ev.ts,
-            "actor": actor.username if actor else "system",
-            "action": ev.action,
-            "target": target_display,
-            "target_type": ev.target_type,
-            "outcome": ev.outcome,
-        })
+        recent_activity.append(
+            {
+                "ts": ev.ts,
+                "actor": actor.username if actor else "system",
+                "action": ev.action,
+                "target": target_display,
+                "target_type": ev.target_type,
+                "outcome": ev.outcome,
+            }
+        )
 
     # MFA backup-code low-water check. If the user enrolled TOTP but has
     # burned through most of their backup codes, surface a banner so they
     # regenerate before the next phone wipe leaves them locked out.
     backup_codes_remaining = 0
     if user.mfa_enrolled:
-        backup_codes_remaining = db.execute(
-            text("SELECT COUNT(*) FROM mfa_backup_codes "
-                 "WHERE user_id = :u AND used_at IS NULL"),
-            {"u": user.id},
-        ).scalar_one() or 0
+        backup_codes_remaining = (
+            db.execute(
+                text("SELECT COUNT(*) FROM mfa_backup_codes " "WHERE user_id = :u AND used_at IS NULL"),
+                {"u": user.id},
+            ).scalar_one()
+            or 0
+        )
 
     ctx = _base_ctx(
-        request, user=user,
+        request,
+        user=user,
         stats=stats,
         recent_audit=recent_activity,
         now_local=datetime.now().strftime("%A · %b %d · %H:%M"),
@@ -336,29 +366,39 @@ async def dns_tools(
     # <optgroup>House / <optgroup>Mine. Falls back gracefully to the
     # in-code PUBLIC_RESOLVERS tuple if the table is empty (fresh install
     # before the seed runs, or a DB blip).
-    from app.models.resolver import Resolver as _Resolver
     from sqlalchemy import func
+
+    from app.models.resolver import Resolver as _Resolver
+
     try:
         # Alphabetical (case-insensitive) -- keeps Dig/Propagation/Reverse
         # dropdowns in a stable order regardless of add/edit sequence.
-        house_rows = db.execute(
-            select(_Resolver)
-            .where(_Resolver.owner_user_id.is_(None))
-            .order_by(func.lower(_Resolver.name))
-        ).scalars().all()
-        mine_rows = db.execute(
-            select(_Resolver)
-            .where(_Resolver.owner_user_id == user.id)
-            .order_by(func.lower(_Resolver.name))
-        ).scalars().all()
+        house_rows = (
+            db.execute(
+                select(_Resolver)
+                .where(_Resolver.owner_user_id.is_(None))
+                .order_by(func.lower(_Resolver.name))
+            )
+            .scalars()
+            .all()
+        )
+        mine_rows = (
+            db.execute(
+                select(_Resolver)
+                .where(_Resolver.owner_user_id == user.id)
+                .order_by(func.lower(_Resolver.name))
+            )
+            .scalars()
+            .all()
+        )
     except Exception:
         house_rows, mine_rows = [], []
 
     if not house_rows:
         from app.dns.propagation import PUBLIC_RESOLVERS
+
         house_resolvers = [
-            {"name": n, "ip": ip, "region": None, "group_tag": None}
-            for n, ip in PUBLIC_RESOLVERS
+            {"name": n, "ip": ip, "region": None, "group_tag": None} for n, ip in PUBLIC_RESOLVERS
         ]
     else:
         house_resolvers = [
@@ -366,15 +406,14 @@ async def dns_tools(
             for r in house_rows
         ]
     my_resolvers = [
-        {"name": r.name, "ip": str(r.ip), "region": r.region, "group_tag": r.group_tag}
-        for r in mine_rows
+        {"name": r.name, "ip": str(r.ip), "region": r.region, "group_tag": r.group_tag} for r in mine_rows
     ]
     # Distinct group_tag values — fed to the Hop Trace + Propagation
     # "Limit to group" selector.
-    resolver_groups = sorted({r.group_tag for r in (house_rows + mine_rows) if r.group_tag},
-                             key=str.lower)
+    resolver_groups = sorted({r.group_tag for r in (house_rows + mine_rows) if r.group_tag}, key=str.lower)
     ctx = _base_ctx(
-        request, user=user,
+        request,
+        user=user,
         house_resolvers=house_resolvers,
         my_resolvers=my_resolvers,
         resolver_groups=resolver_groups,
@@ -398,51 +437,149 @@ async def threat_intel(
 ):
     from app.db import session_scope
     from app.models.threat_intel_source import ThreatIntelSource
+
     with session_scope() as db:
         rows = db.execute(select(ThreatIntelSource)).scalars().all()
         enabled = {r.source_key: bool(r.enabled) for r in rows}
+
     # If the sources table hasn't been seeded (fresh migration, etc.),
     # default every source to enabled so the page still works.
     def on(key: str) -> bool:
         return enabled.get(key, True)
-    ctx = _base_ctx(request, user=user, scope=get_settings().scope_of_use,
-                    ti_sources=enabled, ti_on=on)
+
+    ctx = _base_ctx(request, user=user, scope=get_settings().scope_of_use, ti_sources=enabled, ti_on=on)
     return templates().TemplateResponse("threat_intel.html", ctx)
 
 
 _WIZARD_CATALOG: list[tuple[str, dict[str, str]]] = [
-    ("dns.resolve_fail", {"name": "Why isn't my domain resolving?", "category": "ddi",
-                          "description": "Registrar → delegation → SOA → authoritative → cache → DNSSEC → propagation"}),
-    ("mail.delivery", {"name": "Why isn't my mail being delivered?", "category": "ddi",
-                       "description": "MX → A/AAAA → PTR → SPF → DMARC → MTA-STS → TLS-RPT"}),
-    ("ssl.deep_inspect", {"name": "SSL/TLS deep inspect", "category": "ddi",
-                          "description": "Chain · hostname · expiry · key type · issuer · self-signed check"}),
-    ("dnssec.chain", {"name": "DNSSEC chain walker", "category": "ddi",
-                      "description": "Root → TLD → zone trust chain · flags the exact broken link"}),
-    ("zone.health", {"name": "Zone health check", "category": "ddi",
-                     "description": "SOA drift, NSEC integrity, dangling CNAMEs, missing glue"}),
-    ("registrar.mismatch", {"name": "Registrar vs authoritative mismatch", "category": "ddi",
-                            "description": "Compares registrar-side NS list with live authoritative NS"}),
-    ("domain.bringup", {"name": "New domain bring-up checklist", "category": "ddi",
-                        "description": "Green / yellow / red scorecard across core records"}),
-    ("cloudflare.validator", {"name": "Cloudflare / CDN config validator", "category": "ddi",
-                              "description": "NS delegation, DNSSEC compat, origin A records"}),
-    ("typosquat.sweep", {"name": "Typosquat sweep + threat hunt", "category": "ddi",
-                         "description": "IDN/homograph/typo variants; which are registered + live"}),
-    ("dmarc.tuning", {"name": "DMARC tuning guide", "category": "ddi",
-                      "description": "Walks p=none → quarantine → reject based on current policy"}),
-    ("axfr.audit", {"name": "Zone transfer (AXFR) audit", "category": "ddi",
-                    "description": "Tests every authoritative NS for exposed zone transfers"}),
-    ("ip.reputation", {"name": "IP reputation deep dive", "category": "ddi",
-                       "description": "ASN/WHOIS + Shodan InternetDB (open ports, known CVEs)"}),
-    ("infoblox.drift", {"name": "Infoblox drift detector", "category": "ddi",
-                        "description": "Live DNS vs Infoblox Grid expected state diff"}),
-    ("network.reachability", {"name": "Why can't I reach X?", "category": "network",
-                              "description": "DNS → ping → trace → TCP → HTTP · stops + explains first failure"}),
-    ("network.up_for_everyone", {"name": "Is this site down for me or everyone?", "category": "network",
-                                 "description": "Local probe vs public-resolver probe, side-by-side"}),
-    ("mail.flow_validator", {"name": "Mail-flow validator", "category": "network",
-                             "description": "End-to-end mail stack: MX, SMTP ports, SPF, DMARC, PTR"}),
+    (
+        "dns.resolve_fail",
+        {
+            "name": "Why isn't my domain resolving?",
+            "category": "ddi",
+            "description": "Registrar → delegation → SOA → authoritative → cache → DNSSEC → propagation",
+        },
+    ),
+    (
+        "mail.delivery",
+        {
+            "name": "Why isn't my mail being delivered?",
+            "category": "ddi",
+            "description": "MX → A/AAAA → PTR → SPF → DMARC → MTA-STS → TLS-RPT",
+        },
+    ),
+    (
+        "ssl.deep_inspect",
+        {
+            "name": "SSL/TLS deep inspect",
+            "category": "ddi",
+            "description": "Chain · hostname · expiry · key type · issuer · self-signed check",
+        },
+    ),
+    (
+        "dnssec.chain",
+        {
+            "name": "DNSSEC chain walker",
+            "category": "ddi",
+            "description": "Root → TLD → zone trust chain · flags the exact broken link",
+        },
+    ),
+    (
+        "zone.health",
+        {
+            "name": "Zone health check",
+            "category": "ddi",
+            "description": "SOA drift, NSEC integrity, dangling CNAMEs, missing glue",
+        },
+    ),
+    (
+        "registrar.mismatch",
+        {
+            "name": "Registrar vs authoritative mismatch",
+            "category": "ddi",
+            "description": "Compares registrar-side NS list with live authoritative NS",
+        },
+    ),
+    (
+        "domain.bringup",
+        {
+            "name": "New domain bring-up checklist",
+            "category": "ddi",
+            "description": "Green / yellow / red scorecard across core records",
+        },
+    ),
+    (
+        "cloudflare.validator",
+        {
+            "name": "Cloudflare / CDN config validator",
+            "category": "ddi",
+            "description": "NS delegation, DNSSEC compat, origin A records",
+        },
+    ),
+    (
+        "typosquat.sweep",
+        {
+            "name": "Typosquat sweep + threat hunt",
+            "category": "ddi",
+            "description": "IDN/homograph/typo variants; which are registered + live",
+        },
+    ),
+    (
+        "dmarc.tuning",
+        {
+            "name": "DMARC tuning guide",
+            "category": "ddi",
+            "description": "Walks p=none → quarantine → reject based on current policy",
+        },
+    ),
+    (
+        "axfr.audit",
+        {
+            "name": "Zone transfer (AXFR) audit",
+            "category": "ddi",
+            "description": "Tests every authoritative NS for exposed zone transfers",
+        },
+    ),
+    (
+        "ip.reputation",
+        {
+            "name": "IP reputation deep dive",
+            "category": "ddi",
+            "description": "ASN/WHOIS + Shodan InternetDB (open ports, known CVEs)",
+        },
+    ),
+    (
+        "infoblox.drift",
+        {
+            "name": "Infoblox drift detector",
+            "category": "ddi",
+            "description": "Live DNS vs Infoblox Grid expected state diff",
+        },
+    ),
+    (
+        "network.reachability",
+        {
+            "name": "Why can't I reach X?",
+            "category": "network",
+            "description": "DNS → ping → trace → TCP → HTTP · stops + explains first failure",
+        },
+    ),
+    (
+        "network.up_for_everyone",
+        {
+            "name": "Is this site down for me or everyone?",
+            "category": "network",
+            "description": "Local probe vs public-resolver probe, side-by-side",
+        },
+    ),
+    (
+        "mail.flow_validator",
+        {
+            "name": "Mail-flow validator",
+            "category": "network",
+            "description": "End-to-end mail stack: MX, SMTP ports, SPF, DMARC, PTR",
+        },
+    ),
 ]
 
 
@@ -463,6 +600,7 @@ async def wizards_page(
     # Show only wizards whose implementation is registered. The engine's
     # list_wizards() returns keys; we pair each with the catalog entry above.
     from app.wizards.engine import list_wizards as registered
+
     keys = set(registered())
     catalog = [(k, meta) for k, meta in _WIZARD_CATALOG if k in keys]
     ctx = _base_ctx(request, user=user, catalog=catalog)
@@ -478,36 +616,44 @@ async def admin_page(
     if user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "admin role required")
 
-    from app.admin.routes import _svc_status, SERVICE_DESCRIPTIONS
+    from app.admin.routes import SERVICE_DESCRIPTIONS, _svc_status
+
     services = [_svc_status(n) for n in SERVICE_DESCRIPTIONS.keys()]
 
     from sqlalchemy import text as _text
-    jobs_rows = db.execute(_text(
-        "SELECT name, description, cron_expression, enabled, last_run_status "
-        "FROM jobs ORDER BY name LIMIT 40"
-    )).fetchall()
+
+    jobs_rows = db.execute(
+        _text(
+            "SELECT name, description, cron_expression, enabled, last_run_status "
+            "FROM jobs ORDER BY name LIMIT 40"
+        )
+    ).fetchall()
     jobs = [dict(r._mapping) for r in jobs_rows]
 
-    audit_rows = db.execute(_text(
-        "SELECT ts, action, target_key, outcome FROM audit_events "
-        "ORDER BY ts DESC LIMIT 20"
-    )).fetchall()
+    audit_rows = db.execute(
+        _text("SELECT ts, action, target_key, outcome FROM audit_events " "ORDER BY ts DESC LIMIT 20")
+    ).fetchall()
     audit_ev = [dict(r._mapping) for r in audit_rows]
 
-    from datetime import datetime, timedelta, timezone
-    day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+    from datetime import datetime, timedelta
+
+    day_ago = datetime.now(UTC) - timedelta(days=1)
     stats = {
-        "users_enabled":     db.execute(_text("SELECT count(*) FROM users WHERE enabled AND deleted_at IS NULL")).scalar_one(),
-        "sessions_active":   db.execute(_text("SELECT count(*) FROM sessions WHERE revoked_at IS NULL AND expires_at > now()")).scalar_one(),
-        "monitors_enabled":  db.execute(_text("SELECT count(*) FROM monitors WHERE enabled")).scalar_one(),
-        "audit_24h":         db.execute(_text("SELECT count(*) FROM audit_events WHERE ts > :t"), {"t": day_ago}).scalar_one(),
-        "integrity_last_scan": db.execute(_text(
-            "SELECT started_at, mismatches FROM db_integrity_scans "
-            "ORDER BY started_at DESC LIMIT 1"
-        )).first(),
+        "users_enabled": db.execute(
+            _text("SELECT count(*) FROM users WHERE enabled AND deleted_at IS NULL")
+        ).scalar_one(),
+        "sessions_active": db.execute(
+            _text("SELECT count(*) FROM sessions WHERE revoked_at IS NULL AND expires_at > now()")
+        ).scalar_one(),
+        "monitors_enabled": db.execute(_text("SELECT count(*) FROM monitors WHERE enabled")).scalar_one(),
+        "audit_24h": db.execute(
+            _text("SELECT count(*) FROM audit_events WHERE ts > :t"), {"t": day_ago}
+        ).scalar_one(),
+        "integrity_last_scan": db.execute(
+            _text("SELECT started_at, mismatches FROM db_integrity_scans " "ORDER BY started_at DESC LIMIT 1")
+        ).first(),
     }
-    ctx = _base_ctx(request, user=user, services=services, jobs=jobs,
-                    audit=audit_ev, stats=stats)
+    ctx = _base_ctx(request, user=user, services=services, jobs=jobs, audit=audit_ev, stats=stats)
     return templates().TemplateResponse("admin.html", ctx)
 
 
@@ -517,12 +663,18 @@ async def settings_page(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ):
-    sessions = db.execute(
-        select(SessionModel).where(
-            SessionModel.user_id == user.id,
-            SessionModel.revoked_at.is_(None),
-        ).order_by(SessionModel.last_active_at.desc())
-    ).scalars().all()
+    sessions = (
+        db.execute(
+            select(SessionModel)
+            .where(
+                SessionModel.user_id == user.id,
+                SessionModel.revoked_at.is_(None),
+            )
+            .order_by(SessionModel.last_active_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     current_sid = getattr(request.state, "session_id", None)
     ctx = _base_ctx(request, user=user, sessions=sessions, current_session_id=current_sid)
     return templates().TemplateResponse("settings.html", ctx)
@@ -534,13 +686,15 @@ async def monitors_page(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ):
-    from app.models.monitor import Monitor as _M
     from sqlalchemy import or_
-    rows = db.execute(
-        select(_M).where(
-            or_(_M.owner_id == user.id, _M.owner_id.is_(None))
-        ).order_by(_M.name)
-    ).scalars().all()
+
+    from app.models.monitor import Monitor as _M
+
+    rows = (
+        db.execute(select(_M).where(or_(_M.owner_id == user.id, _M.owner_id.is_(None))).order_by(_M.name))
+        .scalars()
+        .all()
+    )
     ctx = _base_ctx(request, user=user, monitors=rows)
     return templates().TemplateResponse("monitors.html", ctx)
 
@@ -614,6 +768,7 @@ async def global_settings_page(
     try:
         with db.begin_nested():
             from app.models.branding import load as load_branding
+
             branding_row = load_branding(db)
     except Exception:
         pass
@@ -625,14 +780,16 @@ async def global_settings_page(
     # SELECT DISTINCT requires ORDER BY expressions to appear in the
     # select list, so we order in Python instead of SQL. Cast the enum
     # to TEXT since `lower(user_role)` isn't defined in Postgres.
-    from sqlalchemy import distinct, cast, Text
+    from sqlalchemy import Text, cast, distinct
+
     roles_raw = db.execute(select(distinct(cast(User.role, Text)))).scalars().all()
     roles_in_use = sorted([str(r) for r in roles_raw if r], key=str.lower)
     ctx = _base_ctx(
-        request, user=user,
+        request,
+        user=user,
         branding_row=branding_row,
         roles_in_use=list(roles_in_use),
-        active='global-settings',
+        active="global-settings",
     )
     return templates().TemplateResponse("admin_settings.html", ctx)
 
@@ -745,6 +902,7 @@ async def admin_branding_page(
     if user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "admin role required")
     from app.models.branding import load as load_branding
+
     b = load_branding(db)
     ctx = _base_ctx(request, user=user, b=b)
     return templates().TemplateResponse("admin_branding.html", ctx)
@@ -759,8 +917,10 @@ async def approvals_page(
     if user.role not in ("admin", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "admin role required")
     from app.approvals.engine import list_mine, list_pending
+
     ctx = _base_ctx(
-        request, user=user,
+        request,
+        user=user,
         pending=list_pending(db),
         mine=list_mine(db, user=user),
     )
@@ -774,10 +934,16 @@ async def directory_page(
     db: OrmSession = Depends(fastapi_dep_db),
 ):
     from app.models.directory import DirectoryIntegration
-    integ = db.execute(
-        select(DirectoryIntegration).where(DirectoryIntegration.enabled.is_(True))
-        .order_by(DirectoryIntegration.created_at.asc())
-    ).scalars().first()
+
+    integ = (
+        db.execute(
+            select(DirectoryIntegration)
+            .where(DirectoryIntegration.enabled.is_(True))
+            .order_by(DirectoryIntegration.created_at.asc())
+        )
+        .scalars()
+        .first()
+    )
     ctx = _base_ctx(request, user=user, integration=integ)
     return templates().TemplateResponse("directory.html", ctx)
 
@@ -788,29 +954,33 @@ async def certs_page(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ):
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from app.models.cert import Certificate
-    rows = db.execute(
-        select(Certificate).order_by(Certificate.valid_until.asc().nulls_last())
-    ).scalars().all()
-    now = datetime.now(timezone.utc)
+
+    rows = (
+        db.execute(select(Certificate).order_by(Certificate.valid_until.asc().nulls_last())).scalars().all()
+    )
+    now = datetime.now(UTC)
     certs: list[dict] = []
     for c in rows:
         days = None
         if c.valid_until:
             # SQLAlchemy returns aware datetimes from TIMESTAMPTZ, but be defensive.
-            vu = c.valid_until if c.valid_until.tzinfo else c.valid_until.replace(tzinfo=timezone.utc)
+            vu = c.valid_until if c.valid_until.tzinfo else c.valid_until.replace(tzinfo=UTC)
             days = max(0, (vu - now).days)
-        certs.append({
-            "id": c.id,
-            "common_name": c.common_name,
-            "sans": list(c.sans or []),
-            "cert_type": c.cert_type,
-            "issuer": c.issuer,
-            "valid_until": c.valid_until,
-            "days_remaining": days,
-            "key_type": c.key_type,
-            "auto_renew": c.auto_renew,
-        })
+        certs.append(
+            {
+                "id": c.id,
+                "common_name": c.common_name,
+                "sans": list(c.sans or []),
+                "cert_type": c.cert_type,
+                "issuer": c.issuer,
+                "valid_until": c.valid_until,
+                "days_remaining": days,
+                "key_type": c.key_type,
+                "auto_renew": c.auto_renew,
+            }
+        )
     ctx = _base_ctx(request, user=user, certs=certs)
     return templates().TemplateResponse("certificates.html", ctx)

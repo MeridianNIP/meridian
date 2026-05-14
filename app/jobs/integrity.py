@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+import uuid
 
 from sqlalchemy import text
 
@@ -11,53 +11,100 @@ from app.celery_app import celery_app
 from app.db import session_scope
 from app.integrity.hmac_chain import TAMPER_EVIDENT_TABLES, canonicalize, row_hash
 
-
 _CANONICAL_COLUMNS: dict[str, tuple[str, ...]] = {
     "audit_events": (
-        "id", "ts", "user_id", "impersonator_id", "action", "target_type",
-        "target_key", "payload", "ip", "user_agent", "justification",
-        "approval_id", "outcome",
+        "id",
+        "ts",
+        "user_id",
+        "impersonator_id",
+        "action",
+        "target_type",
+        "target_key",
+        "payload",
+        "ip",
+        "user_agent",
+        "justification",
+        "approval_id",
+        "outcome",
     ),
     "license": (
-        "id", "license_id", "tier", "max_users", "features",
-        "bound_domain", "bound_fingerprint_hash", "issued_at", "expires_at",
-        "activated_at", "revoked",
+        "id",
+        "license_id",
+        "tier",
+        "max_users",
+        "features",
+        "bound_domain",
+        "bound_fingerprint_hash",
+        "issued_at",
+        "expires_at",
+        "activated_at",
+        "revoked",
     ),
     "license_activations": (
-        "id", "license_id", "instance_id", "fingerprint_hash", "ip", "ok",
-        "reason", "ts",
+        "id",
+        "license_id",
+        "instance_id",
+        "fingerprint_hash",
+        "ip",
+        "ok",
+        "reason",
+        "ts",
     ),
     "license_verifications": ("id", "ts", "result", "latency_ms", "detail"),
     "cert_events": ("id", "cert_id", "event", "ts", "actor_id", "detail"),
     "approvals": (
-        "id", "requested_by", "approver_id", "action", "target_type",
-        "target_key", "payload", "justification", "state",
-        "requested_at", "decided_at", "decision_note",
+        "id",
+        "requested_by",
+        "approver_id",
+        "action",
+        "target_type",
+        "target_key",
+        "payload",
+        "justification",
+        "state",
+        "requested_at",
+        "decided_at",
+        "decision_note",
     ),
     "impersonations": (
-        "id", "admin_id", "target_id", "reason", "started_at", "ended_at",
+        "id",
+        "admin_id",
+        "target_id",
+        "reason",
+        "started_at",
+        "ended_at",
         "approval_id",
     ),
     "update_history": (
-        "id", "component", "from_version", "to_version", "applied_at",
-        "applied_by", "snapshot_id", "status", "notes",
+        "id",
+        "component",
+        "from_version",
+        "to_version",
+        "applied_at",
+        "applied_by",
+        "snapshot_id",
+        "status",
+        "notes",
     ),
 }
 
 
 @celery_app.task(name="meridian.jobs.integrity.scan")
 def scan() -> dict[str, Any]:
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     mismatches: list[dict[str, Any]] = []
     tables_scanned: list[str] = []
     rows_checked = 0
 
     with session_scope() as db:
         scan_id = uuid.uuid4()
-        db.execute(text("""
+        db.execute(
+            text("""
             INSERT INTO db_integrity_scans (id, started_at, status)
             VALUES (:id, :ts, 'running')
-        """), {"id": scan_id, "ts": started})
+        """),
+            {"id": scan_id, "ts": started},
+        )
 
         for table in TAMPER_EVIDENT_TABLES:
             cols = _CANONICAL_COLUMNS.get(table)
@@ -71,12 +118,11 @@ def scan() -> dict[str, Any]:
             # but the PK is portable across replicas.
             col_list = ", ".join(cols) + ", row_hash"
             rows = db.execute(
-                text(f"SELECT {col_list} FROM {table} ORDER BY "
-                     + ("id" if "id" in cols else "ts"))
+                text(f"SELECT {col_list} FROM {table} ORDER BY " + ("id" if "id" in cols else "ts"))
             ).fetchall()
             for r in rows:
                 rows_checked += 1
-                values = dict(zip(cols, r[:-1]))
+                values = dict(zip(cols, r[:-1], strict=False))
                 # psycopg2 returns BYTEA as `memoryview`, not `bytes`. On
                 # Python 3.13 `memoryview == bytes` returns False even when
                 # contents are byte-identical, so EVERY row falsely reports
@@ -95,34 +141,47 @@ def scan() -> dict[str, Any]:
                 # concern to report, but NOT tampering — don't alarm-red
                 # on it. Treat it as a separate "unhashed" finding.
                 if stored_hash is None:
-                    mismatches.append({
-                        "table": table, "pk": values.get("id"),
-                        "kind": "unhashed_row",
-                    })
+                    mismatches.append(
+                        {
+                            "table": table,
+                            "pk": values.get("id"),
+                            "kind": "unhashed_row",
+                        }
+                    )
                 elif stored_hash != expected:
-                    mismatches.append({
-                        "table": table,
-                        "pk": values.get("id"),
-                        "kind": "hash_mismatch",
-                        "expected": expected.hex() if expected else None,
-                        "stored": stored_hash.hex(),
-                    })
+                    mismatches.append(
+                        {
+                            "table": table,
+                            "pk": values.get("id"),
+                            "kind": "hash_mismatch",
+                            "expected": expected.hex() if expected else None,
+                            "stored": stored_hash.hex(),
+                        }
+                    )
                 prev_hash = stored_hash if stored_hash is not None else expected
 
-        completed = datetime.now(timezone.utc)
+        completed = datetime.now(UTC)
         # Cap the detail payload — on a brand-new install with no row_hash
         # triggers every row shows as a "mismatch", which can push the
         # JSONB column into MB-sized territory and crash the UPDATE with
         # "can't adapt type 'dict'". Store at most the first 50 findings
         # plus a count; the full picture is in the logs anyway.
         import json
+
         capped = mismatches[:50]
-        detail_json = json.dumps({
-            "mismatches": capped,
-            "total_reported": len(mismatches),
-            "truncated": len(mismatches) > 50,
-        }) if mismatches else None
-        db.execute(text("""
+        detail_json = (
+            json.dumps(
+                {
+                    "mismatches": capped,
+                    "total_reported": len(mismatches),
+                    "truncated": len(mismatches) > 50,
+                }
+            )
+            if mismatches
+            else None
+        )
+        db.execute(
+            text("""
             UPDATE db_integrity_scans
                SET completed_at = :done,
                    tables_scanned = :tables,
@@ -132,19 +191,25 @@ def scan() -> dict[str, Any]:
                    status = :status,
                    alert_fired = :alert
              WHERE id = :id
-        """), {
-            "id": scan_id, "done": completed,
-            "tables": tables_scanned, "n": rows_checked,
-            "m": len(mismatches),
-            "detail": detail_json,
-            "status": "fail" if mismatches else "ok",
-            "alert": bool(mismatches),
-        })
+        """),
+            {
+                "id": scan_id,
+                "done": completed,
+                "tables": tables_scanned,
+                "n": rows_checked,
+                "m": len(mismatches),
+                "detail": detail_json,
+                "status": "fail" if mismatches else "ok",
+                "alert": bool(mismatches),
+            },
+        )
 
-        audit(db, action="integrity.scan.completed",
-              payload={"rows": rows_checked, "mismatches": len(mismatches),
-                       "tables": tables_scanned},
-              outcome="error" if mismatches else "ok")
+        audit(
+            db,
+            action="integrity.scan.completed",
+            payload={"rows": rows_checked, "mismatches": len(mismatches), "tables": tables_scanned},
+            outcome="error" if mismatches else "ok",
+        )
 
     return {
         "scan_id": str(scan_id),

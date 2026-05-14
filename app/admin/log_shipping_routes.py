@@ -4,11 +4,12 @@ Enforces the 3-destination cap at the service layer — keeps the schema
 unconstrained so rotating a collector during a cutover doesn't require
 deleting the old row first.
 """
+
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -22,35 +23,53 @@ from app.models.log_shipping import LogShippingDestination
 from app.models.user import User
 from app.secrets_vault.vault import encrypt_field
 
-
 router = APIRouter(prefix="/admin/log-shipping", tags=["admin-log-shipping"])
 
 
 _ALLOWED_KINDS = (
-    "syslog", "splunk_hec", "elastic", "cef",
-    "graylog_gelf", "datadog", "sumo_logic",
-    "aws_cloudwatch", "gcp_logging", "azure_sentinel",
+    "syslog",
+    "splunk_hec",
+    "elastic",
+    "cef",
+    "graylog_gelf",
+    "datadog",
+    "sumo_logic",
+    "aws_cloudwatch",
+    "gcp_logging",
+    "azure_sentinel",
 )
 _ALLOWED_TRANSPORTS = ("tcp", "udp", "tls", "https")
 _MAX_DESTINATIONS = 3
 
 
 def _store_secret(
-    db: OrmSession, *, name: str, plaintext: str, created_by: uuid.UUID,
+    db: OrmSession,
+    *,
+    name: str,
+    plaintext: str,
+    created_by: uuid.UUID,
 ) -> uuid.UUID:
     blob = encrypt_field(plaintext.encode("utf-8"), domain=b"vault")
     nonce, body = blob[:12], blob[12:]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     row_id = uuid.uuid4()
-    db.execute(text("""
+    db.execute(
+        text("""
         INSERT INTO secrets (id, name, category, ciphertext, nonce,
                              owner_scope, created_by, created_at, updated_at)
         VALUES (:id, :name, :category, :ct, :nonce, :scope, :by, :now, :now)
-    """), {
-        "id": row_id, "name": name, "category": "api_token",
-        "ct": body, "nonce": nonce, "scope": "system",
-        "by": created_by, "now": now,
-    })
+    """),
+        {
+            "id": row_id,
+            "name": name,
+            "category": "api_token",
+            "ct": body,
+            "nonce": nonce,
+            "scope": "system",
+            "by": created_by,
+            "now": now,
+        },
+    )
     return row_id
 
 
@@ -61,9 +80,14 @@ def _delete_secret(db: OrmSession, secret_id: uuid.UUID | None) -> None:
 
 def _serialise(d: LogShippingDestination) -> dict:
     return {
-        "id": str(d.id), "name": d.name, "kind": d.kind, "enabled": d.enabled,
-        "endpoint": d.endpoint, "transport": d.transport,
-        "facility": d.facility, "index_or_sourcetype": d.index_or_sourcetype,
+        "id": str(d.id),
+        "name": d.name,
+        "kind": d.kind,
+        "enabled": d.enabled,
+        "endpoint": d.endpoint,
+        "transport": d.transport,
+        "facility": d.facility,
+        "index_or_sourcetype": d.index_or_sourcetype,
         "has_secret": d.auth_secret_id is not None,
         "ca_cert_path": d.ca_cert_path,
         "event_filter": list(d.event_filter or []),
@@ -110,58 +134,68 @@ async def list_destinations(
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> list[dict]:
-    rows = db.execute(
-        select(LogShippingDestination).order_by(LogShippingDestination.created_at)
-    ).scalars().all()
+    rows = (
+        db.execute(select(LogShippingDestination).order_by(LogShippingDestination.created_at)).scalars().all()
+    )
     return [_serialise(d) for d in rows]
 
 
 @router.post("", status_code=201)
 async def create_destination(
-    request: Request, body: DestIn,
+    request: Request,
+    body: DestIn,
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     if body.kind not in _ALLOWED_KINDS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"kind must be one of {_ALLOWED_KINDS}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"kind must be one of {_ALLOWED_KINDS}")
     if body.transport not in _ALLOWED_TRANSPORTS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"transport must be one of {_ALLOWED_TRANSPORTS}")
-    current = db.execute(
-        select(LogShippingDestination)
-    ).scalars().all()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"transport must be one of {_ALLOWED_TRANSPORTS}")
+    current = db.execute(select(LogShippingDestination)).scalars().all()
     if len(current) >= _MAX_DESTINATIONS:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"maximum of {_MAX_DESTINATIONS} destinations configured — "
-            f"delete an existing one first.",
+            f"maximum of {_MAX_DESTINATIONS} destinations configured — " f"delete an existing one first.",
         )
     secret_id = None
     if body.auth_secret:
-        secret_id = _store_secret(db, name=f"log-shipping:{body.name}",
-                                  plaintext=body.auth_secret, created_by=user.id)
+        secret_id = _store_secret(
+            db, name=f"log-shipping:{body.name}", plaintext=body.auth_secret, created_by=user.id
+        )
     dest = LogShippingDestination(
-        name=body.name, kind=body.kind, enabled=body.enabled,
-        endpoint=body.endpoint, transport=body.transport,
-        facility=body.facility, index_or_sourcetype=body.index_or_sourcetype,
-        auth_secret_id=secret_id, ca_cert_path=body.ca_cert_path,
+        name=body.name,
+        kind=body.kind,
+        enabled=body.enabled,
+        endpoint=body.endpoint,
+        transport=body.transport,
+        facility=body.facility,
+        index_or_sourcetype=body.index_or_sourcetype,
+        auth_secret_id=secret_id,
+        ca_cert_path=body.ca_cert_path,
         event_filter=list(body.event_filter or []),
-        batch_size=body.batch_size, flush_interval_s=body.flush_interval_s,
+        batch_size=body.batch_size,
+        flush_interval_s=body.flush_interval_s,
     )
     db.add(dest)
     db.flush()
-    audit(db, user_id=user.id, action="admin.log_shipping.create",
-          target_type="log_shipping", target_key=dest.name,
-          payload={"kind": dest.kind, "endpoint": dest.endpoint,
-                   "has_secret": secret_id is not None},
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.log_shipping.create",
+        target_type="log_shipping",
+        target_key=dest.name,
+        payload={"kind": dest.kind, "endpoint": dest.endpoint, "has_secret": secret_id is not None},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"id": str(dest.id)}
 
 
 @router.patch("/{dest_id}")
 async def update_destination(
-    request: Request, dest_id: uuid.UUID, body: DestPatch,
+    request: Request,
+    dest_id: uuid.UUID,
+    body: DestPatch,
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
@@ -169,14 +203,22 @@ async def update_destination(
     if d is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "destination not found")
     changed: dict[str, Any] = {}
-    for field in ("enabled", "endpoint", "transport", "facility",
-                  "index_or_sourcetype", "ca_cert_path",
-                  "batch_size", "flush_interval_s"):
+    for field in (
+        "enabled",
+        "endpoint",
+        "transport",
+        "facility",
+        "index_or_sourcetype",
+        "ca_cert_path",
+        "batch_size",
+        "flush_interval_s",
+    ):
         v = getattr(body, field)
         if v is not None:
             if field == "transport" and v not in _ALLOWED_TRANSPORTS:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                                    f"transport must be one of {_ALLOWED_TRANSPORTS}")
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, f"transport must be one of {_ALLOWED_TRANSPORTS}"
+                )
             setattr(d, field, v)
             changed[field] = v
     if body.event_filter is not None:
@@ -189,20 +231,29 @@ async def update_destination(
     elif body.auth_secret:
         _delete_secret(db, d.auth_secret_id)
         d.auth_secret_id = _store_secret(
-            db, name=f"log-shipping:{d.name}",
-            plaintext=body.auth_secret, created_by=user.id,
+            db,
+            name=f"log-shipping:{d.name}",
+            plaintext=body.auth_secret,
+            created_by=user.id,
         )
         changed["auth_secret"] = "rotated"
-    audit(db, user_id=user.id, action="admin.log_shipping.update",
-          target_type="log_shipping", target_key=d.name,
-          payload=changed,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.log_shipping.update",
+        target_type="log_shipping",
+        target_key=d.name,
+        payload=changed,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True, "changed": changed}
 
 
 @router.delete("/{dest_id}", status_code=204, response_model=None)
 async def delete_destination(
-    request: Request, dest_id: uuid.UUID,
+    request: Request,
+    dest_id: uuid.UUID,
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> None:
@@ -212,9 +263,15 @@ async def delete_destination(
     name = d.name
     _delete_secret(db, d.auth_secret_id)
     db.delete(d)
-    audit(db, user_id=user.id, action="admin.log_shipping.delete",
-          target_type="log_shipping", target_key=name,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.log_shipping.delete",
+        target_type="log_shipping",
+        target_key=name,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 @router.post("/{dest_id}/test")
@@ -230,9 +287,10 @@ async def test_destination(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "destination not found")
     try:
         from app.logging.shipper import test_send
+
         result = test_send(db, d)
         return result
     except NotImplementedError as e:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, str(e))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}

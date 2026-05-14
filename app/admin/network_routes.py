@@ -10,12 +10,13 @@ Single-page HTTP surface for the network-config singleton:
 Apply goes through `sudo -n /opt/meridian/scripts/apply-network-config.sh all`
 (or per-section) — the portal never edits systemd files directly.
 """
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
-import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
+import subprocess
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -28,7 +29,6 @@ from app.auth.deps import client_ip, require_permission
 from app.db import fastapi_dep_db
 from app.models.network_config import NetworkConfig, NetworkConfigHistory
 from app.models.user import User
-
 
 router = APIRouter(prefix="/admin/network", tags=["admin-network"])
 
@@ -106,7 +106,7 @@ async def get_system_state(
 
     def _run(cmd: list[str], timeout_s: float = 4.0) -> str:
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, check=False)
             return r.stdout if r.returncode == 0 else ""
         except (OSError, subprocess.SubprocessError):
             return ""
@@ -130,16 +130,14 @@ async def get_system_state(
             name = entry.get("ifname")
             if name == "lo" or not name:
                 continue
-            ipv4 = next((ai for ai in entry.get("addr_info") or []
-                         if ai.get("family") == "inet"), None)
+            ipv4 = next((ai for ai in entry.get("addr_info") or [] if ai.get("family") == "inet"), None)
             iface = {
                 "iface": name,
                 "operstate": entry.get("operstate"),
                 "mac": entry.get("address"),
                 "mtu": entry.get("mtu"),
                 "address_cidr": (f"{ipv4['local']}/{ipv4['prefixlen']}" if ipv4 else None),
-                "mode": ("dhcp" if (ipv4 and ipv4.get("dynamic"))
-                         else ("static" if ipv4 else "down")),
+                "mode": ("dhcp" if (ipv4 and ipv4.get("dynamic")) else ("static" if ipv4 else "down")),
                 "gateway": gw_for.get(name) or None,
             }
             interfaces.append(iface)
@@ -149,19 +147,29 @@ async def get_system_state(
     # Sort: the iface with a default route first, then "up" before "down",
     # then alphabetically. Operator's "primary" NIC ends up at the top.
     primary_name = next(iter(gw_for), None)
-    interfaces.sort(key=lambda i: (
-        0 if i["iface"] == primary_name else 1,
-        0 if i.get("operstate") == "UP" else 1,
-        i["iface"],
-    ))
+    interfaces.sort(
+        key=lambda i: (
+            0 if i["iface"] == primary_name else 1,
+            0 if i.get("operstate") == "UP" else 1,
+            i["iface"],
+        )
+    )
 
     # `ip` (singular) preserves the old shape for back-compat — it's the
     # primary interface (whatever has the default route, or first).
-    ip = (interfaces[0] if interfaces else {
-        "iface": None, "address_cidr": None, "gateway": None,
-        "mtu": None, "mode": "dhcp",
-    }).copy()
-    ip.pop("operstate", None); ip.pop("mac", None)
+    ip = (
+        interfaces[0]
+        if interfaces
+        else {
+            "iface": None,
+            "address_cidr": None,
+            "gateway": None,
+            "mtu": None,
+            "mode": "dhcp",
+        }
+    ).copy()
+    ip.pop("operstate", None)
+    ip.pop("mac", None)
 
     # --- DNS / search domains --------------------------------------------
     dns_servers: list[str] = []
@@ -198,8 +206,7 @@ async def get_system_state(
     ntp_fallback: list[str] = []
     for confd in (Path("/etc/systemd/timesyncd.conf.d"), Path("/etc/systemd/timesyncd.conf")):
         try:
-            paths = (sorted(confd.glob("*.conf")) if confd.is_dir() else
-                     ([confd] if confd.is_file() else []))
+            paths = sorted(confd.glob("*.conf")) if confd.is_dir() else ([confd] if confd.is_file() else [])
             for p in paths:
                 for line in p.read_text().splitlines():
                     line = line.strip()
@@ -215,24 +222,28 @@ async def get_system_state(
     try:
         for line in Path("/etc/meridian/proxy.env").read_text().splitlines():
             line = line.strip()
-            if line.startswith("HTTP_PROXY="):  proxy["http_url"]  = line.split("=", 1)[1]
-            if line.startswith("HTTPS_PROXY="): proxy["https_url"] = line.split("=", 1)[1]
-            if line.startswith("NO_PROXY="):    proxy["no_proxy"]  = line.split("=", 1)[1]
+            if line.startswith("HTTP_PROXY="):
+                proxy["http_url"] = line.split("=", 1)[1]
+            if line.startswith("HTTPS_PROXY="):
+                proxy["https_url"] = line.split("=", 1)[1]
+            if line.startswith("NO_PROXY="):
+                proxy["no_proxy"] = line.split("=", 1)[1]
     except OSError:
         pass
 
     return {
-        "ip":    ip,
+        "ip": ip,
         "interfaces": interfaces,
-        "dns":   {"servers": dns_servers, "search": dns_search},
-        "ntp":   {"servers": ntp_servers, "fallback": ntp_fallback},
+        "dns": {"servers": dns_servers, "search": dns_search},
+        "ntp": {"servers": ntp_servers, "fallback": ntp_fallback},
         "proxy": proxy,
     }
 
 
 @router.put("")
 async def save_config(
-    request: Request, body: NetworkSettings,
+    request: Request,
+    body: NetworkSettings,
     user: User = Depends(require_permission("admin.system.network")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
@@ -244,10 +255,16 @@ async def save_config(
         db.add(cfg)
     cfg.settings = body.model_dump(mode="json")
     db.flush()
-    audit(db, user_id=user.id, action="admin.network.save",
-          target_type="network_config", target_key="singleton",
-          payload={"sections": list(cfg.settings.keys())},
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.network.save",
+        target_type="network_config",
+        target_key="singleton",
+        payload={"sections": list(cfg.settings.keys())},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True, "settings": cfg.settings}
 
 
@@ -257,14 +274,14 @@ class ApplyIn(BaseModel):
 
 @router.post("/apply")
 async def apply_config(
-    request: Request, body: ApplyIn,
+    request: Request,
+    body: ApplyIn,
     user: User = Depends(require_permission("admin.system.network")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     cfg = db.get(NetworkConfig, 1)
     if cfg is None or not cfg.settings:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "no saved settings — save first")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "no saved settings — save first")
 
     # Write the config to /etc/meridian/network-config.json so the apply
     # script can render it. The directory + file must be meridian-writable.
@@ -274,39 +291,52 @@ async def apply_config(
         tmp.write_text(json.dumps(cfg.settings, indent=2))
         tmp.replace(CONFIG_FILE)
     except OSError as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            f"could not stage config: {e}")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"could not stage config: {e}")
 
     try:
         r = subprocess.run(
             ["sudo", "-n", APPLY_SCRIPT, body.section],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         r_rc, r_out, r_err = 124, "", "apply script timed out"
     else:
         r_rc, r_out, r_err = r.returncode, r.stdout, r.stderr
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     detail: dict[str, Any] = {
         "section": body.section,
         "rc": r_rc,
         "output": ((r_out or "") + (r_err or ""))[:2000],
     }
-    ok = (r_rc == 0)
+    ok = r_rc == 0
     cfg.applied_at = now
     cfg.applied_by = user.id
     cfg.apply_status = "ok" if ok else "failed"
     cfg.apply_detail = detail
-    db.add(NetworkConfigHistory(
-        applied_at=now, applied_by=user.id,
-        settings=cfg.settings, apply_status=cfg.apply_status, apply_detail=detail,
-    ))
-    audit(db, user_id=user.id, action="admin.network.apply",
-          target_type="network_config", target_key=body.section,
-          payload={"status": cfg.apply_status, "rc": r_rc},
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"),
-          outcome="ok" if ok else "error")
+    db.add(
+        NetworkConfigHistory(
+            applied_at=now,
+            applied_by=user.id,
+            settings=cfg.settings,
+            apply_status=cfg.apply_status,
+            apply_detail=detail,
+        )
+    )
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.network.apply",
+        target_type="network_config",
+        target_key=body.section,
+        payload={"status": cfg.apply_status, "rc": r_rc},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        outcome="ok" if ok else "error",
+    )
     return {
         "ok": ok,
         "status": cfg.apply_status,
@@ -322,9 +352,11 @@ async def history(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     limit = max(1, min(500, limit))
-    rows = db.execute(
-        select(NetworkConfigHistory).order_by(desc(NetworkConfigHistory.applied_at)).limit(limit)
-    ).scalars().all()
+    rows = (
+        db.execute(select(NetworkConfigHistory).order_by(desc(NetworkConfigHistory.applied_at)).limit(limit))
+        .scalars()
+        .all()
+    )
     return {
         "history": [
             {

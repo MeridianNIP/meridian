@@ -5,17 +5,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session as OrmSession
 
 from app.api.v1 import api_v1
 from app.auth.csrf import CsrfMiddleware
 from app.auth.deps import require_permission
 from app.config import get_settings
-from app.db import fastapi_dep_db, get_engine
 from app.metrics import PrometheusMiddleware, render_metrics
 from app.models.user import User
 from app.ui.routes import router as ui_router
-
 
 settings = get_settings()
 app = FastAPI(
@@ -71,15 +68,17 @@ def healthz() -> JSONResponse:
     # without them; flagging 503 there would have oncall paging on stale
     # cert expiries.
     from app.system.health_probes import gather
+
     body, code = gather()
     return JSONResponse(body, status_code=code)
 
 
 @app.get("/", include_in_schema=False)
-def root() -> "RedirectResponse":
+def root() -> RedirectResponse:
     # Land on the UI. Unauthenticated users bounce to /ui/login via the
     # current_user dependency on /ui/dashboard.
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse(url="/ui/dashboard", status_code=303)
 
 
@@ -92,7 +91,9 @@ async def http_exc_handler(request: Request, exc: HTTPException):
     # checks for cookie existence, not validity.
     if exc.status_code == 401 and request.url.path.startswith("/ui/"):
         from urllib.parse import quote
+
         from app.auth.csrf import SESSION_COOKIE
+
         resp = RedirectResponse(
             url=f"/ui/login?next={quote(request.url.path)}",
             status_code=303,
@@ -111,6 +112,7 @@ async def unhandled_exc_handler(request: Request, exc: Exception):
     # Surface the type + message so the UI can render it instead of "HTTP 500: )".
     # Full traceback still goes to app-error.log via the worker.
     import logging
+
     logging.getLogger("meridian").exception("unhandled in %s %s", request.method, request.url.path)
     return JSONResponse(
         {"error": f"{type(exc).__name__}: {exc}", "status": 500},

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import uuid
-from datetime import datetime, timezone
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session as OrmSession
@@ -12,24 +11,32 @@ from sqlalchemy.orm import Session as OrmSession
 from app.audit.logger import record as audit
 from app.auth.deps import client_ip, current_user, require_permission
 from app.certs.csr import generate as generate_csr
-from app.certs.parser import parse_pem
-from app.certs.parser import normalize_key_type
+from app.certs.parser import normalize_key_type, parse_pem
 from app.certs.watchlist import fetch_remote_cert
 from app.db import fastapi_dep_db
-from app.models.cert import Certificate, CertEvent, CsrRequest
+from app.models.cert import CertEvent, Certificate, CsrRequest
 from app.models.user import User
 from app.secrets_vault.vault import encrypt_field
-
 
 router = APIRouter(prefix="/certs", tags=["certs"])
 
 
-def _log_event(db: OrmSession, cert_id: uuid.UUID, event: str,
-               actor_id: uuid.UUID | None = None, detail: dict | None = None) -> None:
-    db.add(CertEvent(
-        cert_id=cert_id, event=event, ts=datetime.now(timezone.utc),
-        actor_id=actor_id, detail=detail,
-    ))
+def _log_event(
+    db: OrmSession,
+    cert_id: uuid.UUID,
+    event: str,
+    actor_id: uuid.UUID | None = None,
+    detail: dict | None = None,
+) -> None:
+    db.add(
+        CertEvent(
+            cert_id=cert_id,
+            event=event,
+            ts=datetime.now(UTC),
+            actor_id=actor_id,
+            detail=detail,
+        )
+    )
 
 
 class CertOut(BaseModel):
@@ -54,36 +61,38 @@ async def list_certs(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> list[dict]:
     rows = db.execute(select(Certificate).order_by(Certificate.valid_until)).scalars().all()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     out: list[dict] = []
     for c in rows:
         days = None
         if c.valid_until:
             days = max(0, (c.valid_until - now).days)
-        out.append({
-            "id": str(c.id),
-            "cert_type": c.cert_type,
-            "common_name": c.common_name,
-            "sans": list(c.sans or []),
-            "issuer": c.issuer,
-            "serial_hex": c.serial_hex,
-            "fingerprint_sha256": c.fingerprint_sha256,
-            "valid_from": c.valid_from.isoformat() if c.valid_from else None,
-            "valid_until": c.valid_until.isoformat() if c.valid_until else None,
-            "days_remaining": days,
-            "auto_renew": c.auto_renew,
-            "managed": c.managed,
-            "key_type": c.key_type,
-            "key_size": c.key_size,
-            "signature_alg": c.signature_alg,
-            "renew_before_days": c.renew_before_days,
-            "notify_channels": [str(uid) for uid in (c.notify_channels or [])],
-            "last_renewed_at": c.last_renewed_at.isoformat() if c.last_renewed_at else None,
-            "last_renew_status": c.last_renew_status,
-            "ocsp_stapled": c.ocsp_stapled,
-            "ct_logged": c.ct_logged,
-            "revoked_at": c.revoked_at.isoformat() if c.revoked_at else None,
-        })
+        out.append(
+            {
+                "id": str(c.id),
+                "cert_type": c.cert_type,
+                "common_name": c.common_name,
+                "sans": list(c.sans or []),
+                "issuer": c.issuer,
+                "serial_hex": c.serial_hex,
+                "fingerprint_sha256": c.fingerprint_sha256,
+                "valid_from": c.valid_from.isoformat() if c.valid_from else None,
+                "valid_until": c.valid_until.isoformat() if c.valid_until else None,
+                "days_remaining": days,
+                "auto_renew": c.auto_renew,
+                "managed": c.managed,
+                "key_type": c.key_type,
+                "key_size": c.key_size,
+                "signature_alg": c.signature_alg,
+                "renew_before_days": c.renew_before_days,
+                "notify_channels": [str(uid) for uid in (c.notify_channels or [])],
+                "last_renewed_at": c.last_renewed_at.isoformat() if c.last_renewed_at else None,
+                "last_renew_status": c.last_renew_status,
+                "ocsp_stapled": c.ocsp_stapled,
+                "ct_logged": c.ct_logged,
+                "revoked_at": c.revoked_at.isoformat() if c.revoked_at else None,
+            }
+        )
     return out
 
 
@@ -136,15 +145,20 @@ async def watchlist_add(
     )
     db.add(cert)
     db.flush()
-    _log_event(db, cert.id, "watchlist.added", actor_id=user.id,
-               detail={"host": body.host, "port": body.port})
-    audit(db, user_id=user.id, action="cert.watchlist.add",
-          target_type="cert", target_key=cert.common_name,
-          payload={"host": body.host, "days_remaining": info.days_remaining},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
-    return {"id": str(cert.id), "common_name": cert.common_name,
-            "days_remaining": info.days_remaining}
+    _log_event(
+        db, cert.id, "watchlist.added", actor_id=user.id, detail={"host": body.host, "port": body.port}
+    )
+    audit(
+        db,
+        user_id=user.id,
+        action="cert.watchlist.add",
+        target_type="cert",
+        target_key=cert.common_name,
+        payload={"host": body.host, "days_remaining": info.days_remaining},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"id": str(cert.id), "common_name": cert.common_name, "days_remaining": info.days_remaining}
 
 
 class UploadBody(BaseModel):
@@ -184,14 +198,18 @@ async def upload_cert(
     )
     db.add(cert)
     db.flush()
-    _log_event(db, cert.id, "uploaded", actor_id=user.id,
-               detail={"cert_type": body.cert_type})
-    audit(db, user_id=user.id, action="cert.upload",
-          target_type="cert", target_key=cert.common_name,
-          payload={"cert_type": body.cert_type, "days_remaining": info.days_remaining},
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
-    return {"id": str(cert.id), "common_name": cert.common_name,
-            "days_remaining": info.days_remaining}
+    _log_event(db, cert.id, "uploaded", actor_id=user.id, detail={"cert_type": body.cert_type})
+    audit(
+        db,
+        user_id=user.id,
+        action="cert.upload",
+        target_type="cert",
+        target_key=cert.common_name,
+        payload={"cert_type": body.cert_type, "days_remaining": info.days_remaining},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"id": str(cert.id), "common_name": cert.common_name, "days_remaining": info.days_remaining}
 
 
 class CsrBody(BaseModel):
@@ -211,9 +229,11 @@ async def create_csr(
 ) -> dict:
     try:
         gen = generate_csr(
-            body.subject_cn, body.sans,
+            body.subject_cn,
+            body.sans,
             key_type=body.key_type,
-            organization=body.organization, country=body.country,
+            organization=body.organization,
+            country=body.country,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
@@ -221,21 +241,25 @@ async def create_csr(
     # Encrypt the private key into the vault.
     key_secret_id = uuid.uuid4()
     ciphertext = encrypt_field(gen.private_key_pem, domain=b"cert-key")
-    db.execute(text("""
+    db.execute(
+        text("""
         INSERT INTO secrets (id, name, category, description, ciphertext, nonce,
                              key_version, owner_scope, owner_id, created_by)
         VALUES (:id, :name, 'certificate', :desc, :ct, :nonce, 1,
                 'user', :owner, :creator)
-    """), {
-        "id": key_secret_id,
-        "name": f"cert-key:{body.subject_cn}:{key_secret_id}",
-        "desc": f"Private key for CSR · CN={body.subject_cn} · {body.key_type}",
-        # The secrets table splits ciphertext and nonce into two columns; our
-        # encrypt_field prepends the nonce, so split them here.
-        "ct": ciphertext[12:],
-        "nonce": ciphertext[:12],
-        "owner": user.id, "creator": user.id,
-    })
+    """),
+        {
+            "id": key_secret_id,
+            "name": f"cert-key:{body.subject_cn}:{key_secret_id}",
+            "desc": f"Private key for CSR · CN={body.subject_cn} · {body.key_type}",
+            # The secrets table splits ciphertext and nonce into two columns; our
+            # encrypt_field prepends the nonce, so split them here.
+            "ct": ciphertext[12:],
+            "nonce": ciphertext[:12],
+            "owner": user.id,
+            "creator": user.id,
+        },
+    )
 
     csr = CsrRequest(
         id=uuid.uuid4(),
@@ -248,10 +272,16 @@ async def create_csr(
         created_by=user.id,
     )
     db.add(csr)
-    audit(db, user_id=user.id, action="cert.csr.generate",
-          target_type="csr", target_key=str(csr.id),
-          payload={"cn": body.subject_cn, "sans": body.sans, "key_type": body.key_type},
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="cert.csr.generate",
+        target_type="csr",
+        target_key=str(csr.id),
+        payload={"cn": body.subject_cn, "sans": body.sans, "key_type": body.key_type},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {
         "id": str(csr.id),
         "csr_pem": gen.csr_pem.decode(),
@@ -272,8 +302,9 @@ async def refresh_remote(
     if c is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "cert not found")
     if c.cert_type != "monitored":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "only monitored (watchlist) certs support remote refresh")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "only monitored (watchlist) certs support remote refresh"
+        )
 
     # Pick a resolvable host: a wildcard CN (e.g. "*.google.com") can't be
     # passed to socket.create_connection, so fall back to the first
@@ -282,7 +313,7 @@ async def refresh_remote(
         cn = cert.common_name or ""
         if cn and not cn.startswith("*"):
             return cn
-        for san in (cert.sans or []):
+        for san in cert.sans or []:
             if san and not san.startswith("*"):
                 return san
         if cn.startswith("*."):
@@ -306,17 +337,30 @@ async def refresh_remote(
     c.signature_alg = info.signature_alg
     c.leaf_pem = info.leaf_pem
 
-    _log_event(db, c.id, "refreshed", actor_id=user.id,
-               detail={"host": host, "fingerprint_changed": changed_fingerprint})
+    _log_event(
+        db,
+        c.id,
+        "refreshed",
+        actor_id=user.id,
+        detail={"host": host, "fingerprint_changed": changed_fingerprint},
+    )
     if changed_fingerprint:
-        audit(db, user_id=user.id, action="cert.fingerprint_changed",
-              target_type="cert", target_key=c.common_name,
-              payload={"new": info.fingerprint_sha256},
-              ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="cert.fingerprint_changed",
+            target_type="cert",
+            target_key=c.common_name,
+            payload={"new": info.fingerprint_sha256},
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
         try:
             from app.notifications.dispatcher import dispatch
+
             dispatch(
-                db, event_kind="cert.fingerprint_changed",
+                db,
+                event_kind="cert.fingerprint_changed",
                 subject=f"[Meridian] cert fingerprint changed: {c.common_name}",
                 body=(
                     f"Common name: {c.common_name}\n"
@@ -326,11 +370,10 @@ async def refresh_remote(
                     f"If a rotation wasn't expected, this may indicate a MITM or "
                     f"unplanned re-issue — verify with the asset owner."
                 ),
-                payload={"cert_id": str(c.id),
-                         "fingerprint": info.fingerprint_sha256},
+                payload={"cert_id": str(c.id), "fingerprint": info.fingerprint_sha256},
                 channel_ids=list(c.notify_channels or []) or None,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return {
         "ok": True,
@@ -360,10 +403,16 @@ async def patch_cert(
     if body.auto_renew is not None:
         c.auto_renew = body.auto_renew
         changed["auto_renew"] = body.auto_renew
-    audit(db, user_id=user.id, action="cert.update",
-          target_type="cert", target_key=c.common_name,
-          payload=changed,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="cert.update",
+        target_type="cert",
+        target_key=c.common_name,
+        payload=changed,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True, "changed": changed}
 
 
@@ -378,10 +427,17 @@ async def delete_cert(
     if c is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "cert not found")
     if c.cert_type == "portal":
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "portal cert can't be deleted from UI; rotate via ACME instead")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "portal cert can't be deleted from UI; rotate via ACME instead"
+        )
     name = c.common_name
     db.delete(c)
-    audit(db, user_id=user.id, action="cert.delete",
-          target_type="cert", target_key=name,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="cert.delete",
+        target_type="cert",
+        target_key=name,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )

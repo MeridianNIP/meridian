@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -30,7 +30,7 @@ def send(
         "subject": subject,
         "body": body,
         "payload": payload or {},
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
     }
     body_bytes = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode()
 
@@ -39,21 +39,26 @@ def send(
     # Pull HMAC secret from the vault for signature.
     if channel.secret_id is not None:
         from sqlalchemy import text
+
         from app.secrets_vault.vault import decrypt_field
-        row = db.execute(text(
-            "SELECT ciphertext, nonce FROM secrets WHERE id = :id"
-        ), {"id": channel.secret_id}).first()
+
+        row = db.execute(
+            text("SELECT ciphertext, nonce FROM secrets WHERE id = :id"), {"id": channel.secret_id}
+        ).first()
         if row is not None:
             try:
-                secret = decrypt_field(bytes(row.nonce) + bytes(row.ciphertext),
-                                       domain=b"vault")
+                secret = decrypt_field(bytes(row.nonce) + bytes(row.ciphertext), domain=b"vault")
                 headers["X-Meridian-Signature"] = _sign(secret, body_bytes)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
     d = NotifDelivery(
-        channel_id=channel.id, subject=subject, body=body, payload=payload or {},
-        sent_at=datetime.now(timezone.utc), status="sent",
+        channel_id=channel.id,
+        subject=subject,
+        body=body,
+        payload=payload or {},
+        sent_at=datetime.now(UTC),
+        status="sent",
     )
     try:
         r = httpx.post(channel.target, content=body_bytes, headers=headers, timeout=10.0)

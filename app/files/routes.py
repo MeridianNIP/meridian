@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import uuid
-from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File as UploadFileDep, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
+from fastapi import File as UploadFileDep
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -12,12 +13,15 @@ from app.audit.logger import record as audit
 from app.auth.deps import client_ip, current_user
 from app.db import fastapi_dep_db
 from app.files.storage import (
-    InvalidFilename, QuotaExceeded, delete_storage, quota_for,
-    save_upload_blob, stream_download,
+    InvalidFilename,
+    QuotaExceeded,
+    delete_storage,
+    quota_for,
+    save_upload_blob,
+    stream_download,
 )
 from app.models.file import FileRecord
 from app.models.user import User
-
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -27,15 +31,54 @@ router = APIRouter(prefix="/files", tags=["files"])
 # treat `file.EXE.` and `file.exe ` the same as `file.exe`.
 _BLOCKED_EXTENSIONS = {
     # Windows executables / scripts
-    "exe", "com", "scr", "bat", "cmd", "msi", "msp", "ps1", "ps2",
-    "psm1", "psc1", "vbs", "vbe", "js", "jse", "wsh", "wsf", "hta",
-    "cpl", "dll", "sys", "lnk", "reg", "inf", "pif",
+    "exe",
+    "com",
+    "scr",
+    "bat",
+    "cmd",
+    "msi",
+    "msp",
+    "ps1",
+    "ps2",
+    "psm1",
+    "psc1",
+    "vbs",
+    "vbe",
+    "js",
+    "jse",
+    "wsh",
+    "wsf",
+    "hta",
+    "cpl",
+    "dll",
+    "sys",
+    "lnk",
+    "reg",
+    "inf",
+    "pif",
     # macOS / Linux executables
-    "app", "dmg", "pkg", "sh", "bash", "zsh", "csh", "run", "bin",
+    "app",
+    "dmg",
+    "pkg",
+    "sh",
+    "bash",
+    "zsh",
+    "csh",
+    "run",
+    "bin",
     # Office macro-enabled
-    "docm", "xlsm", "pptm", "dotm", "xltm", "potm",
+    "docm",
+    "xlsm",
+    "pptm",
+    "dotm",
+    "xltm",
+    "potm",
     # Jar / web-exec
-    "jar", "war", "class", "apk", "swf",
+    "jar",
+    "war",
+    "class",
+    "apk",
+    "swf",
 }
 
 
@@ -79,23 +122,29 @@ async def list_files(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
-    rows = db.execute(
-        select(FileRecord).where(FileRecord.owner_id == user.id)
-        .order_by(FileRecord.pinned.desc(), FileRecord.uploaded_at.desc())
-    ).scalars().all()
-    owners = {u.id: u.username for u in db.execute(
-        select(User).where(User.id.in_({r.owner_id for r in rows}))
-    ).scalars()}
+    rows = (
+        db.execute(
+            select(FileRecord)
+            .where(FileRecord.owner_id == user.id)
+            .order_by(FileRecord.pinned.desc(), FileRecord.uploaded_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    owners = {
+        u.id: u.username
+        for u in db.execute(select(User).where(User.id.in_({r.owner_id for r in rows}))).scalars()
+    }
     q = quota_for(db, user.id)
     return {
         "files": [_serialize(f, uploader=owners.get(f.owner_id)) for f in rows],
         "quota": {
-            "used_bytes":     q.used_bytes,
-            "soft_cap":       q.soft_cap,
-            "hard_cap":       q.hard_cap,
+            "used_bytes": q.used_bytes,
+            "soft_cap": q.soft_cap,
+            "hard_cap": q.hard_cap,
             "headroom_bytes": q.headroom_bytes,
-            "soft_pct":       round(100 * q.used_bytes / q.soft_cap, 1) if q.soft_cap else 0,
-            "hard_pct":       round(100 * q.used_bytes / q.hard_cap, 1) if q.hard_cap else 0,
+            "soft_pct": round(100 * q.used_bytes / q.soft_cap, 1) if q.soft_cap else 0,
+            "hard_pct": round(100 * q.used_bytes / q.hard_cap, 1) if q.hard_cap else 0,
         },
     }
 
@@ -117,7 +166,10 @@ async def upload_file(
         )
     try:
         storage_path, size, sha256 = save_upload_blob(
-            user.id, file.filename or "upload.bin", file.file, quota=q,
+            user.id,
+            file.filename or "upload.bin",
+            file.file,
+            quota=q,
         )
     except InvalidFilename as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
@@ -136,18 +188,28 @@ async def upload_file(
         category=category or "upload",
         encrypted=False,
         tags=[],
-        uploaded_at=datetime.now(timezone.utc),
+        uploaded_at=datetime.now(UTC),
         virus_scan="unscanned",
     )
     db.add(rec)
     db.flush()
 
-    audit(db, user_id=user.id, action="file.upload",
-          target_type="file", target_key=str(rec.id),
-          payload={"filename": rec.filename, "size": size, "mime": rec.mime_type,
-                   "sha256": sha256, "category": rec.category},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="file.upload",
+        target_type="file",
+        target_key=str(rec.id),
+        payload={
+            "filename": rec.filename,
+            "size": size,
+            "mime": rec.mime_type,
+            "sha256": sha256,
+            "category": rec.category,
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return _serialize(rec)
 
 
@@ -186,9 +248,15 @@ async def toggle_pin(
     if rec.owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your file")
     rec.pinned = not rec.pinned
-    audit(db, user_id=user.id, action="file.pin" if rec.pinned else "file.unpin",
-          target_type="file", target_key=str(rec.id),
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="file.pin" if rec.pinned else "file.unpin",
+        target_type="file",
+        target_key=str(rec.id),
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"id": str(rec.id), "pinned": rec.pinned}
 
 
@@ -208,7 +276,13 @@ async def delete_file(
     size = rec.size_bytes
     delete_storage(rec)
     db.delete(rec)
-    audit(db, user_id=user.id, action="file.delete",
-          target_type="file", target_key=str(file_id),
-          payload={"filename": filename, "size": size},
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="file.delete",
+        target_type="file",
+        target_key=str(file_id),
+        payload={"filename": filename, "size": size},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )

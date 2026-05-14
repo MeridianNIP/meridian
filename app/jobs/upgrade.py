@@ -15,14 +15,14 @@ Three capabilities:
      on the 'pre-update-snapshot' trigger (the default seed) or on demand
      from the admin UI.
 """
+
 from __future__ import annotations
 
-import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 import re
 import subprocess
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
@@ -31,7 +31,6 @@ from app.audit.logger import record as audit
 from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import session_scope
-
 
 # ============================================================================
 # apt list --upgradable parser
@@ -59,14 +58,16 @@ def _parse_upgradable(output: str) -> list[UpgradableRow]:
         if not m:
             continue
         repo = m.group("repo")
-        rows.append(UpgradableRow(
-            package=m.group("pkg"),
-            from_version=m.group("old_ver").strip(),
-            to_version=m.group("new_ver").strip(),
-            repo=repo,
-            # Debian's security archive names its repo 'debian-security' or similar.
-            is_security=("security" in repo.lower()),
-        ))
+        rows.append(
+            UpgradableRow(
+                package=m.group("pkg"),
+                from_version=m.group("old_ver").strip(),
+                to_version=m.group("new_ver").strip(),
+                repo=repo,
+                # Debian's security archive names its repo 'debian-security' or similar.
+                is_security=("security" in repo.lower()),
+            )
+        )
     return rows
 
 
@@ -76,14 +77,19 @@ def apt_check() -> dict[str, Any]:
     try:
         subprocess.run(
             ["apt-get", "update", "-qq"],
-            capture_output=True, timeout=60, check=False,
+            capture_output=True,
+            timeout=60,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         pass
     try:
         r = subprocess.run(
             ["apt", "list", "--upgradable"],
-            capture_output=True, text=True, timeout=30, check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"error": str(e), "rows": []}
@@ -94,9 +100,13 @@ def apt_check() -> dict[str, Any]:
         "security": sec,
         "stale_cache_note": "apt-get update may have failed silently in airgapped installs",
         "rows": [
-            {"package": row.package, "from_version": row.from_version,
-             "to_version": row.to_version, "repo": row.repo,
-             "is_security": row.is_security}
+            {
+                "package": row.package,
+                "from_version": row.from_version,
+                "to_version": row.to_version,
+                "repo": row.repo,
+                "is_security": row.is_security,
+            }
             for row in rows
         ],
     }
@@ -109,7 +119,10 @@ def _dpkg_versions() -> dict[str, str]:
     try:
         r = subprocess.run(
             ["dpkg-query", "-W", "-f=${Package}\t${Version}\n"],
-            capture_output=True, text=True, timeout=15, check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
         )
     except (OSError, subprocess.SubprocessError):
         return {}
@@ -137,10 +150,7 @@ def _pip_versions() -> dict[str, str]:
 def _detect_debian_major() -> str:
     try:
         with open("/etc/os-release") as f:
-            kv = dict(
-                line.strip().split("=", 1)
-                for line in f if "=" in line
-            )
+            kv = dict(line.strip().split("=", 1) for line in f if "=" in line)
     except OSError:
         return "13"
     vid = (kv.get("VERSION_ID", "").strip('"') or "13").split(".")[0]
@@ -162,13 +172,16 @@ def _severity(found: str, expected: str, min_v: str | None, max_v: str | None) -
 def check_drift() -> dict[str, Any]:
     with session_scope() as db:
         debian_major = _detect_debian_major()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
-        manifest = db.execute(text("""
+        manifest = db.execute(
+            text("""
             SELECT component_name, category, pinned_version, min_version, max_version
               FROM version_manifest
              WHERE tested_on_debian = :d OR tested_on_debian LIKE '%' || :d || '%'
-        """), {"d": debian_major}).all()
+        """),
+            {"d": debian_major},
+        ).all()
 
         dpkg_map = _dpkg_versions()
         pip_map = _pip_versions()
@@ -189,17 +202,23 @@ def check_drift() -> dict[str, Any]:
 
             sev = _severity(found, pinned, min_v, max_v)
 
-            existing = db.execute(text("""
+            existing = db.execute(
+                text("""
                 SELECT id, severity, resolved_at FROM version_drift
                  WHERE component_name = :c AND category = :cat AND resolved_at IS NULL
                  ORDER BY detected_at DESC LIMIT 1
-            """), {"c": comp, "cat": category}).first()
+            """),
+                {"c": comp, "cat": category},
+            ).first()
 
             if sev == "ok":
                 if existing is not None:
-                    db.execute(text("""
+                    db.execute(
+                        text("""
                         UPDATE version_drift SET resolved_at = :t WHERE id = :id
-                    """), {"t": now, "id": existing.id})
+                    """),
+                        {"t": now, "id": existing.id},
+                    )
                     resolved += 1
                 continue
 
@@ -207,26 +226,46 @@ def check_drift() -> dict[str, Any]:
                 continue  # still drifting at the same severity — skip insert
 
             if existing is not None:
-                db.execute(text("""
+                db.execute(
+                    text("""
                     UPDATE version_drift SET resolved_at = :t WHERE id = :id
-                """), {"t": now, "id": existing.id})
+                """),
+                    {"t": now, "id": existing.id},
+                )
 
-            db.execute(text("""
+            db.execute(
+                text("""
                 INSERT INTO version_drift (component_name, category, found_version,
                                            expected_version, severity, detected_at)
                 VALUES (:c, :cat, :found, :exp, :sev, :t)
-            """), {
-                "c": comp, "cat": category, "found": found,
-                "exp": pinned, "sev": sev, "t": now,
-            })
+            """),
+                {
+                    "c": comp,
+                    "cat": category,
+                    "found": found,
+                    "exp": pinned,
+                    "sev": sev,
+                    "t": now,
+                },
+            )
             added += 1
 
-        audit(db, action="updates.drift.scan",
-              payload={"debian_major": debian_major,
-                       "manifest_rows": len(manifest),
-                       "drift_added": added, "drift_resolved": resolved})
-        return {"debian_major": debian_major, "manifest_rows": len(manifest),
-                "drift_added": added, "drift_resolved": resolved}
+        audit(
+            db,
+            action="updates.drift.scan",
+            payload={
+                "debian_major": debian_major,
+                "manifest_rows": len(manifest),
+                "drift_added": added,
+                "drift_resolved": resolved,
+            },
+        )
+        return {
+            "debian_major": debian_major,
+            "manifest_rows": len(manifest),
+            "drift_added": added,
+            "drift_resolved": resolved,
+        }
 
 
 # ============================================================================
@@ -241,7 +280,10 @@ def pre_snapshot(reason: str = "pre-upgrade", created_by: str | None = None) -> 
     try:
         r = subprocess.run(
             ["sudo", "-n", str(backup_sh)],
-            capture_output=True, text=True, timeout=600, check=False,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError) as e:
         return {"error": f"backup.sh failed to launch: {e}", "ok": False}
@@ -268,22 +310,30 @@ def pre_snapshot(reason: str = "pre-upgrade", created_by: str | None = None) -> 
     size = p.stat().st_size if p.is_file() else None
 
     with session_scope() as db:
-        row = db.execute(text("""
+        row = db.execute(
+            text("""
             INSERT INTO update_snapshots (reason, storage_path, size_bytes,
                                           db_included, config_included, files_included,
                                           created_at, created_by)
             VALUES (:r, :path, :size, TRUE, TRUE, FALSE, :t, :by)
             RETURNING id
-        """), {
-            "r": reason, "path": str(p), "size": size,
-            "t": datetime.now(timezone.utc),
-            "by": created_by,
-        }).first()
-        audit(db, action="updates.snapshot.create",
-              target_type="update_snapshot", target_key=str(row.id),
-              payload={"reason": reason, "path": str(p), "size_bytes": size})
-        return {"ok": True, "snapshot_id": str(row.id), "path": str(p),
-                "size_bytes": size}
+        """),
+            {
+                "r": reason,
+                "path": str(p),
+                "size": size,
+                "t": datetime.now(UTC),
+                "by": created_by,
+            },
+        ).first()
+        audit(
+            db,
+            action="updates.snapshot.create",
+            target_type="update_snapshot",
+            target_key=str(row.id),
+            payload={"reason": reason, "path": str(p), "size_bytes": size},
+        )
+        return {"ok": True, "snapshot_id": str(row.id), "path": str(p), "size_bytes": size}
 
 
 # ============================================================================
@@ -302,9 +352,9 @@ def _update_row(db, run_id: str, **fields) -> None:
     setters = ", ".join(f"{k} = :{k}" for k in fields)
     if not setters:
         return
-    db.execute(text(
-        f"UPDATE system_update_runs SET {setters} WHERE id = :run_id"
-    ), {**fields, "run_id": run_id})
+    db.execute(
+        text(f"UPDATE system_update_runs SET {setters} WHERE id = :run_id"), {**fields, "run_id": run_id}
+    )
 
 
 @celery_app.task(name="meridian.jobs.upgrade.run_update", bind=True)
@@ -317,29 +367,32 @@ def run_update(self, run_id: str) -> dict[str, Any]:
     so this task typically completes cleanly before the host goes down.
     """
     with session_scope() as db:
-        row = db.execute(text(
-            "SELECT reboot, status FROM system_update_runs WHERE id = :id"
-        ), {"id": run_id}).first()
+        row = db.execute(
+            text("SELECT reboot, status FROM system_update_runs WHERE id = :id"), {"id": run_id}
+        ).first()
         if row is None:
             return {"error": "run not found"}
         if row.status not in ("pending", "running"):
             return {"error": f"run already {row.status}"}
         reboot = bool(row.reboot)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _update_row(db, run_id, status="running", started_at=now)
-        audit(db, action="admin.update.start",
-              target_type="system_update_run", target_key=run_id,
-              payload={"reboot": reboot})
+        audit(
+            db,
+            action="admin.update.start",
+            target_type="system_update_run",
+            target_key=run_id,
+            payload={"reboot": reboot},
+        )
 
     args = ["sudo", "-n", _UPDATE_SCRIPT]
     if reboot:
         args.append("--reboot")
     try:
-        proc = subprocess.run(args, capture_output=True, text=True,
-                              timeout=30 * 60, check=False)
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=30 * 60, check=False)
         rc = proc.returncode
-        output = (proc.stdout + "\n---stderr---\n" + proc.stderr)
+        output = proc.stdout + "\n---stderr---\n" + proc.stderr
     except subprocess.TimeoutExpired as e:
         rc = 124
         output = f"timeout after 30 min\nstdout so far:\n{e.stdout or ''}\nstderr so far:\n{e.stderr or ''}"
@@ -351,16 +404,25 @@ def run_update(self, run_id: str) -> dict[str, Any]:
     reboot_required = Path("/var/run/reboot-required").exists()
 
     with session_scope() as db:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         status = "ok" if rc == 0 else "failed"
-        _update_row(db, run_id, status=status, completed_at=now,
-                    exit_code=rc, output_tail=tail,
-                    reboot_required=reboot_required)
-        audit(db, action="admin.update.complete",
-              target_type="system_update_run", target_key=run_id,
-              payload={"exit_code": rc, "reboot_scheduled": reboot,
-                       "reboot_required_after": reboot_required},
-              outcome="ok" if status == "ok" else "error")
+        _update_row(
+            db,
+            run_id,
+            status=status,
+            completed_at=now,
+            exit_code=rc,
+            output_tail=tail,
+            reboot_required=reboot_required,
+        )
+        audit(
+            db,
+            action="admin.update.complete",
+            target_type="system_update_run",
+            target_key=run_id,
+            payload={"exit_code": rc, "reboot_scheduled": reboot, "reboot_required_after": reboot_required},
+            outcome="ok" if status == "ok" else "error",
+        )
     return {"ok": rc == 0, "exit_code": rc, "reboot_scheduled": reboot}
 
 
@@ -368,17 +430,20 @@ def run_update(self, run_id: str) -> dict[str, Any]:
 def fire_scheduled() -> dict[str, Any]:
     """Beat-triggered every minute. Fires any pending system_update_runs
     whose scheduled_for has elapsed. Enqueues run_update for each."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     fired: list[str] = []
     with session_scope() as db:
-        rows = db.execute(text("""
+        rows = db.execute(
+            text("""
             SELECT id FROM system_update_runs
              WHERE status = 'pending'
                AND scheduled_for IS NOT NULL
                AND scheduled_for <= :now
              ORDER BY scheduled_for ASC
              LIMIT 5
-        """), {"now": now}).fetchall()
+        """),
+            {"now": now},
+        ).fetchall()
         for r in rows:
             fired.append(str(r.id))
     for rid in fired:

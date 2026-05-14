@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import secrets
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -14,7 +14,6 @@ from app.auth.deps import client_ip, require_permission
 from app.auth.password import hash_password
 from app.db import fastapi_dep_db
 from app.models.user import User
-
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
@@ -30,11 +29,10 @@ async def role_counts(
     """How many local users hold each role. Powers the Global Settings
     → Roles card. AD-only users (if any exist with no local row) are
     not included — those are surfaced through the directory role map."""
-    from sqlalchemy import cast, Text
+    from sqlalchemy import Text, cast
+
     rows = db.execute(
-        select(cast(User.role, Text), func.count())
-        .where(User.deleted_at.is_(None))
-        .group_by(User.role)
+        select(cast(User.role, Text), func.count()).where(User.deleted_at.is_(None)).group_by(User.role)
     ).all()
     out = {r: 0 for r in _ALLOWED_ROLES}
     for role, n in rows:
@@ -108,11 +106,10 @@ async def create_user(
 
     # Only super_admin can create another super_admin.
     if body.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "only super_admin can create another super_admin")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only super_admin can create another super_admin")
 
     temp_pw = body.temp_password or _generate_password(24)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     u = User(
         id=uuid.uuid4(),
         username=body.username,
@@ -129,12 +126,16 @@ async def create_user(
     )
     db.add(u)
     db.flush()
-    audit(db, user_id=user.id, action="admin.user.create",
-          target_type="user", target_key=body.username,
-          payload={"role": body.role, "email": body.email,
-                   "temp_pw_generated": body.temp_password is None},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.user.create",
+        target_type="user",
+        target_key=body.username,
+        payload={"role": body.role, "email": body.email, "temp_pw_generated": body.temp_password is None},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     # Temp password is returned once; never logged.
     return {"user": _serialize(u), "temp_password": temp_pw}
 
@@ -163,12 +164,14 @@ async def update_user(
     if target.id == user.id and body.enabled is False:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "cannot disable yourself")
     if body.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "only super_admin can promote to super_admin")
-    if target.role == "super_admin" and body.role and body.role != "super_admin" \
-       and user.role != "super_admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "only super_admin can demote a super_admin")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only super_admin can promote to super_admin")
+    if (
+        target.role == "super_admin"
+        and body.role
+        and body.role != "super_admin"
+        and user.role != "super_admin"
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only super_admin can demote a super_admin")
 
     changed: dict = {}
     for field_name, value in body.model_dump(exclude_unset=True).items():
@@ -177,11 +180,16 @@ async def update_user(
             setattr(target, field_name, value)
 
     if changed:
-        audit(db, user_id=user.id, action="admin.user.update",
-              target_type="user", target_key=target.username,
-              payload={"changes": list(changed.keys())},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="admin.user.update",
+            target_type="user",
+            target_key=target.username,
+            payload={"changes": list(changed.keys())},
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
     return {"user": _serialize(target), "changed": list(changed.keys())}
 
 
@@ -196,18 +204,24 @@ async def reset_password(
     if target is None or target.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     if target.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "only super_admin can reset another super_admin's password")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "only super_admin can reset another super_admin's password"
+        )
 
     temp_pw = _generate_password(24)
     target.password_hash = hash_password(temp_pw)
     target.preferences = {**(target.preferences or {}), "force_change_password": True}
     target.failed_login_count = 0
     target.locked = False
-    audit(db, user_id=user.id, action="admin.user.reset_password",
-          target_type="user", target_key=target.username,
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.user.reset_password",
+        target_type="user",
+        target_key=target.username,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"user": _serialize(target), "temp_password": temp_pw}
 
 
@@ -223,10 +237,15 @@ async def unlock_user(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     target.locked = False
     target.failed_login_count = 0
-    audit(db, user_id=user.id, action="admin.user.unlock",
-          target_type="user", target_key=target.username,
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.user.unlock",
+        target_type="user",
+        target_key=target.username,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"user": _serialize(target)}
 
 
@@ -240,7 +259,7 @@ async def reset_mfa(
     """Wipe the target's MFA enrollment so they can re-enroll a new
     authenticator. Used when a user loses their TOTP device and has
     burned through all backup codes."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from sqlalchemy import text, update
 
@@ -250,30 +269,33 @@ async def reset_mfa(
     if target is None or target.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     if target.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "only super_admin can reset MFA for another super_admin")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "only super_admin can reset MFA for another super_admin"
+        )
 
     target.mfa_enrolled = False
     target.mfa_secret_enc = None
-    db.execute(text("DELETE FROM mfa_backup_codes WHERE user_id = :u"),
-               {"u": target.id})
+    db.execute(text("DELETE FROM mfa_backup_codes WHERE user_id = :u"), {"u": target.id})
 
     # Force every active session to terminate. MFA was the second factor —
     # leaving sessions alive after revoking it defeats the purpose.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db.execute(
         update(SessionModel)
-        .where(SessionModel.user_id == target.id,
-               SessionModel.revoked_at.is_(None))
+        .where(SessionModel.user_id == target.id, SessionModel.revoked_at.is_(None))
         .values(revoked_at=now, revoked_by=user.id, revoked_reason="admin_mfa_reset")
     )
 
-    audit(db, user_id=user.id, action="admin.user.mfa_reset",
-          target_type="user", target_key=target.username,
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
-    return {"user": _serialize(target),
-            "message": "MFA cleared. User must re-enroll TOTP on next login."}
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.user.mfa_reset",
+        target_type="user",
+        target_key=target.username,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"user": _serialize(target), "message": "MFA cleared. User must re-enroll TOTP on next login."}
 
 
 def _generate_password(length: int = 24) -> str:

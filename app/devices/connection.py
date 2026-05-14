@@ -7,11 +7,11 @@ vendor SDK) per-kind later without touching the backup/diff logic.
 netmiko is imported lazily — dev environments without it can still import
 this module; the error only fires when an actual fetch is attempted.
 """
+
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-
+import re
 
 # device_kind enum values → netmiko device_type strings.
 # Linux-backend entries (pfSense, OPNsense, Synology, etc.) all use
@@ -19,46 +19,46 @@ from dataclasses import dataclass
 # kind-specific shell pipeline (see DEVICE_COMMANDS below).
 _NETMIKO_MAP: dict[str, str] = {
     # Cisco
-    "cisco_ios":         "cisco_ios",
-    "cisco_iosxe":       "cisco_xe",
-    "cisco_iosxr":       "cisco_xr",
-    "cisco_nxos":        "cisco_nxos",
-    "cisco_asa":         "cisco_asa",
-    "cisco_wlc":         "cisco_wlc_ssh",
-    "cisco_s300":        "cisco_s300",
+    "cisco_ios": "cisco_ios",
+    "cisco_iosxe": "cisco_xe",
+    "cisco_iosxr": "cisco_xr",
+    "cisco_nxos": "cisco_nxos",
+    "cisco_asa": "cisco_asa",
+    "cisco_wlc": "cisco_wlc_ssh",
+    "cisco_s300": "cisco_s300",
     # Other enterprise
-    "juniper_junos":     "juniper_junos",
-    "arista_eos":        "arista_eos",
-    "palo_alto":         "paloalto_panos",
-    "fortinet":          "fortinet",
-    "huawei":            "huawei",
-    "aruba_aoscx":       "aruba_aoscx",
-    "aruba_os":          "aruba_os",
-    "hp_procurve":       "hp_procurve",
-    "hp_comware":        "hp_comware",
-    "dell_os10":         "dell_os10",
-    "dell_force10":      "dell_force10",
+    "juniper_junos": "juniper_junos",
+    "arista_eos": "arista_eos",
+    "palo_alto": "paloalto_panos",
+    "fortinet": "fortinet",
+    "huawei": "huawei",
+    "aruba_aoscx": "aruba_aoscx",
+    "aruba_os": "aruba_os",
+    "hp_procurve": "hp_procurve",
+    "hp_comware": "hp_comware",
+    "dell_os10": "dell_os10",
+    "dell_force10": "dell_force10",
     "dell_powerconnect": "dell_powerconnect",
-    "extreme_exos":      "extreme_exos",
-    "brocade_fastiron":  "brocade_fastiron",
+    "extreme_exos": "extreme_exos",
+    "brocade_fastiron": "brocade_fastiron",
     # Load balancer / ADC
-    "f5_tmsh":           "f5_tmsh",
-    "citrix_netscaler":  "netscaler",
+    "f5_tmsh": "f5_tmsh",
+    "citrix_netscaler": "netscaler",
     # Firewalls
-    "sonicwall":         "sonicwall",
-    "pfsense":           "linux",
-    "opnsense":          "linux",
-    "sophos":            "linux",
+    "sonicwall": "sonicwall",
+    "pfsense": "linux",
+    "opnsense": "linux",
+    "sophos": "linux",
     # SoHo / open-source
-    "mikrotik":          "mikrotik_routeros",
-    "ubiquiti_edge":     "ubiquiti_edge",
-    "ubiquiti_unifi":    "linux",
-    "vyos":              "vyos",
+    "mikrotik": "mikrotik_routeros",
+    "ubiquiti_edge": "ubiquiti_edge",
+    "ubiquiti_unifi": "linux",
+    "vyos": "vyos",
     # NAS
-    "synology":          "linux",
-    "qnap":              "linux",
+    "synology": "linux",
+    "qnap": "linux",
     # Generic
-    "generic_ssh":       "linux",
+    "generic_ssh": "linux",
 }
 
 
@@ -76,26 +76,34 @@ class DeviceProfile:
 DEVICE_COMMANDS: dict[str, DeviceProfile] = {
     "cisco_ios": DeviceProfile(
         show_command="show running-config",
-        strip_patterns=(r"^Building configuration.*$", r"^Current configuration : .*$",
-                        r"^! Last configuration change at .*$",
-                        r"^! NVRAM config last updated at .*$",
-                        r"^ntp clock-period \d+$"),
+        strip_patterns=(
+            r"^Building configuration.*$",
+            r"^Current configuration : .*$",
+            r"^! Last configuration change at .*$",
+            r"^! NVRAM config last updated at .*$",
+            r"^ntp clock-period \d+$",
+        ),
     ),
     "cisco_iosxr": DeviceProfile(
         show_command="show running-config",
-        strip_patterns=(r"^Building configuration.*$", r"^!! Last configuration change at .*$",
-                        r"^!! IOS XR Configuration version = .*$"),
+        strip_patterns=(
+            r"^Building configuration.*$",
+            r"^!! Last configuration change at .*$",
+            r"^!! IOS XR Configuration version = .*$",
+        ),
     ),
     "cisco_nxos": DeviceProfile(
         show_command="show running-config",
-        strip_patterns=(r"^!Command: show running-config.*$",
-                        r"^!Running configuration last done at.*$",
-                        r"^!Time: .*$", r"^!Startup config saved at.*$"),
+        strip_patterns=(
+            r"^!Command: show running-config.*$",
+            r"^!Running configuration last done at.*$",
+            r"^!Time: .*$",
+            r"^!Startup config saved at.*$",
+        ),
     ),
     "cisco_asa": DeviceProfile(
         show_command="more system:running-config",
-        strip_patterns=(r"^: Saved$", r"^: Serial Number: .*$",
-                        r"^: Hardware: .*$", r"^: Written by .*$"),
+        strip_patterns=(r"^: Saved$", r"^: Serial Number: .*$", r"^: Hardware: .*$", r"^: Written by .*$"),
     ),
     "juniper_junos": DeviceProfile(
         show_command="show configuration | display set | no-more",
@@ -124,8 +132,11 @@ DEVICE_COMMANDS: dict[str, DeviceProfile] = {
     # Cisco family additions
     "cisco_iosxe": DeviceProfile(
         show_command="show running-config",
-        strip_patterns=(r"^Building configuration.*$", r"^Current configuration : .*$",
-                        r"^! Last configuration change at .*$"),
+        strip_patterns=(
+            r"^Building configuration.*$",
+            r"^Current configuration : .*$",
+            r"^! Last configuration change at .*$",
+        ),
     ),
     "cisco_wlc": DeviceProfile(
         show_command="show run-config commands",
@@ -239,8 +250,7 @@ def fetch_running_config(
         from netmiko import ConnectHandler
     except ImportError as e:
         raise RuntimeError(
-            "netmiko is not installed — device config backup needs it. "
-            "Install with: pip install netmiko"
+            "netmiko is not installed — device config backup needs it. " "Install with: pip install netmiko"
         ) from e
 
     command = (overrides or {}).get("show_command") or profile.show_command
@@ -269,7 +279,7 @@ def fetch_running_config(
     finally:
         try:
             conn.disconnect()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     if not isinstance(raw, str) or not raw.strip():

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+import re
 
 from app.sandbox.runner import run
-
 
 # Allow common safe OIDs + numeric OIDs like .1.3.6.1.2.1.1.1.0.
 # Reject anything with shell metachars (the sandbox's allowlist would catch it
@@ -47,7 +46,8 @@ def _validate(host: str, oid: str, version: str, community: str | None) -> None:
 
 
 async def walk(
-    host: str, oid: str = "system",
+    host: str,
+    oid: str = "system",
     *,
     version: str = "2c",
     community: str | None = "public",
@@ -55,12 +55,15 @@ async def walk(
 ) -> SnmpResult:
     _validate(host, oid, version, community)
     args: list[str] = [
-        "-On",                      # numeric OIDs
-        "-Oa",                      # ASCII strings where useful
-        "-Lf", "/dev/null",         # silence the log-file hint
+        "-On",  # numeric OIDs
+        "-Oa",  # ASCII strings where useful
+        "-Lf",
+        "/dev/null",  # silence the log-file hint
         f"-v{version}",
-        "-t", str(int(timeout_s)),
-        "-r", "1",
+        "-t",
+        str(int(timeout_s)),
+        "-r",
+        "1",
     ]
     if version in ("1", "2c"):
         args += ["-c", community or "public"]
@@ -72,18 +75,21 @@ async def walk(
     for line in result.stdout.splitlines():
         m = _OID_LINE.match(line.strip())
         if m:
-            rows.append(SnmpRow(
-                oid=m.group("oid"),
-                type=m.group("type"),
-                value=m.group("value"),
-            ))
+            rows.append(
+                SnmpRow(
+                    oid=m.group("oid"),
+                    type=m.group("type"),
+                    value=m.group("value"),
+                )
+            )
 
     error = None
     if result.returncode != 0 and not rows:
         error = (result.stderr.strip().splitlines() or ["snmpwalk failed"])[-1]
     return SnmpResult(
         command=f"snmpwalk {' '.join(args)}",
-        host=host, oid_root=oid,
+        host=host,
+        oid_root=oid,
         rows=tuple(rows),
         raw=result.stdout,
         returncode=result.returncode,

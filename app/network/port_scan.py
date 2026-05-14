@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import ipaddress
 import re
-from dataclasses import dataclass
-from typing import Iterator
-
 
 _PORT_SPEC = re.compile(r"^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
 
@@ -13,7 +11,7 @@ _PORT_SPEC = re.compile(r"^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
 @dataclass(frozen=True)
 class PortResult:
     port: int
-    state: str                  # 'open' | 'closed' | 'filtered'
+    state: str  # 'open' | 'closed' | 'filtered'
     latency_ms: float | None
     error: str | None = None
 
@@ -31,7 +29,9 @@ def parse_port_spec(spec: str, *, max_ports: int = 1024) -> list[int]:
     """Expand '22,80,443,8000-8010' → [22,80,443,8000,...,8010]. Rejects invalid input."""
     spec = spec.replace(" ", "")
     if not _PORT_SPEC.match(spec):
-        raise ValueError("ports must be a comma-separated list of single ports or ranges (e.g. 22,80,443,8000-8010)")
+        raise ValueError(
+            "ports must be a comma-separated list of single ports or ranges (e.g. 22,80,443,8000-8010)"
+        )
     seen: set[int] = set()
     for part in spec.split(","):
         if "-" in part:
@@ -55,7 +55,8 @@ async def _scan_one(host: str, port: int, *, timeout_s: float) -> PortResult:
     start = loop.time()
     try:
         reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port), timeout=timeout_s,
+            asyncio.open_connection(host, port),
+            timeout=timeout_s,
         )
         rtt = (loop.time() - start) * 1000
         writer.close()
@@ -64,7 +65,7 @@ async def _scan_one(host: str, port: int, *, timeout_s: float) -> PortResult:
         except (ConnectionError, OSError):
             pass
         return PortResult(port=port, state="open", latency_ms=round(rtt, 2))
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return PortResult(port=port, state="filtered", latency_ms=None, error="timeout")
     except (ConnectionRefusedError, ConnectionResetError):
         return PortResult(port=port, state="closed", latency_ms=None)
@@ -87,7 +88,9 @@ def _validate_scope(host: str, scope: str | None) -> None:
 
 
 async def scan(
-    host: str, ports: list[int], *,
+    host: str,
+    ports: list[int],
+    *,
     timeout_s: float = 2.0,
     concurrency: int = 64,
     scope: str | None = None,
@@ -97,6 +100,7 @@ async def scan(
     start = loop.time()
 
     sem = asyncio.Semaphore(concurrency)
+
     async def _guarded(p: int) -> PortResult:
         async with sem:
             return await _scan_one(host, p, timeout_s=timeout_s)

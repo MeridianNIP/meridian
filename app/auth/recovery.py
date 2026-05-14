@@ -13,21 +13,21 @@ Recovery is INTENTIONALLY layered:
 Just security-questions-alone is a weak authenticator; pairing with a
 single-use token + aggressive rate limiting brings it up to reasonable.
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 import hashlib
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Iterable
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
 
 from app.auth.password import hash_password as _argon_hash
 from app.auth.password import verify_password as _argon_verify
-
 
 # Questions the UI offers. Users can also write custom ones (with light
 # guardrails — see validate_custom_question). Curated to mix personal-
@@ -117,7 +117,7 @@ def hash_answer(raw: str) -> str:
 def verify_answer(raw: str, stored_hash: str) -> bool:
     try:
         return _argon_verify(normalize_answer(raw), stored_hash)
-    except Exception:     # noqa: BLE001
+    except Exception:
         return False
 
 
@@ -143,14 +143,12 @@ def list_questions(db: OrmSession, user_id: uuid.UUID) -> list[dict]:
         {"u": user_id},
     ).fetchall()
     return [
-        {"position": int(r[0]), "question": r[1],
-         "updated_at": r[2].isoformat() if r[2] else None}
+        {"position": int(r[0]), "question": r[1], "updated_at": r[2].isoformat() if r[2] else None}
         for r in rows
     ]
 
 
-def save_questions(db: OrmSession, user_id: uuid.UUID,
-                   items: Iterable[tuple[str, str]]) -> None:
+def save_questions(db: OrmSession, user_id: uuid.UUID, items: Iterable[tuple[str, str]]) -> None:
     """items: sequence of (question_text, raw_answer) exactly 5 long."""
     items = list(items)
     if len(items) != 5:
@@ -175,8 +173,7 @@ def save_questions(db: OrmSession, user_id: uuid.UUID,
 
     # Wipe + write. Simple; setup is rare enough that optimizing diff writes
     # isn't worth the complexity.
-    db.execute(text("DELETE FROM user_recovery_questions WHERE user_id = :u"),
-               {"u": user_id})
+    db.execute(text("DELETE FROM user_recovery_questions WHERE user_id = :u"), {"u": user_id})
     for i, (q, a) in enumerate(items, start=1):
         db.execute(
             text("""
@@ -204,8 +201,7 @@ def pick_challenge(db: OrmSession, user_id: uuid.UUID) -> list[dict]:
     return [{"position": int(r[0]), "question": r[1]} for r in rows]
 
 
-def verify_challenge(db: OrmSession, user_id: uuid.UUID,
-                     answers: dict[int, str]) -> bool:
+def verify_challenge(db: OrmSession, user_id: uuid.UUID, answers: dict[int, str]) -> bool:
     """answers: {position: raw_answer}. All supplied positions must hash-match."""
     if not answers:
         return False
@@ -231,18 +227,19 @@ def verify_challenge(db: OrmSession, user_id: uuid.UUID,
 # Rate limiting.
 # -----------------------------------------------------------------------------
 def recent_failures(db: OrmSession, user_id: uuid.UUID, window_min: int = 15) -> int:
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_min)
-    return int(db.execute(
-        text("""
+    cutoff = datetime.now(UTC) - timedelta(minutes=window_min)
+    return int(
+        db.execute(
+            text("""
             SELECT count(*) FROM user_recovery_attempts
              WHERE user_id = :u AND outcome = 'fail' AND attempted_at >= :c
         """),
-        {"u": user_id, "c": cutoff},
-    ).scalar_one())
+            {"u": user_id, "c": cutoff},
+        ).scalar_one()
+    )
 
 
-def record_attempt(db: OrmSession, user_id: uuid.UUID, *,
-                   outcome: str, ip: str | None = None) -> None:
+def record_attempt(db: OrmSession, user_id: uuid.UUID, *, outcome: str, ip: str | None = None) -> None:
     db.execute(
         text("""
             INSERT INTO user_recovery_attempts (user_id, ip, outcome)
@@ -262,8 +259,9 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def mint_reset_token(db: OrmSession, user_id: uuid.UUID, *,
-                     ip: str | None = None, user_agent: str | None = None) -> str:
+def mint_reset_token(
+    db: OrmSession, user_id: uuid.UUID, *, ip: str | None = None, user_agent: str | None = None
+) -> str:
     token = secrets.token_urlsafe(32)
     db.execute(
         text("""
@@ -272,9 +270,11 @@ def mint_reset_token(db: OrmSession, user_id: uuid.UUID, *,
             VALUES (:h, :u, :e, :ip, :ua)
         """),
         {
-            "h": _hash_token(token), "u": user_id,
-            "e": datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MIN),
-            "ip": ip, "ua": user_agent,
+            "h": _hash_token(token),
+            "u": user_id,
+            "e": datetime.now(UTC) + timedelta(minutes=RESET_TOKEN_TTL_MIN),
+            "ip": ip,
+            "ua": user_agent,
         },
     )
     return token
@@ -294,7 +294,7 @@ def consume_reset_token(db: OrmSession, token: str) -> uuid.UUID | None:
     if row is None:
         return None
     user_id, expires_at, used_at = row
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if used_at is not None:
         return None
     if expires_at <= now:

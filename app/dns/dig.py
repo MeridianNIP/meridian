@@ -1,25 +1,45 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from typing import Iterable
+import re
 
 from app.sandbox.runner import SandboxResult, run
 
-
 # Flags the UI exposes as clickable chips. Anything outside this set is rejected.
 _ALLOWED_FLAGS = {
-    "+short", "+trace", "+noall", "+answer", "+authority", "+additional",
-    "+dnssec", "+cd", "+tcp", "+norecurse", "+multiline",
+    "+short",
+    "+trace",
+    "+noall",
+    "+answer",
+    "+authority",
+    "+additional",
+    "+dnssec",
+    "+cd",
+    "+tcp",
+    "+norecurse",
+    "+multiline",
 }
 
 _ALLOWED_RECORD_TYPES = {
-    "A", "AAAA", "ANY", "AXFR", "CAA", "CNAME", "DNSKEY", "DS", "MX", "NS",
-    "PTR", "SOA", "SRV", "TLSA", "TXT",
+    "A",
+    "AAAA",
+    "ANY",
+    "AXFR",
+    "CAA",
+    "CNAME",
+    "DNSKEY",
+    "DS",
+    "MX",
+    "NS",
+    "PTR",
+    "SOA",
+    "SRV",
+    "TLSA",
+    "TXT",
 }
 
 _DOMAIN_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
-_IPV4_RE   = re.compile(r"^[0-9]{1,3}(\.[0-9]{1,3}){3}$")
+_IPV4_RE = re.compile(r"^[0-9]{1,3}(\.[0-9]{1,3}){3}$")
 
 
 @dataclass(frozen=True)

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 import shlex
 import shutil
 import signal
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable
 
 
 class SandboxError(Exception):
@@ -30,18 +29,26 @@ class SandboxResult:
 # don't need a code change. Anything missing is dropped; callers will get a
 # "binary not in allowlist" error — clearer than running the wrong thing.
 _ALLOWED_NAMES = (
-    "dig", "host", "nslookup", "whois",
-    "ping", "ping6",
-    "traceroute", "tracepath", "mtr",
-    "nmap", "curl", "openssl",
-    "snmpwalk", "snmpget", "tcpdump",
+    "dig",
+    "host",
+    "nslookup",
+    "whois",
+    "ping",
+    "ping6",
+    "traceroute",
+    "tracepath",
+    "mtr",
+    "nmap",
+    "curl",
+    "openssl",
+    "snmpwalk",
+    "snmpget",
+    "tcpdump",
 )
-ALLOWED_BINARIES: dict[str, Path] = {
-    name: Path(_p) for name in _ALLOWED_NAMES if (_p := shutil.which(name))
-}
+ALLOWED_BINARIES: dict[str, Path] = {name: Path(_p) for name in _ALLOWED_NAMES if (_p := shutil.which(name))}
 
 
-MAX_STDOUT_BYTES = 1 * 1024 * 1024   # 1 MiB per run; more than any legitimate tool output
+MAX_STDOUT_BYTES = 1 * 1024 * 1024  # 1 MiB per run; more than any legitimate tool output
 DEFAULT_TIMEOUT_S = 30.0
 
 
@@ -98,13 +105,12 @@ async def run(
 
     timed_out = False
     try:
-        stdout_b, stderr_b = await asyncio.wait_for(
-            proc.communicate(input=stdin), timeout=timeout_s
-        )
-    except asyncio.TimeoutError:
+        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(input=stdin), timeout=timeout_s)
+    except TimeoutError:
         timed_out = True
         try:
             import os
+
             os.killpg(proc.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass

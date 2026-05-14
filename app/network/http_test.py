@@ -54,7 +54,7 @@ async def test_url(
 
     async with httpx.AsyncClient(
         timeout=timeout_s,
-        follow_redirects=False,     # we walk redirects ourselves for timing detail
+        follow_redirects=False,  # we walk redirects ourselves for timing detail
         headers=headers,
     ) as client:
         current = url
@@ -63,10 +63,14 @@ async def test_url(
             r = await client.request(method.upper(), current, content=body)
             elapsed = r.elapsed.total_seconds() * 1000
             total += elapsed
-            chain.append(HttpStep(
-                url=str(r.url), status=r.status_code,
-                reason=r.reason_phrase, duration_ms=round(elapsed, 2),
-            ))
+            chain.append(
+                HttpStep(
+                    url=str(r.url),
+                    status=r.status_code,
+                    reason=r.reason_phrase,
+                    duration_ms=round(elapsed, 2),
+                )
+            )
             if not follow_redirects or not (300 <= r.status_code < 400) or "location" not in r.headers:
                 break
             if redirects >= max_redirects:

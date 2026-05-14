@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import ipaddress
 import time
-from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -13,7 +13,7 @@ from app.models.scope import ScopeRule
 @dataclass(frozen=True)
 class ScopeDecision:
     allowed: bool
-    classification: str           # 'internal' | 'external' | 'unknown'
+    classification: str  # 'internal' | 'external' | 'unknown'
     reason: str | None = None
 
 
@@ -28,9 +28,7 @@ def _load(db: OrmSession) -> list[tuple[str, ipaddress.IPv4Network | ipaddress.I
     now = time.monotonic()
     if entry and (now - entry[0]) < _CACHE_TTL_S:
         return entry[1]
-    rows = db.execute(
-        select(ScopeRule.kind, ScopeRule.cidr).where(ScopeRule.enabled.is_(True))
-    ).all()
+    rows = db.execute(select(ScopeRule.kind, ScopeRule.cidr).where(ScopeRule.enabled.is_(True))).all()
     parsed: list[tuple[str, ipaddress.IPv4Network | ipaddress.IPv6Network]] = []
     for kind, cidr in rows:
         try:
@@ -61,7 +59,8 @@ def classify(db: OrmSession, host: str) -> ScopeDecision:
     for kind, net in rules:
         if kind == "deny" and ip in net:
             return ScopeDecision(
-                allowed=False, classification="denied",
+                allowed=False,
+                classification="denied",
                 reason=f"host {host} falls inside deny rule {net}",
             )
 

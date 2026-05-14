@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import ipaddress
 import re
-from dataclasses import dataclass
 
 from app.sandbox.runner import run
-
 
 _ANSWER_RE = re.compile(
     r"^(?P<owner>\S+)\s+\d+\s+IN\s+PTR\s+(?P<ptr>\S+)\.?\s*$",
@@ -54,8 +53,7 @@ async def reverse_lookup(ip: str, *, resolver: str | None = None) -> ReverseResu
 
     result = await run("dig", args, timeout_s=8)
     records = tuple(
-        ReverseRecord(ptr=m.group("ptr"), owner=m.group("owner"))
-        for m in _ANSWER_RE.finditer(result.stdout)
+        ReverseRecord(ptr=m.group("ptr"), owner=m.group("owner")) for m in _ANSWER_RE.finditer(result.stdout)
     )
     return ReverseResult(
         ip=ip,

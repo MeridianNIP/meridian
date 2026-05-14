@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -13,7 +13,7 @@ from app.models.audit import AuditEvent
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def record(
@@ -58,20 +58,22 @@ def record(
     )
     # Compute row_hash before the INSERT: canonicalize what's going in, chain off
     # whatever row_hash is present at the tail.
-    canonical = canonicalize({
-        "ts":              ev.ts,
-        "user_id":         ev.user_id,
-        "impersonator_id": ev.impersonator_id,
-        "action":          ev.action,
-        "target_type":     ev.target_type,
-        "target_key":      ev.target_key,
-        "payload":         safe_payload,
-        "ip":              ev.ip,
-        "user_agent":      ev.user_agent,
-        "justification":   ev.justification,
-        "approval_id":     ev.approval_id,
-        "outcome":         ev.outcome,
-    })
+    canonical = canonicalize(
+        {
+            "ts": ev.ts,
+            "user_id": ev.user_id,
+            "impersonator_id": ev.impersonator_id,
+            "action": ev.action,
+            "target_type": ev.target_type,
+            "target_key": ev.target_key,
+            "payload": safe_payload,
+            "ip": ev.ip,
+            "user_agent": ev.user_agent,
+            "justification": ev.justification,
+            "approval_id": ev.approval_id,
+            "outcome": ev.outcome,
+        }
+    )
     ev.row_hash = row_hash(canonical, prev_row_hash(db, "audit_events"))
     db.add(ev)
     db.flush()
@@ -85,11 +87,10 @@ def record_in_scope(**kwargs) -> None:
     the per-request DB session across a 30s subprocess was starving the pool.
     """
     from app.db import session_scope
+
     with session_scope() as db:
         record(db, **kwargs)
 
 
 def recent(db: OrmSession, *, limit: int = 100) -> list[AuditEvent]:
-    return list(db.execute(
-        select(AuditEvent).order_by(AuditEvent.ts.desc()).limit(limit)
-    ).scalars())
+    return list(db.execute(select(AuditEvent).order_by(AuditEvent.ts.desc()).limit(limit)).scalars())

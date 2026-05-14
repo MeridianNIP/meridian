@@ -14,6 +14,7 @@ Three operations:
 Validation is strict: we accept either host syntax ("192.168.1.10/24")
 or network syntax ("192.168.1.0/24") — `strict=False` on ip_network.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -35,7 +36,7 @@ def calc(cidr: str) -> dict:
     # IPv4 broadcast is meaningful; IPv6 has no broadcast (use last addr).
     is_v6 = isinstance(net, ipaddress.IPv6Network)
     first = net.network_address
-    last  = net.broadcast_address
+    last = net.broadcast_address
     # "Usable hosts" excludes network + broadcast on IPv4 unless /31 or /32.
     if is_v6:
         usable_first, usable_last = first, last
@@ -45,24 +46,24 @@ def calc(cidr: str) -> dict:
         usable_count = net.num_addresses
     else:
         usable_first = ipaddress.IPv4Address(int(first) + 1)
-        usable_last  = ipaddress.IPv4Address(int(last) - 1)
+        usable_last = ipaddress.IPv4Address(int(last) - 1)
         usable_count = net.num_addresses - 2
     return {
-        "cidr":          str(net),
-        "version":       net.version,
-        "network":       str(net.network_address),
-        "broadcast":     None if is_v6 else str(net.broadcast_address),
-        "netmask":       str(net.netmask),
-        "wildcard":      None if is_v6 else str(net.hostmask),
-        "prefix":        net.prefixlen,
+        "cidr": str(net),
+        "version": net.version,
+        "network": str(net.network_address),
+        "broadcast": None if is_v6 else str(net.broadcast_address),
+        "netmask": str(net.netmask),
+        "wildcard": None if is_v6 else str(net.hostmask),
+        "prefix": net.prefixlen,
         "total_addresses": net.num_addresses,
-        "usable_first":  str(usable_first),
-        "usable_last":   str(usable_last),
-        "usable_hosts":  usable_count,
-        "is_private":    net.is_private,
-        "is_global":     net.is_global,
-        "is_multicast":  net.is_multicast,
-        "is_loopback":   net.is_loopback,
+        "usable_first": str(usable_first),
+        "usable_last": str(usable_last),
+        "usable_hosts": usable_count,
+        "is_private": net.is_private,
+        "is_global": net.is_global,
+        "is_multicast": net.is_multicast,
+        "is_loopback": net.is_loopback,
         "is_link_local": net.is_link_local,
         "reverse_pointer": net.network_address.reverse_pointer,
     }
@@ -73,9 +74,7 @@ def split(cidr: str, new_prefix: int, *, max_subnets: int = 1024) -> dict:
     a /8 → /32 split (16M results) doesn't OOM the worker."""
     net = _parse(cidr)
     if new_prefix <= net.prefixlen:
-        raise ValueError(
-            f"new_prefix {new_prefix} must be larger than current /{net.prefixlen}"
-        )
+        raise ValueError(f"new_prefix {new_prefix} must be larger than current /{net.prefixlen}")
     if (net.version == 4 and new_prefix > 32) or (net.version == 6 and new_prefix > 128):
         raise ValueError(f"new_prefix {new_prefix} out of range for IPv{net.version}")
     expected = 2 ** (new_prefix - net.prefixlen)
@@ -84,20 +83,22 @@ def split(cidr: str, new_prefix: int, *, max_subnets: int = 1024) -> dict:
     for i, sub in enumerate(net.subnets(new_prefix=new_prefix)):
         if i >= max_subnets:
             break
-        subnets.append({
-            "cidr": str(sub),
-            "first": str(sub.network_address),
-            "last":  str(sub.broadcast_address),
-            "hosts": sub.num_addresses - (2 if (sub.version == 4 and sub.prefixlen < 31) else 0),
-        })
+        subnets.append(
+            {
+                "cidr": str(sub),
+                "first": str(sub.network_address),
+                "last": str(sub.broadcast_address),
+                "hosts": sub.num_addresses - (2 if (sub.version == 4 and sub.prefixlen < 31) else 0),
+            }
+        )
     return {
-        "parent":        str(net),
-        "new_prefix":    new_prefix,
+        "parent": str(net),
+        "new_prefix": new_prefix,
         "expected_count": expected,
-        "returned":      len(subnets),
-        "truncated":     truncated,
-        "max_subnets":   max_subnets,
-        "subnets":       subnets,
+        "returned": len(subnets),
+        "truncated": truncated,
+        "max_subnets": max_subnets,
+        "subnets": subnets,
     }
 
 
@@ -119,6 +120,6 @@ def aggregate(cidrs: list[str]) -> dict:
         for sup in ipaddress.collapse_addresses(fam):
             out.append(str(sup))
     return {
-        "input":     [str(n) for n in nets],
+        "input": [str(n) for n in nets],
         "supernets": out,
     }

@@ -6,22 +6,21 @@ from sqlalchemy import text
 from app.celery_app import celery_app
 from app.db import session_scope
 
-
 _HANDLER_TO_TASK = {
-    "meridian.jobs.license:verify":          "meridian.jobs.license.verify",
-    "meridian.jobs.license:expiry_notify":   "meridian.jobs.license.expiry_notify",
-    "meridian.jobs.integrity:scan":          "meridian.jobs.integrity.scan",
+    "meridian.jobs.license:verify": "meridian.jobs.license.verify",
+    "meridian.jobs.license:expiry_notify": "meridian.jobs.license.expiry_notify",
+    "meridian.jobs.integrity:scan": "meridian.jobs.integrity.scan",
     "meridian.jobs.retention:audit_cleanup": "meridian.jobs.retention.audit_cleanup",
     "meridian.jobs.retention:query_cleanup": "meridian.jobs.retention.query_cleanup",
-    "meridian.jobs.sessions:cleanup":        "meridian.jobs.sessions.cleanup",
-    "meridian.jobs.monitor:sample_due":      "meridian.jobs.monitor.sample_due",
-    "meridian.jobs.monitor:retention":       "meridian.jobs.monitor.retention",
-    "meridian.jobs.cert:expiry_check":        "meridian.jobs.cert.expiry_check",
-    "meridian.jobs.upgrade:fire_scheduled":   "meridian.jobs.upgrade.fire_scheduled",
-    "meridian.jobs.log_shipping:flush":       "meridian.jobs.log_shipping.flush",
-    "meridian.jobs.password:expiry_notify":   "meridian.jobs.password.expiry_notify",
-    "meridian.jobs.reports:tick":             "meridian.jobs.reports.tick",
-    "meridian.jobs.health:auto_repair":        "meridian.jobs.health.auto_repair",
+    "meridian.jobs.sessions:cleanup": "meridian.jobs.sessions.cleanup",
+    "meridian.jobs.monitor:sample_due": "meridian.jobs.monitor.sample_due",
+    "meridian.jobs.monitor:retention": "meridian.jobs.monitor.retention",
+    "meridian.jobs.cert:expiry_check": "meridian.jobs.cert.expiry_check",
+    "meridian.jobs.upgrade:fire_scheduled": "meridian.jobs.upgrade.fire_scheduled",
+    "meridian.jobs.log_shipping:flush": "meridian.jobs.log_shipping.flush",
+    "meridian.jobs.password:expiry_notify": "meridian.jobs.password.expiry_notify",
+    "meridian.jobs.reports:tick": "meridian.jobs.reports.tick",
+    "meridian.jobs.health:auto_repair": "meridian.jobs.health.auto_repair",
 }
 
 
@@ -41,11 +40,13 @@ def load_schedule_from_db() -> dict[str, dict]:
     """
     schedule: dict[str, dict] = {}
     with session_scope() as db:
-        rows = db.execute(text("""
+        rows = db.execute(
+            text("""
             SELECT name, handler, cron_expression, enabled, kind
               FROM jobs
              WHERE enabled = TRUE AND cron_expression IS NOT NULL
-        """)).fetchall()
+        """)
+        ).fetchall()
     for name, handler, expr, enabled, kind in rows:
         task = _HANDLER_TO_TASK.get(handler)
         if task is None:

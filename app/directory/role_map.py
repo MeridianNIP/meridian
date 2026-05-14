@@ -16,14 +16,18 @@ Matching is case-insensitive (AD is) and picks the highest-privilege
 role when a user is in multiple mapped groups. "Highest" ranks as
 super_admin > admin > auditor > analyst > viewer > api_service.
 """
+
 from __future__ import annotations
 
-from typing import Iterable
-
+from collections.abc import Iterable
 
 _ROLE_RANK = {
-    "super_admin": 60, "admin": 50, "auditor": 40,
-    "analyst": 30, "viewer": 20, "api_service": 10,
+    "super_admin": 60,
+    "admin": 50,
+    "auditor": 40,
+    "analyst": 30,
+    "viewer": 20,
+    "api_service": 10,
 }
 _VALID_ROLES = set(_ROLE_RANK)
 

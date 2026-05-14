@@ -19,11 +19,12 @@ For each enabled DirectoryIntegration:
 
 Returns None if no enabled integration accepts the credential.
 """
+
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+import uuid
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as OrmSession
@@ -34,31 +35,39 @@ from app.directory.role_map import resolve_role
 from app.models.directory import DirectoryIntegration
 from app.models.user import User
 
-
 _VALID_ROLES = {
-    "super_admin", "admin", "auditor", "analyst", "viewer", "api_service",
+    "super_admin",
+    "admin",
+    "auditor",
+    "analyst",
+    "viewer",
+    "api_service",
 }
 
 
 def try_ad_authenticate(
-    db: OrmSession, username: str, password: str, *,
-    ip: str | None, user_agent: str | None,
+    db: OrmSession,
+    username: str,
+    password: str,
+    *,
+    ip: str | None,
+    user_agent: str | None,
 ) -> User | None:
     if not username or not password:
         return None
 
-    integs = db.execute(
-        select(DirectoryIntegration).where(DirectoryIntegration.enabled.is_(True))
-    ).scalars().all()
+    integs = (
+        db.execute(select(DirectoryIntegration).where(DirectoryIntegration.enabled.is_(True))).scalars().all()
+    )
 
     for integ in integs:
         try:
             client = client_for(db, integ)
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
         try:
             result: dict[str, Any] | None = client.authenticate_user(username, password)
-        except Exception:  # noqa: BLE001
+        except Exception:
             result = None
         if not result:
             continue
@@ -72,31 +81,40 @@ def try_ad_authenticate(
         )
 
         # Locate (or mint) the Meridian user by sAMAccountName / UPN / mail.
-        sam  = (result.get("sAMAccountName") or "").lower().strip()
-        upn  = (result.get("userPrincipalName") or "").lower().strip()
+        sam = (result.get("sAMAccountName") or "").lower().strip()
+        upn = (result.get("userPrincipalName") or "").lower().strip()
         mail = (result.get("mail") or "").lower().strip()
         email = mail or upn
         candidate_usernames = {u for u in (sam, upn, username.lower().strip()) if u}
 
         user = db.execute(
-            select(User).where(or_(
-                User.username.in_(candidate_usernames),
-                User.email == email,
-            ))
+            select(User).where(
+                or_(
+                    User.username.in_(candidate_usernames),
+                    User.email == email,
+                )
+            )
         ).scalar_one_or_none()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if user is None:
             # No local row yet. Access gate: the user MUST be in at
             # least one mapped AD group (or the integration has a
             # default_role set) — otherwise AD-authenticated but
             # unmapped users would silently get viewer access.
             if not mapped_role and not config.get("default_role"):
-                audit(db, action="auth.ad.denied_no_group_match",
-                      payload={"username": username,
-                               "integration": integ.name,
-                               "reason": "no mapped AD group matches user's memberOf"},
-                      ip=ip, user_agent=user_agent, outcome="denied")
+                audit(
+                    db,
+                    action="auth.ad.denied_no_group_match",
+                    payload={
+                        "username": username,
+                        "integration": integ.name,
+                        "reason": "no mapped AD group matches user's memberOf",
+                    },
+                    ip=ip,
+                    user_agent=user_agent,
+                    outcome="denied",
+                )
                 continue
             effective_role = mapped_role or config.get("default_role") or "viewer"
             if effective_role not in _VALID_ROLES:
@@ -120,38 +138,60 @@ def try_ad_authenticate(
             )
             db.add(user)
             db.flush()
-            audit(db, user_id=user.id, action="auth.ad.user_provisioned",
-                  target_type="user", target_key=user.username,
-                  payload={"integration": integ.name,
-                           "role": effective_role,
-                           "mapped_from_group": bool(mapped_role),
-                           "dn": result.get("dn")},
-                  ip=ip, user_agent=user_agent)
+            audit(
+                db,
+                user_id=user.id,
+                action="auth.ad.user_provisioned",
+                target_type="user",
+                target_key=user.username,
+                payload={
+                    "integration": integ.name,
+                    "role": effective_role,
+                    "mapped_from_group": bool(mapped_role),
+                    "dn": result.get("dn"),
+                },
+                ip=ip,
+                user_agent=user_agent,
+            )
         else:
             if not user.enabled or user.locked or user.deleted_at is not None:
-                audit(db, user_id=user.id, action="auth.login.failed",
-                      payload={"reason": "account_disabled",
-                               "integration": integ.name},
-                      ip=ip, user_agent=user_agent, outcome="denied")
+                audit(
+                    db,
+                    user_id=user.id,
+                    action="auth.login.failed",
+                    payload={"reason": "account_disabled", "integration": integ.name},
+                    ip=ip,
+                    user_agent=user_agent,
+                    outcome="denied",
+                )
                 continue
             # Sync role on every login so AD group membership changes
             # take effect immediately. Preserve existing if AD map has
             # nothing to say AND no default_role configured.
             new_role = mapped_role or config.get("default_role") or user.role
             if new_role in _VALID_ROLES and new_role != user.role:
-                audit(db, user_id=user.id, action="auth.ad.role_synced",
-                      target_type="user", target_key=user.username,
-                      payload={"from": user.role, "to": new_role,
-                               "integration": integ.name},
-                      ip=ip, user_agent=user_agent)
+                audit(
+                    db,
+                    user_id=user.id,
+                    action="auth.ad.role_synced",
+                    target_type="user",
+                    target_key=user.username,
+                    payload={"from": user.role, "to": new_role, "integration": integ.name},
+                    ip=ip,
+                    user_agent=user_agent,
+                )
                 user.role = new_role
             user.last_login_at = now
             user.failed_login_count = 0
 
-        audit(db, user_id=user.id, action="auth.login.ok",
-              payload={"method": "ldap", "integration": integ.name,
-                       "groups_matched": bool(mapped_role)},
-              ip=ip, user_agent=user_agent)
+        audit(
+            db,
+            user_id=user.id,
+            action="auth.login.ok",
+            payload={"method": "ldap", "integration": integ.name, "groups_matched": bool(mapped_role)},
+            ip=ip,
+            user_agent=user_agent,
+        )
         return user
 
     return None

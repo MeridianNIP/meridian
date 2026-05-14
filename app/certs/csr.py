@@ -7,14 +7,13 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from cryptography.x509.oid import NameOID
 
-
 _ALLOWED_KEY_TYPES = {"rsa2048", "rsa3072", "rsa4096", "ecdsa_p256", "ecdsa_p384", "ed25519"}
 
 
 @dataclass(frozen=True)
 class GeneratedCsr:
     key_type: str
-    private_key_pem: bytes          # PKCS8 PEM, no passphrase
+    private_key_pem: bytes  # PKCS8 PEM, no passphrase
     public_key_pem: bytes
     csr_pem: bytes
     subject_cn: str

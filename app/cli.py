@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import sys
 import uuid
-from datetime import datetime, timezone
 
 import click
 from sqlalchemy import select
@@ -19,6 +19,7 @@ def cli() -> None:
 
 
 # --- version / doctor --------------------------------------------------------
+
 
 @cli.command()
 def version() -> None:
@@ -58,6 +59,7 @@ def doctor() -> None:
 
 # --- users -------------------------------------------------------------------
 
+
 @cli.group()
 def users() -> None:
     """User management."""
@@ -66,16 +68,17 @@ def users() -> None:
 @users.command("create")
 @click.option("--username", required=True)
 @click.option("--email", required=True)
-@click.option("--role", default="admin",
-              type=click.Choice(["super_admin", "admin", "analyst", "viewer"]))
+@click.option("--role", default="admin", type=click.Choice(["super_admin", "admin", "analyst", "viewer"]))
 @click.option("--temp-password", required=True)
 @click.option("--force-change-at-login", is_flag=True)
-def users_create(username: str, email: str, role: str, temp_password: str, force_change_at_login: bool) -> None:
+def users_create(
+    username: str, email: str, role: str, temp_password: str, force_change_at_login: bool
+) -> None:
     with session_scope() as db:
         existing = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
         if existing is not None:
             raise click.ClickException(f"user {username!r} already exists")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         u = User(
             id=uuid.uuid4(),
             username=username,

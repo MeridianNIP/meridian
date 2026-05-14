@@ -1,20 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 import hashlib
 import os
+from pathlib import Path
 import re
 import shutil
+from typing import BinaryIO
 import uuid
-from dataclasses import dataclass
-from pathlib import Path
-from typing import AsyncIterator, BinaryIO
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as OrmSession
 
 from app.config import get_settings
 from app.models.file import FileRecord
-
 
 # Matches our schema's `file_repo_user` retention defaults: soft 500 MB, hard 1 GB.
 # When the retention_rules table has a row for scope='file_repo_user' with
@@ -70,11 +70,11 @@ def _per_user_caps(db: OrmSession) -> tuple[int, int]:
 def quota_for(db: OrmSession, owner_id: uuid.UUID) -> QuotaInfo:
     soft, hard = _per_user_caps(db)
     used = db.execute(
-        select(func.coalesce(func.sum(FileRecord.size_bytes), 0))
-        .where(FileRecord.owner_id == owner_id)
+        select(func.coalesce(func.sum(FileRecord.size_bytes), 0)).where(FileRecord.owner_id == owner_id)
     ).scalar_one()
-    return QuotaInfo(used_bytes=int(used), soft_cap=soft, hard_cap=hard,
-                     headroom_bytes=max(0, hard - int(used)))
+    return QuotaInfo(
+        used_bytes=int(used), soft_cap=soft, hard_cap=hard, headroom_bytes=max(0, hard - int(used))
+    )
 
 
 def save_upload_blob(
@@ -126,6 +126,7 @@ def stream_download(file_rec: FileRecord) -> AsyncIterator[bytes]:
                 if not chunk:
                     break
                 yield chunk
+
     return _gen()
 
 

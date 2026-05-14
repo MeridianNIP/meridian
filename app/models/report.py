@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -13,6 +13,7 @@ from app.models.base import Base, TimestampMixin
 class ReportSchedule(Base, TimestampMixin):
     """A configured recurring report. Owned by a user; admins can schedule
     on behalf of the organisation (owner_id can be NULL for system-owned)."""
+
     __tablename__ = "report_schedules"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -38,11 +39,13 @@ class ReportSchedule(Base, TimestampMixin):
 class ReportRun(Base):
     """One execution of a schedule (or ad-hoc). Artifact lives on disk
     under the reports_dir; row retains metadata + status."""
+
     __tablename__ = "report_runs"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("report_schedules.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("report_schedules.id", ondelete="SET NULL"),
     )
     triggered_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     report_type: Mapped[str] = mapped_column(Text, nullable=False)

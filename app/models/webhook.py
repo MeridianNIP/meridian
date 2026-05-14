@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -13,10 +13,10 @@ from app.models.base import Base
 class Webhook(Base):
     __tablename__ = "webhooks"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    direction: Mapped[str] = mapped_column(Text, nullable=False)       # webhook_direction enum
+    direction: Mapped[str] = mapped_column(Text, nullable=False)  # webhook_direction enum
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    url: Mapped[str | None] = mapped_column(Text)                       # outbound target
+    url: Mapped[str | None] = mapped_column(Text)  # outbound target
     events: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     secret_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("secrets.id"))
@@ -29,7 +29,9 @@ class WebhookDelivery(Base):
     __tablename__ = "webhook_deliveries"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     webhook_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("webhooks.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("webhooks.id", ondelete="CASCADE"),
+        nullable=False,
     )
     direction: Mapped[str] = mapped_column(Text, nullable=False)
     event: Mapped[str] = mapped_column(Text, nullable=False)

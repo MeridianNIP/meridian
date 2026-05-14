@@ -14,6 +14,7 @@ return a stub with status="unreachable" rather than 500'ing the page.
 The whole point of this surface is "show me what's broken" — failing
 hard would defeat that.
 """
+
 from __future__ import annotations
 
 import time
@@ -30,7 +31,6 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import session_scope
 
-
 # Queue names Meridian uses. The default Celery queue is "celery"; any
 # named-queue routing should add an entry here so depth shows up.
 _QUEUE_NAMES = ["celery", "monitors", "scheduled", "reports"]
@@ -41,10 +41,11 @@ def _snapshot_workers(timeout_s: float = 2.0) -> dict:
     because inspect blocks on broker round-trip and a dead worker
     shouldn't lock the admin page."""
     from app.celery_app import celery_app
+
     try:
         insp = celery_app.control.inspect(timeout=timeout_s)
-        stats   = insp.stats() or {}
-        active  = insp.active() or {}
+        stats = insp.stats() or {}
+        active = insp.active() or {}
         reserved = insp.reserved() or {}
     except Exception as e:
         return {
@@ -65,23 +66,28 @@ def _snapshot_workers(timeout_s: float = 2.0) -> dict:
             uptime = int(pool.get("max-concurrency") or 0)
         except Exception:
             pass
-        workers.append({
-            "name":             name,
-            "concurrency":      pool.get("max-concurrency"),
-            "processes":        len(pool.get("processes") or []),
-            "current_tasks":    [{
-                "name": t.get("name"),
-                "id":   t.get("id"),
-                "args": str(t.get("args", ""))[:200],
-                "time_start": t.get("time_start"),
-            } for t in cur_tasks],
-            "reserved_count":   len(res_tasks),
-            "broker":           s.get("broker", {}).get("transport"),
-        })
+        workers.append(
+            {
+                "name": name,
+                "concurrency": pool.get("max-concurrency"),
+                "processes": len(pool.get("processes") or []),
+                "current_tasks": [
+                    {
+                        "name": t.get("name"),
+                        "id": t.get("id"),
+                        "args": str(t.get("args", ""))[:200],
+                        "time_start": t.get("time_start"),
+                    }
+                    for t in cur_tasks
+                ],
+                "reserved_count": len(res_tasks),
+                "broker": s.get("broker", {}).get("transport"),
+            }
+        )
     return {
-        "status":  "ok" if workers else "no_workers",
+        "status": "ok" if workers else "no_workers",
         "workers": workers,
-        "count":   len(workers),
+        "count": len(workers),
     }
 
 
@@ -93,15 +99,14 @@ def _snapshot_queues() -> dict:
         # Use redis.from_url so we work with redis://, rediss://, or
         # valkey:// without caring which client is installed.
         import redis  # type: ignore[import-untyped]
-        r = redis.from_url(settings.redis_url, socket_connect_timeout=1.5,
-                           socket_timeout=1.5)
+
+        r = redis.from_url(settings.redis_url, socket_connect_timeout=1.5, socket_timeout=1.5)
         for q in _QUEUE_NAMES:
             try:
                 depth = int(r.llen(q))
                 out.append({"queue": q, "depth": depth, "status": "ok"})
             except Exception as e:
-                out.append({"queue": q, "depth": None, "status": "error",
-                            "detail": str(e)[:200]})
+                out.append({"queue": q, "depth": None, "status": "error", "detail": str(e)[:200]})
         return {"status": "ok", "queues": out, "broker": settings.redis_url}
     except Exception as e:
         return {
@@ -115,36 +120,45 @@ def _snapshot_schedule() -> dict:
     """Read the jobs table — what redbeat will fire and when."""
     try:
         with session_scope() as db:
-            rows = db.execute(text("""
+            rows = (
+                db.execute(
+                    text("""
                 SELECT name, description, kind, handler, cron_expression,
                        enabled, last_run_at, last_run_status, last_run_output,
                        next_run_at
                   FROM jobs
                  ORDER BY enabled DESC, name
-            """)).mappings().all()
+            """)
+                )
+                .mappings()
+                .all()
+            )
     except Exception as e:
         return {
             "status": "unreachable",
             "detail": f"{type(e).__name__}: {e}",
             "schedule": [],
         }
-    schedule = [{
-        "name":             r["name"],
-        "description":      r["description"],
-        "kind":             r["kind"],
-        "handler":          r["handler"],
-        "cron":             r["cron_expression"],
-        "enabled":          r["enabled"],
-        "last_run_at":      r["last_run_at"].isoformat() if r["last_run_at"] else None,
-        "last_run_status":  r["last_run_status"],
-        "last_run_output":  (r["last_run_output"] or "")[:500],
-        "next_run_at":      r["next_run_at"].isoformat() if r["next_run_at"] else None,
-    } for r in rows]
+    schedule = [
+        {
+            "name": r["name"],
+            "description": r["description"],
+            "kind": r["kind"],
+            "handler": r["handler"],
+            "cron": r["cron_expression"],
+            "enabled": r["enabled"],
+            "last_run_at": r["last_run_at"].isoformat() if r["last_run_at"] else None,
+            "last_run_status": r["last_run_status"],
+            "last_run_output": (r["last_run_output"] or "")[:500],
+            "next_run_at": r["next_run_at"].isoformat() if r["next_run_at"] else None,
+        }
+        for r in rows
+    ]
     return {
-        "status":   "ok",
+        "status": "ok",
         "schedule": schedule,
-        "total":    len(schedule),
-        "enabled":  sum(1 for s in schedule if s["enabled"]),
+        "total": len(schedule),
+        "enabled": sum(1 for s in schedule if s["enabled"]),
         "disabled": sum(1 for s in schedule if not s["enabled"]),
     }
 
@@ -152,13 +166,13 @@ def _snapshot_schedule() -> dict:
 def snapshot() -> dict[str, Any]:
     """Combined snapshot — the one call the admin page makes."""
     t0 = time.monotonic()
-    workers  = _snapshot_workers()
-    queues   = _snapshot_queues()
+    workers = _snapshot_workers()
+    queues = _snapshot_queues()
     schedule = _snapshot_schedule()
     return {
         "generated_at_ms": round((time.monotonic() - t0) * 1000, 1),
-        "workers":  workers,
-        "queues":   queues,
+        "workers": workers,
+        "queues": queues,
         "schedule": schedule,
     }
 
@@ -173,6 +187,7 @@ def kick_now(handler: str) -> dict:
     Python dotted path."""
     from app.celery_app import celery_app
     from app.jobs.scheduler import _HANDLER_TO_TASK
+
     task_name = _HANDLER_TO_TASK.get(handler)
     if task_name is None:
         raise ValueError(f"handler not registered: {handler}")

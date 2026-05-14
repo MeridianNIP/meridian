@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, SmallInteger, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -14,6 +14,7 @@ class NetworkConfig(Base, TimestampMixin):
     """Singleton row holding the currently-applied network settings.
     `settings` is a JSONB dict with sub-objects for `ip`, `dns`, `proxy`.
     `apply_status` is the outcome of the last apply_now() call."""
+
     __tablename__ = "network_config"
 
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
@@ -26,6 +27,7 @@ class NetworkConfig(Base, TimestampMixin):
 
 class NetworkConfigHistory(Base):
     """Append-only audit trail of every apply attempt."""
+
     __tablename__ = "network_config_history"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

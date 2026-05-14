@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
-import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
+import uuid
 
 from sqlalchemy.orm import Session as OrmSession
 
@@ -12,8 +12,7 @@ from app.audit.logger import record as audit
 from app.db import session_scope
 from app.models.user import User
 
-
-StepOutcome = str   # 'ok' | 'warn' | 'fail' | 'info'
+StepOutcome = str  # 'ok' | 'warn' | 'fail' | 'info'
 
 
 @dataclass
@@ -26,7 +25,7 @@ class WizardStep:
 
 @dataclass
 class Suggestion:
-    priority: str   # 'info' | 'suggested' | 'recommended' | 'critical'
+    priority: str  # 'info' | 'suggested' | 'recommended' | 'critical'
     title: str
     detail: str
     tool_deeplink: str | None = None
@@ -67,9 +66,11 @@ _REGISTRY: dict[str, WizardFn] = {}
 
 def wizard(key: str):
     """Decorator to register a wizard implementation under a stable key."""
+
     def deco(fn: WizardFn) -> WizardFn:
         _REGISTRY[key] = fn
         return fn
+
     return deco
 
 
@@ -96,7 +97,7 @@ async def run_wizard(
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     run_id = uuid.uuid4()
 
     # Persist the wizard run + audit. If the caller supplied a session we write
@@ -128,19 +129,32 @@ async def run_wizard(
                    CAST(:steps AS jsonb), CAST(:f AS jsonb), CAST(:sug AS jsonb))
             """),
             {
-                "id": run_id, "k": wizard_key, "u": user.id, "t": target,
-                "start": started_at, "done": datetime.now(timezone.utc),
+                "id": run_id,
+                "k": wizard_key,
+                "u": user.id,
+                "t": target,
+                "start": started_at,
+                "done": datetime.now(UTC),
                 "o": "error" if error else ctx.worst_outcome(),
                 "steps": _json.dumps([_jsonable(st) for st in ctx.steps]),
                 "f": _json.dumps([]),
                 "sug": _json.dumps([_jsonable(sg) for sg in suggestions]),
             },
         )
-        audit(s, user_id=user.id, action="wizard.run",
-              target_type="wizard", target_key=wizard_key,
-              payload={"target": target, "outcome": ctx.worst_outcome(),
-                       "steps": len(ctx.steps), "suggestions": len(suggestions),
-                       "error": error})
+        audit(
+            s,
+            user_id=user.id,
+            action="wizard.run",
+            target_type="wizard",
+            target_key=wizard_key,
+            payload={
+                "target": target,
+                "outcome": ctx.worst_outcome(),
+                "steps": len(ctx.steps),
+                "suggestions": len(suggestions),
+                "error": error,
+            },
+        )
 
     if db is not None:
         _persist(db)

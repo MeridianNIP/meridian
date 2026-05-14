@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -14,16 +14,18 @@ from app.db import fastapi_dep_db
 from app.models.message import Message, MessageRead
 from app.models.user import User, UserGroup
 
-
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 
 def _serialize(db: OrmSession, m: Message, reader_id: uuid.UUID) -> dict:
     sender = db.get(User, m.from_user) if m.from_user else None
     read_at = db.execute(
-        select(MessageRead.read_at).where(and_(
-            MessageRead.message_id == m.id, MessageRead.user_id == reader_id,
-        ))
+        select(MessageRead.read_at).where(
+            and_(
+                MessageRead.message_id == m.id,
+                MessageRead.user_id == reader_id,
+            )
+        )
     ).scalar_one_or_none()
     return {
         "id": str(m.id),
@@ -48,37 +50,52 @@ async def inbox(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
-    group_ids = db.execute(
-        select(UserGroup.group_id).where(UserGroup.user_id == user.id)
-    ).scalars().all()
+    group_ids = db.execute(select(UserGroup.group_id).where(UserGroup.user_id == user.id)).scalars().all()
 
     # Inbox = direct-to-me OR to any of my groups OR broadcasts.
-    stmt = select(Message).where(or_(
-        Message.to_user == user.id,
-        Message.to_group.in_(list(group_ids)) if group_ids else Message.to_group.is_(None),
-        Message.channel == "broadcast",
-    )).order_by(Message.created_at.desc()).limit(max(1, min(limit, 500)))
+    stmt = (
+        select(Message)
+        .where(
+            or_(
+                Message.to_user == user.id,
+                Message.to_group.in_(list(group_ids)) if group_ids else Message.to_group.is_(None),
+                Message.channel == "broadcast",
+            )
+        )
+        .order_by(Message.created_at.desc())
+        .limit(max(1, min(limit, 500)))
+    )
 
     if unread_only:
         stmt = stmt.where(
-            ~exists().where(and_(
-                MessageRead.message_id == Message.id,
-                MessageRead.user_id == user.id,
-            ))
+            ~exists().where(
+                and_(
+                    MessageRead.message_id == Message.id,
+                    MessageRead.user_id == user.id,
+                )
+            )
         )
 
     rows = list(db.execute(stmt).scalars())
-    unread_count = db.execute(select(func.count()).select_from(Message).where(and_(
-        or_(
-            Message.to_user == user.id,
-            Message.to_group.in_(list(group_ids)) if group_ids else Message.to_group.is_(None),
-            Message.channel == "broadcast",
-        ),
-        ~exists().where(and_(
-            MessageRead.message_id == Message.id,
-            MessageRead.user_id == user.id,
-        )),
-    ))).scalar_one()
+    unread_count = db.execute(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            and_(
+                or_(
+                    Message.to_user == user.id,
+                    Message.to_group.in_(list(group_ids)) if group_ids else Message.to_group.is_(None),
+                    Message.channel == "broadcast",
+                ),
+                ~exists().where(
+                    and_(
+                        MessageRead.message_id == Message.id,
+                        MessageRead.user_id == user.id,
+                    )
+                ),
+            )
+        )
+    ).scalar_one()
     return {
         "unread_count": int(unread_count),
         "messages": [_serialize(db, m, user.id) for m in rows],
@@ -91,10 +108,14 @@ async def sent(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
-    rows = list(db.execute(
-        select(Message).where(Message.from_user == user.id)
-        .order_by(Message.created_at.desc()).limit(max(1, min(limit, 500)))
-    ).scalars())
+    rows = list(
+        db.execute(
+            select(Message)
+            .where(Message.from_user == user.id)
+            .order_by(Message.created_at.desc())
+            .limit(max(1, min(limit, 500)))
+        ).scalars()
+    )
     return {"messages": [_serialize(db, m, user.id) for m in rows]}
 
 
@@ -126,9 +147,7 @@ async def send(
 
     to_user_id = None
     if body.to_username:
-        target = db.execute(
-            select(User).where(User.username == body.to_username)
-        ).scalar_one_or_none()
+        target = db.execute(select(User).where(User.username == body.to_username)).scalar_one_or_none()
         if target is None or not target.enabled or target.deleted_at is not None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "recipient not found")
         to_user_id = target.id
@@ -143,20 +162,27 @@ async def send(
         subject=body.subject,
         body=body.body,
         priority=body.priority,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     db.add(m)
 
-    audit(db, user_id=user.id, action="message.send",
-          target_type="message", target_key=str(m.id),
-          payload={"channel": channel,
-                   "to_user": body.to_username,
-                   "to_group": str(body.to_group_id) if body.to_group_id else None,
-                   "priority": body.priority,
-                   "subject": body.subject,
-                   "body_chars": len(body.body)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="message.send",
+        target_type="message",
+        target_key=str(m.id),
+        payload={
+            "channel": channel,
+            "to_user": body.to_username,
+            "to_group": str(body.to_group_id) if body.to_group_id else None,
+            "priority": body.priority,
+            "subject": body.subject,
+            "body_chars": len(body.body),
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     db.flush()
     return _serialize(db, m, user.id)
 
@@ -172,11 +198,14 @@ async def mark_read(
     if m is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
     # Sender always "sees" their sent; we only mark reads for recipients.
-    db.execute(text("""
+    db.execute(
+        text("""
         INSERT INTO message_reads (message_id, user_id, read_at)
         VALUES (:m, :u, now())
         ON CONFLICT (message_id, user_id) DO NOTHING
-    """), {"m": message_id, "u": user.id})
+    """),
+        {"m": message_id, "u": user.id},
+    )
     return {"ok": True, "id": str(message_id)}
 
 
@@ -195,11 +224,16 @@ async def delete_message(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "only the sender or an admin can delete")
     db.execute(text("DELETE FROM message_reads WHERE message_id = :m"), {"m": message_id})
     db.delete(m)
-    audit(db, user_id=user.id, action="message.delete",
-          target_type="message", target_key=str(message_id),
-          payload={"channel": m.channel, "subject": m.subject},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="message.delete",
+        target_type="message",
+        target_key=str(message_id),
+        payload={"channel": m.channel, "subject": m.subject},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 @router.post("/read-all")
@@ -207,10 +241,9 @@ async def mark_all_read(
     user: User = Depends(current_user),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
-    group_ids = db.execute(
-        select(UserGroup.group_id).where(UserGroup.user_id == user.id)
-    ).scalars().all()
-    result = db.execute(text("""
+    group_ids = db.execute(select(UserGroup.group_id).where(UserGroup.user_id == user.id)).scalars().all()
+    result = db.execute(
+        text("""
         INSERT INTO message_reads (message_id, user_id, read_at)
         SELECT m.id, :u, now() FROM messages m
          WHERE (m.to_user = :u
@@ -220,5 +253,7 @@ async def mark_all_read(
              SELECT 1 FROM message_reads r
               WHERE r.message_id = m.id AND r.user_id = :u
            )
-    """), {"u": user.id, "gids": list(group_ids)})
+    """),
+        {"u": user.id, "gids": list(group_ids)},
+    )
     return {"marked": result.rowcount or 0}

@@ -4,7 +4,6 @@ from celery import Celery
 
 from app.config import get_settings
 
-
 settings = get_settings()
 
 celery_app = Celery(
@@ -49,4 +48,4 @@ celery_app.conf.update(
 # `celery -A app.celery_app beat` process never sees the job table entries,
 # so redbeat starts with an empty schedule (monitors never sample, cleanup
 # jobs never run, etc).
-from app.jobs import scheduler as _scheduler  # noqa: E402,F401
+from app.jobs import scheduler as _scheduler  # noqa: F401

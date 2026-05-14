@@ -14,17 +14,17 @@ continue fanning out to other channels.
 
 The channel `target` must be an E.164 number (e.g. +15555550100).
 """
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import os
-from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session as OrmSession
 
 from app.models.notification import NotifChannel, NotifDelivery
-
 
 _TWILIO_API = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 
@@ -38,19 +38,25 @@ def send(
     payload: dict[str, Any] | None = None,
 ) -> NotifDelivery:
     cfg = channel.config or {}
-    sid   = cfg.get("twilio_account_sid") or os.environ.get("TWILIO_ACCOUNT_SID")
-    token = cfg.get("twilio_auth_token")  or os.environ.get("TWILIO_AUTH_TOKEN")
-    sender = cfg.get("twilio_from")        or os.environ.get("TWILIO_FROM")
+    sid = cfg.get("twilio_account_sid") or os.environ.get("TWILIO_ACCOUNT_SID")
+    token = cfg.get("twilio_auth_token") or os.environ.get("TWILIO_AUTH_TOKEN")
+    sender = cfg.get("twilio_from") or os.environ.get("TWILIO_FROM")
 
     d = NotifDelivery(
-        channel_id=channel.id, subject=subject, body=body, payload=payload or {},
-        sent_at=datetime.now(timezone.utc), status="sent",
+        channel_id=channel.id,
+        subject=subject,
+        body=body,
+        payload=payload or {},
+        sent_at=datetime.now(UTC),
+        status="sent",
     )
 
     if not sid or not token or not sender:
         d.status = "skipped"
-        d.error = ("twilio credentials not configured "
-                   "(channel config or TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM env)")
+        d.error = (
+            "twilio credentials not configured "
+            "(channel config or TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM env)"
+        )
         db.add(d)
         return d
 
@@ -78,13 +84,15 @@ def send(
             d.error = f"twilio HTTP {r.status_code}: {r.text[:300]}"
         else:
             payload_out = r.json()
-            d.payload = {**(d.payload or {}),
-                         "twilio_sid": payload_out.get("sid"),
-                         "twilio_status": payload_out.get("status")}
+            d.payload = {
+                **(d.payload or {}),
+                "twilio_sid": payload_out.get("sid"),
+                "twilio_status": payload_out.get("status"),
+            }
     except httpx.HTTPError as e:
         d.status = "failed"
         d.error = f"{type(e).__name__}: {e}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         d.status = "failed"
         d.error = f"{type(e).__name__}: {e}"
     db.add(d)

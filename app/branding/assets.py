@@ -5,18 +5,17 @@ Stores uploaded logo / favicon / login background / PDF header into
 the declared MIME and the first few bytes (magic numbers) — SVG is allowed
 but sanitized to block <script> and event handlers.
 """
+
 from __future__ import annotations
 
-import hashlib
-import re
-import shutil
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+import hashlib
 from pathlib import Path
+import re
 from typing import BinaryIO
 
 from app.config import get_settings
-
 
 ALLOWED_KINDS = ("logo", "favicon", "login_bg", "pdf_header")
 
@@ -27,31 +26,34 @@ class AssetSpec:
     max_bytes: int
     allowed_mimes: tuple[str, ...]
     allowed_exts: tuple[str, ...]
-    field_name: str              # Branding model field to update
+    field_name: str  # Branding model field to update
 
 
 _SPECS: dict[str, AssetSpec] = {
     "logo": AssetSpec(
-        kind="logo", max_bytes=2 * 1024 * 1024,
+        kind="logo",
+        max_bytes=2 * 1024 * 1024,
         allowed_mimes=("image/png", "image/svg+xml", "image/webp", "image/jpeg"),
         allowed_exts=(".png", ".svg", ".webp", ".jpg", ".jpeg"),
         field_name="logo_path",
     ),
     "favicon": AssetSpec(
-        kind="favicon", max_bytes=256 * 1024,
-        allowed_mimes=("image/x-icon", "image/vnd.microsoft.icon",
-                       "image/png", "image/svg+xml"),
+        kind="favicon",
+        max_bytes=256 * 1024,
+        allowed_mimes=("image/x-icon", "image/vnd.microsoft.icon", "image/png", "image/svg+xml"),
         allowed_exts=(".ico", ".png", ".svg"),
         field_name="favicon_path",
     ),
     "login_bg": AssetSpec(
-        kind="login_bg", max_bytes=5 * 1024 * 1024,
+        kind="login_bg",
+        max_bytes=5 * 1024 * 1024,
         allowed_mimes=("image/jpeg", "image/png", "image/webp"),
         allowed_exts=(".jpg", ".jpeg", ".png", ".webp"),
         field_name="login_bg_path",
     ),
     "pdf_header": AssetSpec(
-        kind="pdf_header", max_bytes=1 * 1024 * 1024,
+        kind="pdf_header",
+        max_bytes=1 * 1024 * 1024,
         allowed_mimes=("image/png", "image/jpeg"),
         allowed_exts=(".png", ".jpg", ".jpeg"),
         field_name="pdf_header_path",
@@ -68,7 +70,7 @@ _MAGIC: list[tuple[bytes, str]] = [
     (b"GIF87a", "image/gif"),
     (b"GIF89a", "image/gif"),
     (b"\x00\x00\x01\x00", "image/x-icon"),
-    (b"RIFF", "image/webp"),            # RIFF....WEBP, verify further below
+    (b"RIFF", "image/webp"),  # RIFF....WEBP, verify further below
 ]
 
 _SVG_SCRIPT_RE = re.compile(r"<script[\s>]|on\w+\s*=", re.IGNORECASE)
@@ -102,8 +104,7 @@ def _safe_ext(filename: str, spec: AssetSpec) -> str:
     ext = Path(filename or "").suffix.lower()
     if ext not in spec.allowed_exts:
         raise ValueError(
-            f"extension {ext!r} not allowed for {spec.kind} "
-            f"(allowed: {', '.join(spec.allowed_exts)})"
+            f"extension {ext!r} not allowed for {spec.kind} " f"(allowed: {', '.join(spec.allowed_exts)})"
         )
     return ext
 
@@ -115,8 +116,9 @@ def _sanitize_svg(data: bytes) -> bytes:
     return data
 
 
-def save_asset(kind: str, filename: str, declared_mime: str | None,
-               stream: BinaryIO) -> tuple[str, int, str, str]:
+def save_asset(
+    kind: str, filename: str, declared_mime: str | None, stream: BinaryIO
+) -> tuple[str, int, str, str]:
     """Validate + persist. Returns (storage_path, size_bytes, sha256_hex, sniffed_mime)."""
     spec = get_spec(kind)
     ext = _safe_ext(filename, spec)
@@ -127,9 +129,7 @@ def save_asset(kind: str, filename: str, declared_mime: str | None,
     if size == 0:
         raise ValueError("empty upload")
     if size > spec.max_bytes:
-        raise ValueError(
-            f"upload exceeds {spec.kind} size cap of {spec.max_bytes} bytes"
-        )
+        raise ValueError(f"upload exceeds {spec.kind} size cap of {spec.max_bytes} bytes")
 
     sniffed = _sniff(buf)
     if sniffed is None:
@@ -139,14 +139,13 @@ def save_asset(kind: str, filename: str, declared_mime: str | None,
     for m in (sniffed, (declared_mime or "").split(";", 1)[0].strip().lower()):
         if m and m not in spec.allowed_mimes:
             raise ValueError(
-                f"mime {m!r} not allowed for {spec.kind} "
-                f"(allowed: {', '.join(spec.allowed_mimes)})"
+                f"mime {m!r} not allowed for {spec.kind} " f"(allowed: {', '.join(spec.allowed_mimes)})"
             )
 
     if sniffed == "image/svg+xml":
         buf = _sanitize_svg(buf)
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     digest = hashlib.sha256(buf).hexdigest()
     dest_dir = _assets_root() / spec.kind
     dest_dir.mkdir(parents=True, exist_ok=True)

@@ -10,13 +10,13 @@ The dispatcher tracks per-destination `last_cursor_ts` so restarts pick
 up where they left off. A failure bumps `last_error` and leaves the
 cursor unchanged so the next run retries the unshipped batch.
 """
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 import socket
-import ssl
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
@@ -31,9 +31,7 @@ from app.secrets_vault.vault import decrypt_field
 def _resolve_secret(db: OrmSession, secret_id) -> str | None:
     if secret_id is None:
         return None
-    row = db.execute(text(
-        "SELECT nonce, ciphertext FROM secrets WHERE id = :id"
-    ), {"id": secret_id}).first()
+    row = db.execute(text("SELECT nonce, ciphertext FROM secrets WHERE id = :id"), {"id": secret_id}).first()
     if row is None:
         return None
     return decrypt_field(bytes(row[0]) + bytes(row[1]), domain=b"vault").decode("utf-8")
@@ -43,7 +41,7 @@ def _format_rfc5424(event: dict, facility: str = "local0") -> str:
     # PRI = facility * 8 + severity (6 = info)
     fac_map = {f"local{i}": 16 + i for i in range(8)}
     pri = fac_map.get(facility or "local0", 16) * 8 + 6
-    ts = event.get("ts") or datetime.now(timezone.utc).isoformat()
+    ts = event.get("ts") or datetime.now(UTC).isoformat()
     host = socket.gethostname()
     app_name = "meridian"
     msg_id = event.get("action", "-")
@@ -68,15 +66,14 @@ def _format_cef(event: dict) -> str:
         f"msg={json.dumps(event.get('payload') or {}, separators=(',',':'))}"
     )
     return (
-        f"CEF:0|Meridian|NIP|1.0|{event.get('action','audit')}|"
-        f"{event.get('action','audit')}|{sev}|{ext}"
+        f"CEF:0|Meridian|NIP|1.0|{event.get('action','audit')}|" f"{event.get('action','audit')}|{sev}|{ext}"
     )
 
 
 def _send_syslog(dest: LogShippingDestination, payload: str, *, use_cef: bool = False) -> None:
     host, _, port_s = dest.endpoint.partition(":")
     port = int(port_s) if port_s else (6514 if dest.transport == "tls" else 514)
-    body = (_format_cef({}) if use_cef else "")  # placeholder
+    body = _format_cef({}) if use_cef else ""  # placeholder
     data = (payload + "\n").encode("utf-8")
     if dest.transport == "udp":
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -90,6 +87,7 @@ def _send_syslog(dest: LogShippingDestination, payload: str, *, use_cef: bool = 
     try:
         if dest.transport == "tls":
             from app.net.tls import strict_ssl_context
+
             ctx = strict_ssl_context(cafile=dest.ca_cert_path or None)
             raw = ctx.wrap_socket(raw, server_hostname=host)
         raw.sendall(data)
@@ -99,28 +97,32 @@ def _send_syslog(dest: LogShippingDestination, payload: str, *, use_cef: bool = 
 
 def _send_splunk_hec(dest: LogShippingDestination, token: str, event: dict) -> None:
     import httpx
+
     r = httpx.post(
         dest.endpoint.rstrip("/") + "/services/collector/event",
         headers={"Authorization": f"Splunk {token}"},
-        json={"event": event, "sourcetype": dest.index_or_sourcetype or "meridian:audit",
-              "index": dest.index_or_sourcetype or "main"},
-        timeout=15.0, verify=dest.ca_cert_path or True,
+        json={
+            "event": event,
+            "sourcetype": dest.index_or_sourcetype or "meridian:audit",
+            "index": dest.index_or_sourcetype or "main",
+        },
+        timeout=15.0,
+        verify=dest.ca_cert_path or True,
     )
     r.raise_for_status()
 
 
 def _send_elastic(dest: LogShippingDestination, api_key: str, event: dict) -> None:
     import httpx
+
     idx = dest.index_or_sourcetype or "meridian-audit-*"
-    body = (
-        json.dumps({"index": {"_index": idx}}) + "\n" +
-        json.dumps(event) + "\n"
-    )
+    body = json.dumps({"index": {"_index": idx}}) + "\n" + json.dumps(event) + "\n"
     r = httpx.post(
         dest.endpoint.rstrip("/") + "/_bulk",
-        headers={"Authorization": f"ApiKey {api_key}",
-                 "Content-Type": "application/x-ndjson"},
-        content=body, timeout=15.0, verify=dest.ca_cert_path or True,
+        headers={"Authorization": f"ApiKey {api_key}", "Content-Type": "application/x-ndjson"},
+        content=body,
+        timeout=15.0,
+        verify=dest.ca_cert_path or True,
     )
     r.raise_for_status()
 
@@ -145,41 +147,52 @@ def _send_graylog_gelf(dest: LogShippingDestination, event: dict) -> None:
         dt = event.get("ts")
         if dt and isinstance(dt, str):
             gelf["timestamp"] = datetime.fromisoformat(dt.replace("Z", "+00:00")).timestamp()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     payload = json.dumps(gelf, separators=(",", ":")).encode() + b"\x00"  # null-terminated
     host, _, port_s = dest.endpoint.partition(":")
     port = int(port_s) if port_s else 12201
     if dest.transport == "udp":
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try: s.sendto(payload, (host, port))
-        finally: s.close()
+        try:
+            s.sendto(payload, (host, port))
+        finally:
+            s.close()
         return
     sock = socket.create_connection((host, port), timeout=10)
     try:
         if dest.transport == "tls":
             from app.net.tls import strict_ssl_context
+
             ctx = strict_ssl_context(cafile=dest.ca_cert_path or None)
             sock = ctx.wrap_socket(sock, server_hostname=host)
         sock.sendall(payload)
-    finally: sock.close()
+    finally:
+        sock.close()
 
 
 def _send_datadog(dest: LogShippingDestination, api_key: str, event: dict) -> None:
     """Datadog Logs v2 intake. Endpoint should be the regional host
     (e.g. https://http-intake.logs.datadoghq.com)."""
     import httpx
+
     url = dest.endpoint.rstrip("/") + "/api/v2/logs"
-    body = [{
-        "ddsource": "meridian",
-        "service": "meridian-nip",
-        "hostname": socket.gethostname(),
-        "ddtags": f"outcome:{event.get('outcome','ok')},action:{event.get('action','')}",
-        "message": json.dumps(event, separators=(",", ":")),
-    }]
-    r = httpx.post(url,
-                   headers={"DD-API-KEY": api_key, "Content-Type": "application/json"},
-                   json=body, timeout=15.0, verify=dest.ca_cert_path or True)
+    body = [
+        {
+            "ddsource": "meridian",
+            "service": "meridian-nip",
+            "hostname": socket.gethostname(),
+            "ddtags": f"outcome:{event.get('outcome','ok')},action:{event.get('action','')}",
+            "message": json.dumps(event, separators=(",", ":")),
+        }
+    ]
+    r = httpx.post(
+        url,
+        headers={"DD-API-KEY": api_key, "Content-Type": "application/json"},
+        json=body,
+        timeout=15.0,
+        verify=dest.ca_cert_path or True,
+    )
     r.raise_for_status()
 
 
@@ -188,9 +201,14 @@ def _send_sumo_logic(dest: LogShippingDestination, event: dict) -> None:
     token, so no separate auth header. `endpoint` is the full collector
     URL (https://endpoint.collection.sumologic.com/.../)."""
     import httpx
-    r = httpx.post(dest.endpoint, json=event, timeout=15.0,
-                   verify=dest.ca_cert_path or True,
-                   headers={"X-Sumo-Category": dest.index_or_sourcetype or "meridian/audit"})
+
+    r = httpx.post(
+        dest.endpoint,
+        json=event,
+        timeout=15.0,
+        verify=dest.ca_cert_path or True,
+        headers={"X-Sumo-Category": dest.index_or_sourcetype or "meridian/audit"},
+    )
     r.raise_for_status()
 
 
@@ -200,7 +218,7 @@ def _send_cloudwatch(dest: LogShippingDestination, api_key_json: str, event: dic
     Uses boto3 if available, else falls back to HTTPS with SigV4.
     """
     try:
-        import boto3   # type: ignore
+        import boto3  # type: ignore
     except ImportError as e:
         raise RuntimeError(f"AWS CloudWatch requires boto3 on the host: {e}") from e
     creds = json.loads(api_key_json) if api_key_json else {}
@@ -214,11 +232,14 @@ def _send_cloudwatch(dest: LogShippingDestination, api_key_json: str, event: dic
         region_name=creds.get("region", "us-east-1"),
     )
     client.put_log_events(
-        logGroupName=group, logStreamName=stream,
-        logEvents=[{
-            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-            "message": json.dumps(event, separators=(",", ":")),
-        }],
+        logGroupName=group,
+        logStreamName=stream,
+        logEvents=[
+            {
+                "timestamp": int(datetime.now(UTC).timestamp() * 1000),
+                "message": json.dumps(event, separators=(",", ":")),
+            }
+        ],
     )
 
 
@@ -226,30 +247,37 @@ def _send_gcp_logging(dest: LogShippingDestination, sa_json: str, event: dict) -
     """Google Cloud Logging — endpoint = projects/<project-id>/logs/<log-name>,
     auth_secret = service-account JSON. Uses OAuth2 bearer."""
     import httpx
+
     sa = json.loads(sa_json) if sa_json else {}
     # For brevity, assume a short-lived OAuth token was generated out-of-band
     # by google.auth (or fetch it here with jwt grant).
     try:
-        from google.oauth2 import service_account  # type: ignore
         from google.auth.transport.requests import Request  # type: ignore
+        from google.oauth2 import service_account  # type: ignore
     except ImportError as e:
         raise RuntimeError(f"GCP shipping requires google-auth on the host: {e}") from e
     creds_obj = service_account.Credentials.from_service_account_info(
-        sa, scopes=["https://www.googleapis.com/auth/logging.write"])
+        sa, scopes=["https://www.googleapis.com/auth/logging.write"]
+    )
     creds_obj.refresh(Request())
     log_name = dest.endpoint  # projects/<id>/logs/<name>
     r = httpx.post(
         "https://logging.googleapis.com/v2/entries:write",
-        headers={"Authorization": f"Bearer {creds_obj.token}",
-                 "Content-Type": "application/json"},
-        json={"entries": [{
-            "logName": log_name,
-            "resource": {"type": "generic_node"},
-            "jsonPayload": event,
-            "severity": {"ok": "INFO", "warn": "WARNING",
-                         "error": "ERROR"}.get(event.get("outcome","ok"), "INFO"),
-        }]},
-        timeout=15.0, verify=dest.ca_cert_path or True,
+        headers={"Authorization": f"Bearer {creds_obj.token}", "Content-Type": "application/json"},
+        json={
+            "entries": [
+                {
+                    "logName": log_name,
+                    "resource": {"type": "generic_node"},
+                    "jsonPayload": event,
+                    "severity": {"ok": "INFO", "warn": "WARNING", "error": "ERROR"}.get(
+                        event.get("outcome", "ok"), "INFO"
+                    ),
+                }
+            ]
+        },
+        timeout=15.0,
+        verify=dest.ca_cert_path or True,
     )
     r.raise_for_status()
 
@@ -260,11 +288,14 @@ def _send_azure_sentinel(dest: LogShippingDestination, dcr_key: str, event: dict
     auth_secret = short-lived OAuth2 bearer token (caller renews).
     """
     import httpx
-    r = httpx.post(dest.endpoint,
-                   headers={"Authorization": f"Bearer {dcr_key}",
-                            "Content-Type": "application/json"},
-                   json=[event], timeout=15.0,
-                   verify=dest.ca_cert_path or True)
+
+    r = httpx.post(
+        dest.endpoint,
+        headers={"Authorization": f"Bearer {dcr_key}", "Content-Type": "application/json"},
+        json=[event],
+        timeout=15.0,
+        verify=dest.ca_cert_path or True,
+    )
     r.raise_for_status()
 
 
@@ -274,16 +305,17 @@ def test_send(db: OrmSession, dest: LogShippingDestination) -> dict[str, Any]:
     + credential without waiting for the next beat tick."""
     secret = _resolve_secret(db, dest.auth_secret_id)
     event = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "action": "meridian.log_shipping.test",
         "outcome": "ok",
         "payload": {"destination": dest.name, "kind": dest.kind},
-        "user_id": None, "target_key": dest.name,
+        "user_id": None,
+        "target_key": dest.name,
     }
     t0 = time.monotonic()
     try:
         _dispatch_one(dest, secret, event)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     return {"ok": True, "latency_ms": int((time.monotonic() - t0) * 1000)}
 
@@ -295,15 +327,18 @@ def _dispatch_one(dest: LogShippingDestination, secret: str | None, event: dict)
     elif dest.kind == "cef":
         _send_syslog(dest, _format_cef(event))
     elif dest.kind == "splunk_hec":
-        if not secret: raise ValueError("no HEC token stored")
+        if not secret:
+            raise ValueError("no HEC token stored")
         _send_splunk_hec(dest, secret, event)
     elif dest.kind == "elastic":
-        if not secret: raise ValueError("no Elastic API key stored")
+        if not secret:
+            raise ValueError("no Elastic API key stored")
         _send_elastic(dest, secret, event)
     elif dest.kind == "graylog_gelf":
         _send_graylog_gelf(dest, event)
     elif dest.kind == "datadog":
-        if not secret: raise ValueError("no Datadog API key stored")
+        if not secret:
+            raise ValueError("no Datadog API key stored")
         _send_datadog(dest, secret, event)
     elif dest.kind == "sumo_logic":
         _send_sumo_logic(dest, event)
@@ -316,7 +351,8 @@ def _dispatch_one(dest: LogShippingDestination, secret: str | None, event: dict)
             raise ValueError("no GCP service-account JSON stored")
         _send_gcp_logging(dest, secret, event)
     elif dest.kind == "azure_sentinel":
-        if not secret: raise ValueError("no DCR bearer token stored")
+        if not secret:
+            raise ValueError("no DCR bearer token stored")
         _send_azure_sentinel(dest, secret, event)
     else:
         raise ValueError(f"unknown kind {dest.kind!r}")
@@ -328,43 +364,50 @@ def flush() -> dict[str, Any]:
     destination's last_cursor_ts, in batches of `batch_size`.
     """
     import httpx  # noqa: F401 — imported for side-effect in _send_* paths
+
     shipped = 0
     failures = 0
     with session_scope() as db:
-        dests = db.execute(text(
-            "SELECT id FROM log_shipping_destinations WHERE enabled = TRUE"
-        )).fetchall()
+        dests = db.execute(text("SELECT id FROM log_shipping_destinations WHERE enabled = TRUE")).fetchall()
         for (dest_id,) in dests:
             d = db.get(LogShippingDestination, dest_id)
             if d is None:
                 continue
-            cursor = d.last_cursor_ts or datetime(2025, 1, 1, tzinfo=timezone.utc)
-            rows = db.execute(text("""
+            cursor = d.last_cursor_ts or datetime(2025, 1, 1, tzinfo=UTC)
+            rows = db.execute(
+                text("""
                 SELECT ts, user_id, action, target_type, target_key, payload, outcome
                   FROM audit_events
                  WHERE ts > :cursor
                  ORDER BY ts ASC
                  LIMIT :batch
-            """), {"cursor": cursor, "batch": d.batch_size}).fetchall()
+            """),
+                {"cursor": cursor, "batch": d.batch_size},
+            ).fetchall()
             if not rows:
                 continue
             secret = _resolve_secret(db, d.auth_secret_id)
             batch_events = [
-                {"ts": r.ts.isoformat(), "user_id": str(r.user_id) if r.user_id else None,
-                 "action": r.action, "target_type": r.target_type,
-                 "target_key": r.target_key, "payload": r.payload or {},
-                 "outcome": r.outcome}
+                {
+                    "ts": r.ts.isoformat(),
+                    "user_id": str(r.user_id) if r.user_id else None,
+                    "action": r.action,
+                    "target_type": r.target_type,
+                    "target_key": r.target_key,
+                    "payload": r.payload or {},
+                    "outcome": r.outcome,
+                }
                 for r in rows
             ]
             try:
                 for ev in batch_events:
                     _dispatch_one(d, secret, ev)
                 d.last_cursor_ts = rows[-1].ts
-                d.last_shipped_at = datetime.now(timezone.utc)
+                d.last_shipped_at = datetime.now(UTC)
                 d.last_error = None
                 d.events_shipped_total = (d.events_shipped_total or 0) + len(rows)
                 shipped += len(rows)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 d.last_error = f"{type(e).__name__}: {e}"[:500]
                 failures += 1
     return {"shipped": shipped, "failures": failures}

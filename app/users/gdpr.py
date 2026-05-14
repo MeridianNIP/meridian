@@ -17,12 +17,13 @@ enrolled) to defeat stolen-session attacks. The check is performed
 inline rather than via a session-step-up flag because erasure is
 high-stakes enough that we don't want to trust a previous step-up.
 """
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import secrets
-import uuid
-from datetime import datetime, timezone
 from typing import Any
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -38,7 +39,6 @@ from app.models.audit import AuditEvent
 from app.models.session import Session as SessionModel
 from app.models.user import User, UserGroup
 
-
 router = APIRouter(tags=["users-self"])
 
 
@@ -53,91 +53,112 @@ def _row(u: User) -> dict[str, Any]:
     nonce) or pure technical metadata that the data subject can't act
     on."""
     return {
-        "id":                       str(u.id),
-        "username":                 u.username,
-        "email":                    u.email,
-        "display_name":             u.display_name,
-        "primary_auth":             u.primary_auth,
-        "role":                     u.role,
-        "enabled":                  u.enabled,
-        "locked":                   u.locked,
-        "mfa_enrolled":             u.mfa_enrolled,
-        "phone_e164":               u.phone_e164,
-        "sms_carrier_gateway":      u.sms_carrier_gateway,
-        "recovery_email":           u.recovery_email,
-        "recovery_phone":           u.recovery_phone,
-        "timezone":                 u.timezone,
-        "preferences":              u.preferences,
-        "external_id":              u.external_id,
-        "max_concurrent_sessions":  u.max_concurrent_sessions,
+        "id": str(u.id),
+        "username": u.username,
+        "email": u.email,
+        "display_name": u.display_name,
+        "primary_auth": u.primary_auth,
+        "role": u.role,
+        "enabled": u.enabled,
+        "locked": u.locked,
+        "mfa_enrolled": u.mfa_enrolled,
+        "phone_e164": u.phone_e164,
+        "sms_carrier_gateway": u.sms_carrier_gateway,
+        "recovery_email": u.recovery_email,
+        "recovery_phone": u.recovery_phone,
+        "timezone": u.timezone,
+        "preferences": u.preferences,
+        "external_id": u.external_id,
+        "max_concurrent_sessions": u.max_concurrent_sessions,
         "idle_timeout_override_min": u.idle_timeout_override_min,
-        "created_at":               u.created_at.isoformat() if u.created_at else None,
-        "updated_at":               u.updated_at.isoformat() if u.updated_at else None,
-        "last_login_at":            u.last_login_at.isoformat() if u.last_login_at else None,
-        "last_active_at":           u.last_active_at.isoformat() if u.last_active_at else None,
-        "deleted_at":               u.deleted_at.isoformat() if u.deleted_at else None,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+        "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+        "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
+        "deleted_at": u.deleted_at.isoformat() if u.deleted_at else None,
     }
 
 
 def _build_dossier(db: OrmSession, user: User) -> dict[str, Any]:
     """Collect everything we know about `user` across tables."""
-    sessions = db.execute(
-        select(SessionModel).where(SessionModel.user_id == user.id)
-        .order_by(SessionModel.created_at.desc()).limit(500)
-    ).scalars().all()
-    sess_rows = [{
-        "id":            str(s.id),
-        "auth_method":   s.auth_method,
-        "ip":            s.ip,
-        "user_agent":    s.user_agent,
-        "device_label":  s.device_label,
-        "created_at":    s.created_at.isoformat() if s.created_at else None,
-        "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
-        "expires_at":    s.expires_at.isoformat() if s.expires_at else None,
-        "revoked_at":    s.revoked_at.isoformat() if s.revoked_at else None,
-        "revoked_reason": s.revoked_reason,
-    } for s in sessions]
+    sessions = (
+        db.execute(
+            select(SessionModel)
+            .where(SessionModel.user_id == user.id)
+            .order_by(SessionModel.created_at.desc())
+            .limit(500)
+        )
+        .scalars()
+        .all()
+    )
+    sess_rows = [
+        {
+            "id": str(s.id),
+            "auth_method": s.auth_method,
+            "ip": s.ip,
+            "user_agent": s.user_agent,
+            "device_label": s.device_label,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
+            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+            "revoked_at": s.revoked_at.isoformat() if s.revoked_at else None,
+            "revoked_reason": s.revoked_reason,
+        }
+        for s in sessions
+    ]
 
-    audit_rows = db.execute(
-        select(AuditEvent).where(AuditEvent.user_id == user.id)
-        .order_by(AuditEvent.ts.desc()).limit(5000)
-    ).scalars().all()
-    audit_serialized = [{
-        "ts":          ev.ts.isoformat() if ev.ts else None,
-        "action":      ev.action,
-        "target_type": ev.target_type,
-        "target_key":  ev.target_key,
-        "ip":          ev.ip,
-        "user_agent":  ev.user_agent,
-        "outcome":     ev.outcome,
-        "payload":     ev.payload,  # already redacted at insert time
-    } for ev in audit_rows]
+    audit_rows = (
+        db.execute(
+            select(AuditEvent).where(AuditEvent.user_id == user.id).order_by(AuditEvent.ts.desc()).limit(5000)
+        )
+        .scalars()
+        .all()
+    )
+    audit_serialized = [
+        {
+            "ts": ev.ts.isoformat() if ev.ts else None,
+            "action": ev.action,
+            "target_type": ev.target_type,
+            "target_key": ev.target_key,
+            "ip": ev.ip,
+            "user_agent": ev.user_agent,
+            "outcome": ev.outcome,
+            "payload": ev.payload,  # already redacted at insert time
+        }
+        for ev in audit_rows
+    ]
 
-    groups = db.execute(
-        select(UserGroup).where(UserGroup.user_id == user.id)
-    ).scalars().all()
-    group_rows = [{
-        "group_id": str(g.group_id),
-        "added_at": g.added_at.isoformat() if g.added_at else None,
-    } for g in groups]
+    groups = db.execute(select(UserGroup).where(UserGroup.user_id == user.id)).scalars().all()
+    group_rows = [
+        {
+            "group_id": str(g.group_id),
+            "added_at": g.added_at.isoformat() if g.added_at else None,
+        }
+        for g in groups
+    ]
 
     # Optional/cross-table queries below use SAVEPOINTs so a schema mismatch
     # (column renamed in a future migration, table dropped) doesn't poison
     # the outer transaction — the audit INSERT at the end MUST succeed.
 
-    mfa_summary: dict[str, Any] = {"enrolled": user.mfa_enrolled,
-                                   "backup_codes_unused": 0,
-                                   "backup_codes_used":   0}
+    mfa_summary: dict[str, Any] = {
+        "enrolled": user.mfa_enrolled,
+        "backup_codes_unused": 0,
+        "backup_codes_used": 0,
+    }
     try:
         with db.begin_nested():
-            backup_codes = db.execute(text(
-                "SELECT count(*) FILTER (WHERE used_at IS NULL) AS unused, "
-                "count(*) FILTER (WHERE used_at IS NOT NULL) AS used "
-                "FROM mfa_backup_codes WHERE user_id = :uid"
-            ), {"uid": user.id}).first()
+            backup_codes = db.execute(
+                text(
+                    "SELECT count(*) FILTER (WHERE used_at IS NULL) AS unused, "
+                    "count(*) FILTER (WHERE used_at IS NOT NULL) AS used "
+                    "FROM mfa_backup_codes WHERE user_id = :uid"
+                ),
+                {"uid": user.id},
+            ).first()
         if backup_codes:
             mfa_summary["backup_codes_unused"] = int(backup_codes.unused)
-            mfa_summary["backup_codes_used"]   = int(backup_codes.used)
+            mfa_summary["backup_codes_used"] = int(backup_codes.used)
     except Exception:
         pass
 
@@ -145,19 +166,26 @@ def _build_dossier(db: OrmSession, user: User) -> dict[str, Any]:
     notif_rows: list[dict[str, Any]] = []
     try:
         with db.begin_nested():
-            notif_rows_raw = db.execute(text(
-                "SELECT id, kind, description, target, enabled, created_at, updated_at "
-                "FROM notif_channels WHERE user_id = :uid"
-            ), {"uid": user.id}).mappings().all()
+            notif_rows_raw = (
+                db.execute(
+                    text(
+                        "SELECT id, kind, description, target, enabled, created_at, updated_at "
+                        "FROM notif_channels WHERE user_id = :uid"
+                    ),
+                    {"uid": user.id},
+                )
+                .mappings()
+                .all()
+            )
         notif_rows = [
             {
-                "id":          str(r["id"]),
-                "kind":        r["kind"],
+                "id": str(r["id"]),
+                "kind": r["kind"],
                 "description": r["description"],
-                "target":      r["target"],
-                "enabled":     r["enabled"],
-                "created_at":  r["created_at"].isoformat() if r["created_at"] else None,
-                "updated_at":  r["updated_at"].isoformat() if r["updated_at"] else None,
+                "target": r["target"],
+                "enabled": r["enabled"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
             }
             for r in notif_rows_raw
         ]
@@ -165,16 +193,16 @@ def _build_dossier(db: OrmSession, user: User) -> dict[str, Any]:
         notif_rows = []
 
     return {
-        "exported_at":         datetime.now(timezone.utc).isoformat(),
-        "generated_by":        "meridian-gdpr-export-v1",
-        "profile":             _row(user),
-        "mfa":                 mfa_summary,
-        "group_memberships":   group_rows,
-        "sessions":            sess_rows,
+        "exported_at": datetime.now(UTC).isoformat(),
+        "generated_by": "meridian-gdpr-export-v1",
+        "profile": _row(user),
+        "mfa": mfa_summary,
+        "group_memberships": group_rows,
+        "sessions": sess_rows,
         "notification_channels": notif_rows,
-        "audit_events":        audit_serialized,
-        "audit_event_count":   len(audit_serialized),
-        "audit_event_capped":  len(audit_serialized) >= 5000,
+        "audit_events": audit_serialized,
+        "audit_event_count": len(audit_serialized),
+        "audit_event_capped": len(audit_serialized) >= 5000,
     }
 
 
@@ -215,14 +243,19 @@ async def export_my_data(
     """Return everything Meridian stores about the caller. Idempotent;
     safe to repeat. Audit-logged."""
     dossier = _build_dossier(db, user)
-    audit(db, user_id=user.id, action="user.gdpr.export",
-          target_type="user", target_key=str(user.id),
-          payload={
-              "audit_event_count": dossier["audit_event_count"],
-              "audit_event_capped": dossier["audit_event_capped"],
-          },
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="user.gdpr.export",
+        target_type="user",
+        target_key=str(user.id),
+        payload={
+            "audit_event_count": dossier["audit_event_count"],
+            "audit_event_capped": dossier["audit_event_capped"],
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return dossier
 
 
@@ -260,65 +293,75 @@ async def erase_my_account(
     # Anonymize the row in place — schema stays valid, FK targets remain
     # resolvable. The username/email get tombstone tokens so they don't
     # collide with the unique constraint.
-    user.username       = f"erased-{tombstone}"
-    user.email          = f"erased-{tombstone}@meridian.local"
-    user.display_name   = None
-    user.password_hash  = hash_password(secrets.token_urlsafe(32))  # unguessable
-    user.password_changed_at = datetime.now(timezone.utc)
-    user.phone_e164     = None
+    user.username = f"erased-{tombstone}"
+    user.email = f"erased-{tombstone}@meridian.local"
+    user.display_name = None
+    user.password_hash = hash_password(secrets.token_urlsafe(32))  # unguessable
+    user.password_changed_at = datetime.now(UTC)
+    user.phone_e164 = None
     user.sms_carrier_gateway = None
     user.recovery_email = None
     user.recovery_phone = None
-    user.avatar_path    = None
-    user.preferences    = {}
-    user.external_id    = None
-    user.mfa_enrolled   = False
+    user.avatar_path = None
+    user.preferences = {}
+    user.external_id = None
+    user.mfa_enrolled = False
     user.mfa_secret_enc = None
-    user.enabled        = False
-    user.locked         = True
-    user.deleted_at     = datetime.now(timezone.utc)
+    user.enabled = False
+    user.locked = True
+    user.deleted_at = datetime.now(UTC)
 
     # Wipe MFA backup codes + revoke every session + revoke every API
     # token. None of these are reversible — that's the whole point.
     try:
         with db.begin_nested():
-            db.execute(text("DELETE FROM mfa_backup_codes WHERE user_id = :uid"),
-                       {"uid": user.id})
+            db.execute(text("DELETE FROM mfa_backup_codes WHERE user_id = :uid"), {"uid": user.id})
     except Exception:
         pass
     try:
         with db.begin_nested():
-            db.execute(text(
-                "UPDATE sessions SET revoked_at = now(), revoked_reason = 'gdpr_erasure' "
-                "WHERE user_id = :uid AND revoked_at IS NULL"
-            ), {"uid": user.id})
+            db.execute(
+                text(
+                    "UPDATE sessions SET revoked_at = now(), revoked_reason = 'gdpr_erasure' "
+                    "WHERE user_id = :uid AND revoked_at IS NULL"
+                ),
+                {"uid": user.id},
+            )
     except Exception:
         pass
     try:
         with db.begin_nested():
-            db.execute(text(
-                "UPDATE api_tokens SET revoked_at = now() "
-                "WHERE created_by = :uid AND revoked_at IS NULL"
-            ), {"uid": user.id})
+            db.execute(
+                text(
+                    "UPDATE api_tokens SET revoked_at = now() "
+                    "WHERE created_by = :uid AND revoked_at IS NULL"
+                ),
+                {"uid": user.id},
+            )
     except Exception:
         # api_tokens schema may not have created_by named this — best effort.
         pass
 
-    audit(db, user_id=user.id, action="user.gdpr.erase",
-          target_type="user", target_key=str(user.id),
-          payload={
-              "original_username": original_username,
-              "tombstone": tombstone,
-          },
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="user.gdpr.erase",
+        target_type="user",
+        target_key=str(user.id),
+        payload={
+            "original_username": original_username,
+            "tombstone": tombstone,
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     return {
-        "ok":         True,
-        "user_id":    str(user.id),
-        "tombstone":  tombstone,
-        "erased_at":  user.deleted_at.isoformat(),
-        "message":    "Account anonymized. Audit history preserved with tombstone identifier. You will be signed out.",
+        "ok": True,
+        "user_id": str(user.id),
+        "tombstone": tombstone,
+        "erased_at": user.deleted_at.isoformat(),
+        "message": "Account anonymized. Audit history preserved with tombstone identifier. You will be signed out.",
     }
 
 
@@ -341,11 +384,16 @@ async def admin_export_user_data(
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     dossier = _build_dossier(db, target)
-    audit(db, user_id=actor.id, action="admin.user.gdpr.export",
-          target_type="user", target_key=str(target.id),
-          payload={
-              "audit_event_count": dossier["audit_event_count"],
-          },
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=actor.id,
+        action="admin.user.gdpr.export",
+        target_type="user",
+        target_key=str(target.id),
+        payload={
+            "audit_event_count": dossier["audit_event_count"],
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return dossier

@@ -17,10 +17,10 @@ Python 3.11+'s default `ssl.create_default_context()` already sets TLS
 explicitly so a future Python or OpenSSL downgrade can't silently
 weaken our posture.
 """
+
 from __future__ import annotations
 
 import ssl
-
 
 _SECURE_CIPHERS = (
     "ECDHE-ECDSA-AES256-GCM-SHA384:"
@@ -33,7 +33,8 @@ _SECURE_CIPHERS = (
 
 
 def strict_ssl_context(
-    *, cafile: str | None = None,
+    *,
+    cafile: str | None = None,
     verify_hostname: bool = True,
 ) -> ssl.SSLContext:
     """Return an `ssl.SSLContext` that enforces the Meridian 2026 TLS
@@ -47,9 +48,15 @@ def strict_ssl_context(
     # OpenSSL deprecation switches — belt AND suspenders on top of
     # minimum_version above. Dropping TLSv1 / TLSv1.1 explicitly so any
     # downstream re-negotiation (proxy-initiated) also rejects them.
-    for flag in ("OP_NO_SSLv2", "OP_NO_SSLv3", "OP_NO_TLSv1", "OP_NO_TLSv1_1",
-                 "OP_NO_COMPRESSION", "OP_CIPHER_SERVER_PREFERENCE",
-                 "OP_NO_RENEGOTIATION"):
+    for flag in (
+        "OP_NO_SSLv2",
+        "OP_NO_SSLv3",
+        "OP_NO_TLSv1",
+        "OP_NO_TLSv1_1",
+        "OP_NO_COMPRESSION",
+        "OP_CIPHER_SERVER_PREFERENCE",
+        "OP_NO_RENEGOTIATION",
+    ):
         bit = getattr(ssl, flag, None)
         if bit is not None:
             ctx.options |= bit

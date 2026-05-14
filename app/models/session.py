@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import ARRAY, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,7 +13,9 @@ from app.models.base import Base
 class Session(Base):
     __tablename__ = "sessions"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     token_hash: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     auth_method: Mapped[str] = mapped_column(String, nullable=False)
     ip: Mapped[str | None] = mapped_column(INET)
@@ -30,7 +32,9 @@ class Session(Base):
 class ApiToken(Base):
     __tablename__ = "api_tokens"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     token_hash: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     scopes: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)

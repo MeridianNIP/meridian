@@ -14,11 +14,13 @@ Critical = the portal cannot serve correctly without it. DB and broker
 qualify; BIND9 is critical only when the DNS-tools features are in use;
 integrations are never critical.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC
 import socket
 import time
-from typing import Callable
 
 from app.db import get_engine
 
@@ -31,17 +33,17 @@ def _time(label: str, critical: bool, fn: Callable[[], tuple[str, str]]) -> Prob
         status, detail = fn()
     except Exception as e:
         return {
-            "name":       label,
-            "status":     "down",
-            "critical":   critical,
-            "detail":     f"{type(e).__name__}: {e}",
+            "name": label,
+            "status": "down",
+            "critical": critical,
+            "detail": f"{type(e).__name__}: {e}",
             "latency_ms": round((time.monotonic() - t0) * 1000, 1),
         }
     return {
-        "name":       label,
-        "status":     status,
-        "critical":   critical,
-        "detail":     detail,
+        "name": label,
+        "status": status,
+        "critical": critical,
+        "detail": detail,
         "latency_ms": round((time.monotonic() - t0) * 1000, 1),
     }
 
@@ -57,11 +59,13 @@ def _probe_broker() -> tuple[str, str]:
     opens a TCP socket — no need to pull the full redis client just for
     a liveness check."""
     from app.config import get_settings
+
     url = get_settings().redis_url or ""
     if not url:
         return "warn", "redis_url not configured"
     # Parse host/port out of redis://host:port/db
     from urllib.parse import urlparse
+
     p = urlparse(url)
     host = p.hostname or "127.0.0.1"
     port = p.port or 6379
@@ -86,20 +90,25 @@ def _probe_certs() -> tuple[str, str]:
     """Surface the soonest expiry from the `certificates` table. Doesn't
     fail /healthz — just reports."""
     try:
-        from app.db import session_scope
         from sqlalchemy import text
+
+        from app.db import session_scope
+
         with session_scope() as db:
-            row = db.execute(text(
-                "SELECT min(valid_until) AS soonest "
-                "FROM certificates "
-                "WHERE valid_until IS NOT NULL AND revoked_at IS NULL"
-            )).first()
+            row = db.execute(
+                text(
+                    "SELECT min(valid_until) AS soonest "
+                    "FROM certificates "
+                    "WHERE valid_until IS NOT NULL AND revoked_at IS NULL"
+                )
+            ).first()
     except Exception as e:
         return "warn", f"watchlist unavailable: {type(e).__name__}"
     if row is None or row.soonest is None:
         return "ok", "no watchlist entries"
-    from datetime import datetime, timezone
-    days = (row.soonest - datetime.now(timezone.utc)).days
+    from datetime import datetime
+
+    days = (row.soonest - datetime.now(UTC)).days
     if days <= 7:
         return "warn", f"soonest expiry in {days}d"
     return "ok", f"soonest expiry in {days}d"
@@ -107,10 +116,10 @@ def _probe_certs() -> tuple[str, str]:
 
 # Order matters in output — DB first, then anything that depends on DB.
 PROBES: list[tuple[str, bool, Callable[[], tuple[str, str]]]] = [
-    ("db",      True,  _probe_db),
-    ("broker",  True,  _probe_broker),
-    ("bind9",   False, _probe_bind),
-    ("certs",   False, _probe_certs),
+    ("db", True, _probe_db),
+    ("broker", True, _probe_broker),
+    ("bind9", False, _probe_bind),
+    ("certs", False, _probe_certs),
 ]
 
 
@@ -131,7 +140,7 @@ def gather() -> tuple[dict, int]:
         overall = "ok"
         code = 200
     return {
-        "status":     overall,
-        "service":    "meridian-app",
+        "status": overall,
+        "service": "meridian-app",
         "components": components,
     }, code

@@ -7,10 +7,11 @@ for two consecutive checks, emit a notification.
 The check is deliberately cheap -- only existing .test() endpoints are
 exercised (LDAP bind). Nothing is mutated.
 """
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -23,7 +24,7 @@ from app.models.directory import DirectoryIntegration
 
 
 def _record_dir(db, integ, ok: bool, latency_ms: int | None, error: str | None):
-    integ.last_tested_at = datetime.now(timezone.utc)
+    integ.last_tested_at = datetime.now(UTC)
     integ.last_test_ok = ok
     integ.last_test_error = error
 
@@ -34,46 +35,63 @@ def _ping_dir(db, integ) -> dict[str, Any]:
         client = _ldap_client(db, integ)
         result = client.test()
         _record_dir(db, integ, result.ok, result.latency_ms, result.error)
-        return {"kind": "directory", "name": integ.name, "ok": result.ok,
-                "latency_ms": result.latency_ms, "error": result.error}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "kind": "directory",
+            "name": integ.name,
+            "ok": result.ok,
+            "latency_ms": result.latency_ms,
+            "error": result.error,
+        }
+    except Exception as e:
         _record_dir(db, integ, False, int((time.monotonic() - t0) * 1000), str(e))
-        return {"kind": "directory", "name": integ.name, "ok": False,
-                "error": f"{type(e).__name__}: {e}"[:200]}
+        return {
+            "kind": "directory",
+            "name": integ.name,
+            "ok": False,
+            "error": f"{type(e).__name__}: {e}"[:200],
+        }
 
 
 @celery_app.task(name="meridian.jobs.health.feature_ping")
 def feature_ping() -> dict[str, Any]:
     with session_scope() as db:
-        dirs = db.execute(
-            select(DirectoryIntegration).where(DirectoryIntegration.enabled.is_(True))
-        ).scalars().all()
+        dirs = (
+            db.execute(select(DirectoryIntegration).where(DirectoryIntegration.enabled.is_(True)))
+            .scalars()
+            .all()
+        )
 
         all_results = [_ping_dir(db, i) for i in dirs]
         db.commit()
 
         failures = [r for r in all_results if not r["ok"]]
-        audit(db, action="health.feature_ping",
-              payload={"total": len(all_results),
-                       "failures": len(failures),
-                       "failing_names": [f["name"] for f in failures][:10]})
+        audit(
+            db,
+            action="health.feature_ping",
+            payload={
+                "total": len(all_results),
+                "failures": len(failures),
+                "failing_names": [f["name"] for f in failures][:10],
+            },
+        )
 
         if failures:
             try:
                 from app.notifications.dispatcher import dispatch
+
                 dispatch(
-                    db, event_kind="integration.unreachable",
+                    db,
+                    event_kind="integration.unreachable",
                     subject=f"{len(failures)} integration(s) unreachable",
-                    body="\n".join(f"{f['kind']}: {f['name']} -- {f.get('error') or 'not ok'}"
-                                   for f in failures),
+                    body="\n".join(
+                        f"{f['kind']}: {f['name']} -- {f.get('error') or 'not ok'}" for f in failures
+                    ),
                     payload={"failures": failures},
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
-        return {"checked": len(all_results),
-                "failing": len(failures),
-                "details": all_results}
+        return {"checked": len(all_results), "failing": len(failures), "details": all_results}
 
 
 @celery_app.task(name="meridian.jobs.health.auto_repair")
@@ -101,20 +119,25 @@ def auto_repair() -> dict[str, Any]:
                 continue
             result = repair(c.repair, db)
             entry = {
-                "name": c.name, "category": c.category,
-                "severity": c.severity, "action": c.repair,
-                "ok": result.ok, "detail": result.detail[:200],
+                "name": c.name,
+                "category": c.category,
+                "severity": c.severity,
+                "action": c.repair,
+                "ok": result.ok,
+                "detail": result.detail[:200],
             }
             if result.ok:
                 fixed.append(entry)
             else:
                 skipped.append(entry)
-            audit(db, action="admin.system.repair.auto",
-                  target_type="check", target_key=c.name,
-                  payload=entry,
-                  outcome="ok" if result.ok else "error")
+            audit(
+                db,
+                action="admin.system.repair.auto",
+                target_type="check",
+                target_key=c.name,
+                payload=entry,
+                outcome="ok" if result.ok else "error",
+            )
         db.commit()
 
-    return {"fixed": fixed, "failed_to_fix": skipped,
-            "fixed_count": len(fixed),
-            "failed_count": len(skipped)}
+    return {"fixed": fixed, "failed_to_fix": skipped, "fixed_count": len(fixed), "failed_count": len(skipped)}

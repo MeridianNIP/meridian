@@ -1,11 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from typing import Any
-
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
@@ -17,7 +15,6 @@ from app.auth.session_manager import revoke_session
 from app.db import fastapi_dep_db
 from app.models.session import Session as SessionModel
 from app.models.user import User
-
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -48,7 +45,10 @@ async def update_profile(
         changes["phone_e164"] = body.phone_e164
     if body.sms_carrier_gateway is not None and body.sms_carrier_gateway != user.sms_carrier_gateway:
         changes["sms_carrier_gateway"] = body.sms_carrier_gateway
-    if body.idle_timeout_override_min is not None and body.idle_timeout_override_min != user.idle_timeout_override_min:
+    if (
+        body.idle_timeout_override_min is not None
+        and body.idle_timeout_override_min != user.idle_timeout_override_min
+    ):
         changes["idle_timeout_override_min"] = body.idle_timeout_override_min
     if body.recovery_email is not None and body.recovery_email != user.recovery_email:
         changes["recovery_email"] = body.recovery_email or None
@@ -57,10 +57,14 @@ async def update_profile(
     for k, v in changes.items():
         setattr(user, k, v)
     if changes:
-        audit(db, user_id=user.id, action="settings.profile.update",
-              payload={"fields": list(changes.keys())},
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="settings.profile.update",
+            payload={"fields": list(changes.keys())},
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
     return {"updated": list(changes.keys())}
 
 
@@ -106,11 +110,16 @@ async def set_preference(
     else:
         prefs[body.key] = body.value
     u.preferences = prefs
-    audit(db, user_id=u.id, action="settings.preference.set",
-          target_type="user_preference", target_key=body.key,
-          payload={"cleared": body.value is None},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=u.id,
+        action="settings.preference.set",
+        target_type="user_preference",
+        target_key=body.key,
+        payload={"cleared": body.value is None},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True, "key": body.key, "value": body.value}
 
 
@@ -122,19 +131,28 @@ async def change_password(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     if not user.password_hash or not verify_password(body.current, user.password_hash):
-        audit(db, user_id=user.id, action="settings.password.change_failed",
-              payload={"reason": "bad_current"}, outcome="denied",
-              ip=client_ip(request),
-              user_agent=request.headers.get("user-agent"))
+        audit(
+            db,
+            user_id=user.id,
+            action="settings.password.change_failed",
+            payload={"reason": "bad_current"},
+            outcome="denied",
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "current password incorrect")
     user.password_hash = hash_password(body.new)
     # Clear the force-change flag if it was set.
     prefs = dict(user.preferences or {})
     prefs.pop("force_change_password", None)
     user.preferences = prefs
-    audit(db, user_id=user.id, action="settings.password.change",
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="settings.password.change",
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True}
 
 
@@ -151,10 +169,15 @@ async def revoke_my_session(
     if sess.revoked_at is not None:
         return {"ok": True, "already_revoked": True}
     revoke_session(db, sess.id, reason="user_revoked", by=user.id)
-    audit(db, user_id=user.id, action="settings.session.revoke",
-          target_type="session", target_key=str(sess.id),
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="settings.session.revoke",
+        target_type="session",
+        target_key=str(sess.id),
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True}
 
 
@@ -165,14 +188,21 @@ async def revoke_others(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     current_sid = getattr(request.state, "session_id", None)
-    result = db.execute(text("""
+    result = db.execute(
+        text("""
         UPDATE sessions SET revoked_at = now(), revoked_reason = 'user_revoke_others',
                             revoked_by = :u
          WHERE user_id = :u AND revoked_at IS NULL AND id <> :keep
-    """), {"u": user.id, "keep": current_sid})
+    """),
+        {"u": user.id, "keep": current_sid},
+    )
     n = result.rowcount or 0
-    audit(db, user_id=user.id, action="settings.sessions.revoke_others",
-          payload={"revoked": n},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="settings.sessions.revoke_others",
+        payload={"revoked": n},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"revoked": n}

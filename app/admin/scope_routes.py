@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import ipaddress
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -16,7 +16,6 @@ from app.db import fastapi_dep_db
 from app.models.scope import ScopeRule
 from app.models.user import User
 from app.network.scope import classify, invalidate_cache
-
 
 router = APIRouter(prefix="/admin/scope", tags=["admin-scope"])
 
@@ -37,9 +36,7 @@ async def get_scope(
     user: User = Depends(require_permission("admin.scope.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
-    rows = db.execute(
-        select(ScopeRule).order_by(ScopeRule.kind, ScopeRule.cidr)
-    ).scalars().all()
+    rows = db.execute(select(ScopeRule).order_by(ScopeRule.kind, ScopeRule.cidr)).scalars().all()
     return {
         "scope_of_use": get_settings().scope_of_use,
         "rules": [
@@ -79,22 +76,31 @@ async def create_rule(
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "rule already exists for this kind+cidr")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rule = ScopeRule(
-        kind=body.kind, cidr=cidr, note=body.note,
-        enabled=body.enabled, created_by=user.id,
-        created_at=now, updated_at=now,
+        kind=body.kind,
+        cidr=cidr,
+        note=body.note,
+        enabled=body.enabled,
+        created_by=user.id,
+        created_at=now,
+        updated_at=now,
     )
     db.add(rule)
     db.commit()
     db.refresh(rule)
     invalidate_cache()
 
-    audit(db, user_id=user.id, action="admin.scope.create",
-          target_type="scope_rule", target_key=str(rule.id),
-          payload={"kind": rule.kind, "cidr": cidr, "enabled": rule.enabled},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.scope.create",
+        target_type="scope_rule",
+        target_key=str(rule.id),
+        payload={"kind": rule.kind, "cidr": cidr, "enabled": rule.enabled},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"id": str(rule.id)}
 
 
@@ -124,11 +130,16 @@ async def update_rule(
     db.commit()
     invalidate_cache()
 
-    audit(db, user_id=user.id, action="admin.scope.update",
-          target_type="scope_rule", target_key=str(rule.id),
-          payload=changed,
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.scope.update",
+        target_type="scope_rule",
+        target_key=str(rule.id),
+        payload=changed,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True}
 
 
@@ -147,11 +158,16 @@ async def delete_rule(
     db.commit()
     invalidate_cache()
 
-    audit(db, user_id=user.id, action="admin.scope.delete",
-          target_type="scope_rule", target_key=str(rule_id),
-          payload={"kind": kind, "cidr": cidr},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.scope.delete",
+        target_type="scope_rule",
+        target_key=str(rule_id),
+        payload={"kind": kind, "cidr": cidr},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 class TestIn(BaseModel):

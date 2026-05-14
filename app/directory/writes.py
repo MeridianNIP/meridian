@@ -5,10 +5,9 @@ from ldap3.core.exceptions import LDAPException
 
 from app.directory.ldap_client import LDAPClient
 
-
 # AD userAccountControl bit definitions relevant to these operations.
 _UAC_ACCOUNTDISABLE = 0x0002
-_UAC_LOCKOUT        = 0x0010
+_UAC_LOCKOUT = 0x0010
 
 
 class DirectoryWriteError(Exception):
@@ -35,8 +34,7 @@ def disable_account(client: LDAPClient, dn: str) -> dict:
     """Set the ACCOUNTDISABLE bit in userAccountControl."""
     try:
         with client._connect() as conn:
-            conn.search(dn, "(objectClass=user)",
-                        attributes=["userAccountControl"], search_scope="BASE")
+            conn.search(dn, "(objectClass=user)", attributes=["userAccountControl"], search_scope="BASE")
             if not conn.entries:
                 raise DirectoryWriteError("user not found")
             current = int(conn.entries[0].userAccountControl.value or 0)
@@ -44,14 +42,12 @@ def disable_account(client: LDAPClient, dn: str) -> dict:
             ok = conn.modify(dn, {"userAccountControl": [(MODIFY_REPLACE, [str(new_uac)])]})
             if not ok:
                 raise DirectoryWriteError(f"LDAP modify failed: {conn.result}")
-            return {"ok": True, "dn": dn, "op": "disable",
-                    "uac_before": current, "uac_after": new_uac}
+            return {"ok": True, "dn": dn, "op": "disable", "uac_before": current, "uac_after": new_uac}
     except LDAPException as e:
         raise DirectoryWriteError(f"{type(e).__name__}: {e}") from e
 
 
-def reset_password(client: LDAPClient, dn: str, new_password: str,
-                   *, force_change: bool = True) -> dict:
+def reset_password(client: LDAPClient, dn: str, new_password: str, *, force_change: bool = True) -> dict:
     """Reset an AD user's password. Requires LDAPS (AD refuses password ops
     over plain LDAP) and appropriate delegated rights on the bind account.
 
@@ -73,7 +69,6 @@ def reset_password(client: LDAPClient, dn: str, new_password: str,
             ok = conn.modify(dn, modifications)
             if not ok:
                 raise DirectoryWriteError(f"LDAP modify failed: {conn.result}")
-            return {"ok": True, "dn": dn, "op": "reset_password",
-                    "force_change_at_next_logon": force_change}
+            return {"ok": True, "dn": dn, "op": "reset_password", "force_change_at_next_logon": force_change}
     except LDAPException as e:
         raise DirectoryWriteError(f"{type(e).__name__}: {e}") from e

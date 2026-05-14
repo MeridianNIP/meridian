@@ -6,14 +6,13 @@ Read paths (status, list jails, list banned) don't need sudo on a Debian
 default install but we sudo them anyway for consistency; fall back to
 unprivileged invocation so it still works if the drop-in is missing.
 """
+
 from __future__ import annotations
 
+from dataclasses import dataclass
 import ipaddress
 import re
-import shlex
 import subprocess
-from dataclasses import dataclass
-
 
 _BIN = "/usr/bin/fail2ban-client"
 
@@ -21,7 +20,7 @@ _BIN = "/usr/bin/fail2ban-client"
 def _run(args: list[str], *, privileged: bool = False, timeout_s: float = 6.0) -> tuple[int, str, str]:
     cmd = ["sudo", "-n", _BIN, *args] if privileged else [_BIN, *args]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, check=False)
         return r.returncode, r.stdout, r.stderr
     except FileNotFoundError:
         return 127, "", "fail2ban-client not installed"
@@ -255,23 +254,23 @@ def _ignoreip_mutate(body: str, ip: str, *, op: str) -> tuple[str, bool]:
             tokens = [t for t in rhs.split() if t]
             if op == "add":
                 if ip not in tokens:
-                    tokens.append(ip); mutated = True
+                    tokens.append(ip)
+                    mutated = True
             elif op == "del":
                 if ip in tokens:
-                    tokens = [t for t in tokens if t != ip]; mutated = True
+                    tokens = [t for t in tokens if t != ip]
+                    mutated = True
             out_lines.append(f"ignoreip = {' '.join(tokens)}")
             continue
         out_lines.append(line)
     if not found_section:
         # No [DEFAULT] section present — append a fresh one.
         out_lines.append("[DEFAULT]")
-        out_lines.append(f"ignoreip = 127.0.0.1/8 ::1 {ip}" if op == "add"
-                         else "ignoreip = 127.0.0.1/8 ::1")
-        mutated = (op == "add")
+        out_lines.append(f"ignoreip = 127.0.0.1/8 ::1 {ip}" if op == "add" else "ignoreip = 127.0.0.1/8 ::1")
+        mutated = op == "add"
     elif not found_key:
-        out_lines.append(f"ignoreip = 127.0.0.1/8 ::1 {ip}" if op == "add"
-                         else "ignoreip = 127.0.0.1/8 ::1")
-        mutated = (op == "add")
+        out_lines.append(f"ignoreip = 127.0.0.1/8 ::1 {ip}" if op == "add" else "ignoreip = 127.0.0.1/8 ::1")
+        mutated = op == "add"
     return "\n".join(out_lines) + "\n", mutated
 
 
@@ -283,13 +282,15 @@ def snapshot() -> dict:
         st = jail_status(j)
         if st is None:
             continue
-        out.append({
-            "name": st.name,
-            "currently_failed": st.currently_failed,
-            "total_failed": st.total_failed,
-            "currently_banned": st.currently_banned,
-            "total_banned": st.total_banned,
-            "banned_ips": st.banned_ips,
-            "ignore_list": ignore_list(j),
-        })
+        out.append(
+            {
+                "name": st.name,
+                "currently_failed": st.currently_failed,
+                "total_failed": st.total_failed,
+                "currently_banned": st.currently_banned,
+                "total_banned": st.total_banned,
+                "banned_ips": st.banned_ips,
+                "ignore_list": ignore_list(j),
+            }
+        )
     return {"jails": out, "persisted_ignore": persist_ignore_list()}

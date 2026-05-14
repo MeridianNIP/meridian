@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -40,7 +40,9 @@ class DeviceConfigSnapshot(Base):
     __tablename__ = "device_config_snapshots"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     device_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("network_devices.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("network_devices.id", ondelete="CASCADE"),
+        nullable=False,
     )
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     trigger_kind: Mapped[str] = mapped_column(Text, nullable=False)
@@ -49,7 +51,8 @@ class DeviceConfigSnapshot(Base):
     sha256_hex: Mapped[str] = mapped_column(Text, nullable=False)
     line_count: Mapped[int | None] = mapped_column(Integer)
     prev_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("device_config_snapshots.id"),
+        UUID(as_uuid=True),
+        ForeignKey("device_config_snapshots.id"),
     )
     diff_from_prev: Mapped[str | None] = mapped_column(Text)
     diff_lines_added: Mapped[int | None] = mapped_column(Integer)

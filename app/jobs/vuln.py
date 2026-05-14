@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
+from datetime import UTC, datetime
+from decimal import Decimal
 import re
 import subprocess
-from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -15,9 +14,8 @@ from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import session_scope
 
-
 OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
-OSV_CHUNK = 100          # OSV accepts up to 1000, but smaller chunks keep error blast radius small
+OSV_CHUNK = 100  # OSV accepts up to 1000, but smaller chunks keep error blast radius small
 OSV_TIMEOUT_S = 30.0
 
 _CVSS_SEVERITY_MAP = [
@@ -42,7 +40,10 @@ def _list_apt_packages() -> list[dict[str, str]]:
     try:
         out = subprocess.run(
             ["dpkg-query", "-W", "-f=${Package}\t${Version}\n"],
-            capture_output=True, text=True, timeout=15, check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return []
@@ -77,12 +78,13 @@ def _osv_query(ecosystem: str, packages: list[dict[str, str]]) -> list[list[dict
         return results
 
     for chunk_start in range(0, len(packages), OSV_CHUNK):
-        chunk = packages[chunk_start:chunk_start + OSV_CHUNK]
-        body = {"queries": [
-            {"package": {"name": p["name"], "ecosystem": ecosystem},
-             "version": p["version"]}
-            for p in chunk
-        ]}
+        chunk = packages[chunk_start : chunk_start + OSV_CHUNK]
+        body = {
+            "queries": [
+                {"package": {"name": p["name"], "ecosystem": ecosystem}, "version": p["version"]}
+                for p in chunk
+            ]
+        }
         try:
             resp = httpx.post(OSV_BATCH_URL, json=body, timeout=OSV_TIMEOUT_S)
             resp.raise_for_status()
@@ -133,65 +135,103 @@ def _fixed_version(vuln_summary: dict[str, Any]) -> str | None:
     return None
 
 
-def _upsert_finding(db, *, cve_id: str, severity: str, score: Decimal | None,
-                    vector: str | None, component: str, installed_version: str,
-                    fixed_version: str | None, source: str, description: str | None,
-                    references: list[str], now: datetime) -> bool:
+def _upsert_finding(
+    db,
+    *,
+    cve_id: str,
+    severity: str,
+    score: Decimal | None,
+    vector: str | None,
+    component: str,
+    installed_version: str,
+    fixed_version: str | None,
+    source: str,
+    description: str | None,
+    references: list[str],
+    now: datetime,
+) -> bool:
     """Upsert returns True iff the row was newly created."""
-    existing = db.execute(text("""
+    existing = db.execute(
+        text("""
         SELECT id, status FROM vuln_findings
          WHERE cve_id = :cve AND component = :comp AND installed_version = :ver
-    """), {"cve": cve_id, "comp": component, "ver": installed_version}).first()
+    """),
+        {"cve": cve_id, "comp": component, "ver": installed_version},
+    ).first()
 
     if existing is not None:
-        db.execute(text("""
+        db.execute(
+            text("""
             UPDATE vuln_findings
                SET severity = :sev, cvss_score = :score, cvss_vector = :vec,
                    fixed_version = :fix, source = :src, description = :desc,
                    references_ = :refs, updated_at = :now
              WHERE id = :id
-        """), {
-            "sev": severity, "score": score, "vec": vector,
-            "fix": fixed_version, "src": source, "desc": description,
-            "refs": references, "now": now, "id": existing.id,
-        })
+        """),
+            {
+                "sev": severity,
+                "score": score,
+                "vec": vector,
+                "fix": fixed_version,
+                "src": source,
+                "desc": description,
+                "refs": references,
+                "now": now,
+                "id": existing.id,
+            },
+        )
         return False
 
-    db.execute(text("""
+    db.execute(
+        text("""
         INSERT INTO vuln_findings (cve_id, severity, cvss_score, cvss_vector,
                                    component, installed_version, fixed_version,
                                    source, description, references_, discovered_at,
                                    updated_at)
         VALUES (:cve, :sev, :score, :vec, :comp, :ver, :fix, :src, :desc, :refs, :now, :now)
-    """), {
-        "cve": cve_id, "sev": severity, "score": score, "vec": vector,
-        "comp": component, "ver": installed_version, "fix": fixed_version,
-        "src": source, "desc": description, "refs": references, "now": now,
-    })
+    """),
+        {
+            "cve": cve_id,
+            "sev": severity,
+            "score": score,
+            "vec": vector,
+            "comp": component,
+            "ver": installed_version,
+            "fix": fixed_version,
+            "src": source,
+            "desc": description,
+            "refs": references,
+            "now": now,
+        },
+    )
     return True
 
 
-def _process(db, *, scan_id, ecosystem: str, source_label: str,
-             packages: list[dict[str, str]]) -> int:
+def _process(db, *, scan_id, ecosystem: str, source_label: str, packages: list[dict[str, str]]) -> int:
     """Query OSV for a package list and write findings. Returns count inserted."""
     vulns_by_pkg = _osv_query(ecosystem, packages)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     added = 0
-    for pkg, vulns in zip(packages, vulns_by_pkg):
+    for pkg, vulns in zip(packages, vulns_by_pkg, strict=False):
         for v in vulns:
             cve_id = _best_cve(v)
             if not cve_id:
                 continue
             score, vector, severity = _severity_from_osv(v)
-            refs = [r["url"] for r in (v.get("references") or [])
-                    if isinstance(r, dict) and r.get("url")]
+            refs = [r["url"] for r in (v.get("references") or []) if isinstance(r, dict) and r.get("url")]
             if _upsert_finding(
-                db, cve_id=cve_id, severity=severity, score=score,
-                vector=vector, component=pkg["name"],
+                db,
+                cve_id=cve_id,
+                severity=severity,
+                score=score,
+                vector=vector,
+                component=pkg["name"],
                 installed_version=pkg["version"],
-                fixed_version=_fixed_version(v), source=source_label,
+                fixed_version=_fixed_version(v),
+                source=source_label,
                 description=(v.get("summary") or v.get("details") or "")[:1024],
-                references=refs, now=now,
+                references=refs,
+                now=now,
             ):
                 added += 1
     return added
@@ -200,48 +240,74 @@ def _process(db, *, scan_id, ecosystem: str, source_label: str,
 @celery_app.task(name="meridian.jobs.vuln.scan")
 def scan() -> dict[str, Any]:
     with session_scope() as db:
-        started = datetime.now(timezone.utc)
-        row = db.execute(text("""
+        started = datetime.now(UTC)
+        row = db.execute(
+            text("""
             INSERT INTO vuln_scans (started_at, source, status)
             VALUES (:t, 'osv', 'running') RETURNING id
-        """), {"t": started}).first()
+        """),
+            {"t": started},
+        ).first()
         scan_id = row.id
 
         try:
             apt_pkgs = _list_apt_packages()
             pip_pkgs = _list_pip_packages()
             new_count = 0
-            new_count += _process(db, scan_id=scan_id, ecosystem="Debian",
-                                  source_label="apt", packages=apt_pkgs)
-            new_count += _process(db, scan_id=scan_id, ecosystem="PyPI",
-                                  source_label="pip", packages=pip_pkgs)
+            new_count += _process(
+                db, scan_id=scan_id, ecosystem="Debian", source_label="apt", packages=apt_pkgs
+            )
+            new_count += _process(
+                db, scan_id=scan_id, ecosystem="PyPI", source_label="pip", packages=pip_pkgs
+            )
 
             # Anything previously 'open' but not rediscovered is candidate-fixed.
             # We only flip status when the package version has changed, so the
             # upsert path keeps it 'open' if the same CVE still applies.
-            db.execute(text("""
+            db.execute(
+                text("""
                 UPDATE vuln_findings SET status = 'fixed'
                  WHERE status = 'open' AND updated_at < :started
-            """), {"started": started})
+            """),
+                {"started": started},
+            )
 
-            db.execute(text("""
+            db.execute(
+                text("""
                 UPDATE vuln_scans
                    SET status = 'done', completed_at = :t, findings_count = :n
                  WHERE id = :id
-            """), {"t": datetime.now(timezone.utc), "n": new_count, "id": scan_id})
+            """),
+                {"t": datetime.now(UTC), "n": new_count, "id": scan_id},
+            )
 
-            audit(db, action="vuln.scan.complete",
-                  target_type="vuln_scan", target_key=str(scan_id),
-                  payload={"apt_count": len(apt_pkgs), "pip_count": len(pip_pkgs),
-                           "new_findings": new_count})
-            return {"scan_id": str(scan_id), "apt": len(apt_pkgs),
-                    "pip": len(pip_pkgs), "new_findings": new_count}
-        except Exception as e:  # noqa: BLE001
-            db.execute(text("""
+            audit(
+                db,
+                action="vuln.scan.complete",
+                target_type="vuln_scan",
+                target_key=str(scan_id),
+                payload={"apt_count": len(apt_pkgs), "pip_count": len(pip_pkgs), "new_findings": new_count},
+            )
+            return {
+                "scan_id": str(scan_id),
+                "apt": len(apt_pkgs),
+                "pip": len(pip_pkgs),
+                "new_findings": new_count,
+            }
+        except Exception as e:
+            db.execute(
+                text("""
                 UPDATE vuln_scans SET status = 'error', completed_at = :t
                  WHERE id = :id
-            """), {"t": datetime.now(timezone.utc), "id": scan_id})
-            audit(db, action="vuln.scan.error",
-                  target_type="vuln_scan", target_key=str(scan_id),
-                  payload={"error": str(e)[:500]}, outcome="error")
+            """),
+                {"t": datetime.now(UTC), "id": scan_id},
+            )
+            audit(
+                db,
+                action="vuln.scan.error",
+                target_type="vuln_scan",
+                target_key=str(scan_id),
+                payload={"error": str(e)[:500]},
+                outcome="error",
+            )
             raise

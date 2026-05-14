@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import mimetypes
-import re
-from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
@@ -14,12 +14,15 @@ from sqlalchemy.orm import Session as OrmSession
 from app.audit.logger import record as audit
 from app.auth.deps import client_ip, require_permission
 from app.branding.assets import (
-    ALLOWED_KINDS, get_spec, remove_previous, save_asset,
+    ALLOWED_KINDS,
+    get_spec,
+    remove_previous,
+    save_asset,
 )
 from app.db import fastapi_dep_db
-from app.models.branding import Branding, load as load_branding
+from app.models.branding import Branding
+from app.models.branding import load as load_branding
 from app.models.user import User
-
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
@@ -124,14 +127,11 @@ async def patch_branding(
     b = load_branding(db)
 
     if body.theme is not None and body.theme not in _THEME_ALLOWED:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"theme must be one of {sorted(_THEME_ALLOWED)}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"theme must be one of {sorted(_THEME_ALLOWED)}")
     if body.accent_hex is not None and not _HEX_RE.match(body.accent_hex):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "accent_hex must be #rrggbb")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "accent_hex must be #rrggbb")
     if body.logo_click_target is not None and body.logo_click_target not in _TARGET_ALLOWED:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "logo_click_target must be _blank or _self")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "logo_click_target must be _blank or _self")
     # vendor_attribution_hidden used to be Enterprise-license-gated.
     # Apache 2.0 removed the licensing subsystem (2026-05-13) — anyone
     # can hide the vendor attribution on their own deployment now.
@@ -145,17 +145,22 @@ async def patch_branding(
             setattr(b, field_name, value)
             changed.append(field_name)
 
-    b.updated_at = datetime.now(timezone.utc)
+    b.updated_at = datetime.now(UTC)
     b.updated_by = user.id
 
     # Audit payload deliberately DOES NOT include the full AUP/MOTD text —
     # just the field names that changed. Full versioning of AUP text is a
     # separate mechanism (aup_versions table).
-    audit(db, user_id=user.id, action="branding.update",
-          target_type="branding", target_key="1",
-          payload={"fields": changed},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="branding.update",
+        target_type="branding",
+        target_key="1",
+        payload={"fields": changed},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
     return {"updated": changed, "current": _serialize(b)}
 
@@ -172,8 +177,7 @@ async def upload_asset(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     if kind not in ALLOWED_KINDS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"kind must be one of {ALLOWED_KINDS}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"kind must be one of {ALLOWED_KINDS}")
     spec = get_spec(kind)
     try:
         storage_path, size, sha256, sniffed = save_asset(
@@ -188,19 +192,28 @@ async def upload_asset(
     b = load_branding(db)
     previous = getattr(b, spec.field_name)
     setattr(b, spec.field_name, storage_path)
-    b.updated_at = datetime.now(timezone.utc)
+    b.updated_at = datetime.now(UTC)
     b.updated_by = user.id
     db.commit()
 
     removed = remove_previous(previous)
 
-    audit(db, user_id=user.id, action="branding.asset.upload",
-          target_type="branding_asset", target_key=kind,
-          payload={"size_bytes": size, "sha256": sha256, "mime": sniffed,
-                   "storage_path": storage_path,
-                   "previous_removed": removed},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="branding.asset.upload",
+        target_type="branding_asset",
+        target_key=kind,
+        payload={
+            "size_bytes": size,
+            "sha256": sha256,
+            "mime": sniffed,
+            "storage_path": storage_path,
+            "previous_removed": removed,
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {
         "kind": kind,
         "url": f"/api/v1/branding/assets/{kind}?v={sha256[:8]}",
@@ -225,14 +238,13 @@ async def get_asset(
         return Response(status_code=404)
     p = Path(path_str)
     if not p.is_file():
-        return Response(status_code=410)   # stored-but-missing
+        return Response(status_code=410)  # stored-but-missing
     mime, _ = mimetypes.guess_type(p.name)
     headers = {
         # Browsers should cache by querystring version (we include ?v=sha256 on upload).
         "Cache-Control": "public, max-age=300",
     }
-    return FileResponse(p, media_type=mime or "application/octet-stream",
-                        headers=headers, filename=p.name)
+    return FileResponse(p, media_type=mime or "application/octet-stream", headers=headers, filename=p.name)
 
 
 @router.delete("/assets/{kind}", status_code=204, response_model=None)
@@ -243,19 +255,23 @@ async def delete_asset(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> None:
     if kind not in ALLOWED_KINDS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"kind must be one of {ALLOWED_KINDS}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"kind must be one of {ALLOWED_KINDS}")
     spec = get_spec(kind)
     b = load_branding(db)
     previous = getattr(b, spec.field_name)
     if previous:
         remove_previous(previous)
         setattr(b, spec.field_name, None)
-        b.updated_at = datetime.now(timezone.utc)
+        b.updated_at = datetime.now(UTC)
         b.updated_by = user.id
         db.commit()
-    audit(db, user_id=user.id, action="branding.asset.delete",
-          target_type="branding_asset", target_key=kind,
-          payload={"previous": previous},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="branding.asset.delete",
+        target_type="branding_asset",
+        target_key=kind,
+        payload={"previous": previous},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )

@@ -1,9 +1,18 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import BYTEA, INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 

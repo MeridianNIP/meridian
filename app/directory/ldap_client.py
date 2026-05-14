@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import ssl
-import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+import ssl
 from typing import Any
+import uuid
 
-from ldap3 import ALL_ATTRIBUTES, Connection, Server, Tls
+from ldap3 import Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
@@ -14,20 +14,44 @@ from sqlalchemy.orm import Session as OrmSession
 from app.models.directory import DirectoryIntegration
 from app.secrets_vault.vault import decrypt_field
 
-
 # Attribute lists we request by default. Trimming keeps LDAP responses small.
 _USER_ATTRS = [
-    "sAMAccountName", "userPrincipalName", "cn", "displayName", "mail",
-    "givenName", "sn", "title", "department", "company", "manager",
-    "telephoneNumber", "mobile", "physicalDeliveryOfficeName",
-    "memberOf", "userAccountControl", "pwdLastSet", "accountExpires",
-    "lastLogonTimestamp", "whenCreated", "whenChanged",
-    "distinguishedName", "objectSid", "objectGUID",
+    "sAMAccountName",
+    "userPrincipalName",
+    "cn",
+    "displayName",
+    "mail",
+    "givenName",
+    "sn",
+    "title",
+    "department",
+    "company",
+    "manager",
+    "telephoneNumber",
+    "mobile",
+    "physicalDeliveryOfficeName",
+    "memberOf",
+    "userAccountControl",
+    "pwdLastSet",
+    "accountExpires",
+    "lastLogonTimestamp",
+    "whenCreated",
+    "whenChanged",
+    "distinguishedName",
+    "objectSid",
+    "objectGUID",
 ]
 
 _GROUP_ATTRS = [
-    "cn", "sAMAccountName", "displayName", "description",
-    "member", "managedBy", "groupType", "distinguishedName", "whenCreated",
+    "cn",
+    "sAMAccountName",
+    "displayName",
+    "description",
+    "member",
+    "managedBy",
+    "groupType",
+    "distinguishedName",
+    "whenCreated",
 ]
 
 
@@ -66,7 +90,7 @@ def _decode_filetime(ft: int | None) -> datetime | None:
         return None
     seconds = ft / 10_000_000 - 11_644_473_600
     try:
-        return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        return datetime.fromtimestamp(seconds, tz=UTC)
     except (OverflowError, OSError, ValueError):
         return None
 
@@ -87,8 +111,11 @@ def _serialize_entry(entry: Any) -> dict[str, Any]:
         except (TypeError, ValueError):
             pass
     if "accountExpires" in out:
-        out["_account_expires"] = _decode_filetime(int(out["accountExpires"])).isoformat() \
-            if isinstance(out["accountExpires"], (int, str)) and _decode_filetime(int(out["accountExpires"])) else None
+        out["_account_expires"] = (
+            _decode_filetime(int(out["accountExpires"])).isoformat()
+            if isinstance(out["accountExpires"], (int, str)) and _decode_filetime(int(out["accountExpires"]))
+            else None
+        )
     out["dn"] = getattr(entry, "entry_dn", None) or out.get("distinguishedName")
     return out
 
@@ -113,7 +140,9 @@ class LDAPClient:
                 validate=ssl.CERT_REQUIRED,
                 version=ssl.PROTOCOL_TLS_CLIENT,
                 ca_certs_file=integ.ca_cert_path,
-            ) if integ.ca_cert_path else Tls(
+            )
+            if integ.ca_cert_path
+            else Tls(
                 validate=ssl.CERT_REQUIRED,
                 version=ssl.PROTOCOL_TLS_CLIENT,
             ),
@@ -134,6 +163,7 @@ class LDAPClient:
 
     def test(self) -> TestResult:
         import time
+
         started = time.monotonic()
         try:
             with self._connect() as conn:
@@ -154,8 +184,9 @@ class LDAPClient:
     def search_user(self, query: str, *, limit: int = 25) -> list[dict]:
         # Match against common identity attributes. Escape parentheses / backslashes
         # to avoid filter injection.
-        safe = query.translate(str.maketrans({"(": r"\28", ")": r"\29",
-                                               "\\": r"\5c", "*": r"\2a", "\x00": r"\00"}))
+        safe = query.translate(
+            str.maketrans({"(": r"\28", ")": r"\29", "\\": r"\5c", "*": r"\2a", "\x00": r"\00"})
+        )
         filt = (
             f"(&(objectClass=user)(!(objectClass=computer))"
             f"(|(sAMAccountName=*{safe}*)"
@@ -191,9 +222,17 @@ class LDAPClient:
         """
         if not password:
             return None
-        safe = (username or "").translate(str.maketrans({
-            "(": r"\28", ")": r"\29", "\\": r"\5c", "*": r"\2a", "\x00": r"\00",
-        }))
+        safe = (username or "").translate(
+            str.maketrans(
+                {
+                    "(": r"\28",
+                    ")": r"\29",
+                    "\\": r"\5c",
+                    "*": r"\2a",
+                    "\x00": r"\00",
+                }
+            )
+        )
         filt = (
             f"(&(objectClass=user)(!(objectClass=computer))"
             f"(|(sAMAccountName={safe})"
@@ -217,10 +256,13 @@ class LDAPClient:
         # Second bind, as the user themselves, to verify the password.
         try:
             user_conn = Connection(
-                self.server, user=user_dn, password=password,
+                self.server,
+                user=user_dn,
+                password=password,
                 authentication="SIMPLE",
                 receive_timeout=self.integ.query_timeout_s,
-                auto_bind=True, raise_exceptions=True,
+                auto_bind=True,
+                raise_exceptions=True,
             )
             bound = user_conn.bound
             user_conn.unbind()
@@ -235,7 +277,7 @@ class LDAPClient:
         if m is not None:
             try:
                 out["memberOf"] = [str(v) for v in m.values]
-            except Exception:  # noqa: BLE001
+            except Exception:
                 out["memberOf"] = [str(m)]
         else:
             out["memberOf"] = []
@@ -244,15 +286,21 @@ class LDAPClient:
 
     def get_user_by_dn(self, dn: str) -> dict | None:
         with self._connect() as conn:
-            conn.search(search_base=dn, search_filter="(objectClass=user)",
-                       attributes=_USER_ATTRS, size_limit=1, search_scope="BASE")
+            conn.search(
+                search_base=dn,
+                search_filter="(objectClass=user)",
+                attributes=_USER_ATTRS,
+                size_limit=1,
+                search_scope="BASE",
+            )
             if not conn.entries:
                 return None
             return _serialize_entry(conn.entries[0])
 
     def search_group(self, query: str, *, limit: int = 25) -> list[dict]:
-        safe = query.translate(str.maketrans({"(": r"\28", ")": r"\29",
-                                               "\\": r"\5c", "*": r"\2a", "\x00": r"\00"}))
+        safe = query.translate(
+            str.maketrans({"(": r"\28", ")": r"\29", "\\": r"\5c", "*": r"\2a", "\x00": r"\00"})
+        )
         filt = (
             f"(&(objectClass=group)"
             f"(|(sAMAccountName=*{safe}*)"
@@ -270,8 +318,13 @@ class LDAPClient:
 
     def get_group_by_dn(self, dn: str) -> dict | None:
         with self._connect() as conn:
-            conn.search(search_base=dn, search_filter="(objectClass=group)",
-                       attributes=_GROUP_ATTRS, size_limit=1, search_scope="BASE")
+            conn.search(
+                search_base=dn,
+                search_filter="(objectClass=group)",
+                attributes=_GROUP_ATTRS,
+                size_limit=1,
+                search_scope="BASE",
+            )
             if not conn.entries:
                 return None
             return _serialize_entry(conn.entries[0])
@@ -280,9 +333,12 @@ class LDAPClient:
 def load_bind_password(db: OrmSession, bind_secret_id: uuid.UUID | None) -> str | None:
     if bind_secret_id is None:
         return None
-    row = db.execute(text("""
+    row = db.execute(
+        text("""
         SELECT ciphertext, nonce FROM secrets WHERE id = :id
-    """), {"id": bind_secret_id}).first()
+    """),
+        {"id": bind_secret_id},
+    ).first()
     if row is None:
         return None
     # secrets table splits nonce (bytea) + ciphertext (bytea); our vault

@@ -17,17 +17,18 @@ class ThreatIntelSource(Base):
     base_url, timeout_s, auth_header. Seeded at first boot so the admin
     page always has the full list of 12 built-in providers.
     """
+
     __tablename__ = "threat_intel_sources"
 
-    source_key: Mapped[str]    = mapped_column(Text, primary_key=True)
-    display_name: Mapped[str]  = mapped_column(Text, nullable=False)
-    category: Mapped[str]      = mapped_column(Text, nullable=False)  # vulnerability|reputation|exposure
+    source_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)  # vulnerability|reputation|exposure
     requires_key: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    enabled: Mapped[bool]      = mapped_column(Boolean, nullable=False, default=True)
-    config: Mapped[dict]       = mapped_column(JSONB, nullable=False, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
-        server_default="now()")
+        DateTime(timezone=True), nullable=False, server_default="now()"
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
-        server_default="now()")
+        DateTime(timezone=True), nullable=False, server_default="now()"
+    )

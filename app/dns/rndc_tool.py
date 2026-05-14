@@ -5,17 +5,18 @@ Requires `rndc-confgen -a` to have been run during install (which sets up
 local-only control channel bound to 127.0.0.1:953. If rndc isn't configured,
 the call fails cleanly.
 """
+
 from __future__ import annotations
 
 import asyncio
 import re
 
-
 _ZONE_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 
 
-async def rndc_flush(*, zone: str | None = None, view: str | None = None,
-                     timeout_s: float = 15.0) -> dict[str, object]:
+async def rndc_flush(
+    *, zone: str | None = None, view: str | None = None, timeout_s: float = 15.0
+) -> dict[str, object]:
     """Call `rndc flush` (all) or `rndc flushname <zone>` (targeted).
 
     `rndc` is NOT in the sandbox allowlist because it's an administrative
@@ -37,15 +38,17 @@ async def rndc_flush(*, zone: str | None = None, view: str | None = None,
         args += ["in", view]
 
     proc = await asyncio.create_subprocess_exec(
-        "/usr/sbin/rndc", *args,
+        "/usr/sbin/rndc",
+        *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     try:
         stdout_b, stderr_b = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout_s,
+            proc.communicate(),
+            timeout=timeout_s,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         raise RuntimeError(f"rndc {' '.join(args)} timed out after {timeout_s}s")
 

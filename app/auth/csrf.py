@@ -11,6 +11,7 @@ header → cross-origin POSTs fail.
 Applies only when a session cookie is present. API-token auth bypasses
 the check (the bearer already proves intent).
 """
+
 from __future__ import annotations
 
 import hmac
@@ -20,22 +21,21 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-
 CSRF_COOKIE = "meridian_csrf"
 CSRF_HEADER = "X-CSRF-Token"
-SESSION_COOKIE = "meridian_session"    # set by app.auth.session_manager
+SESSION_COOKIE = "meridian_session"  # set by app.auth.session_manager
 
 # Endpoints that should never require a CSRF header — strictly the ones that
 # have no session cookie flow (public inbound webhooks authenticate via HMAC)
 # or are the actual login POST (which creates the session in the first place).
 _EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
-    "/api/v1/webhooks/inbound/",     # HMAC-signed, own authz
-    "/ui/login",                      # creating the session; no prior cookie
-    "/api/v1/auth/login",             # same
+    "/api/v1/webhooks/inbound/",  # HMAC-signed, own authz
+    "/ui/login",  # creating the session; no prior cookie
+    "/api/v1/auth/login",  # same
     "/api/v1/auth/recovery/challenge",  # unauth — forgot-password flow
-    "/api/v1/auth/recovery/verify",     # unauth — same
-    "/api/v1/auth/recovery/reset",      # unauth — same
-    "/api/v1/auth/lockout-appeal",      # unauth — locked-user appeal form
+    "/api/v1/auth/recovery/verify",  # unauth — same
+    "/api/v1/auth/recovery/reset",  # unauth — same
+    "/api/v1/auth/lockout-appeal",  # unauth — locked-user appeal form
     "/healthz",
 )
 
@@ -79,15 +79,13 @@ class CsrfMiddleware(BaseHTTPMiddleware):
             # we don't consume a JSON request stream.
             if not presented:
                 ctype = (request.headers.get("content-type") or "").lower()
-                if ctype.startswith(("application/x-www-form-urlencoded",
-                                     "multipart/form-data")):
+                if ctype.startswith(("application/x-www-form-urlencoded", "multipart/form-data")):
                     try:
                         form = await request.form()
-                        presented = (form.get("_csrf") or "")
-                    except Exception:  # noqa: BLE001
+                        presented = form.get("_csrf") or ""
+                    except Exception:
                         presented = ""
-            if (not cookie_val or not presented
-                    or not hmac.compare_digest(cookie_val, presented)):
+            if not cookie_val or not presented or not hmac.compare_digest(cookie_val, presented):
                 return Response(
                     content='{"error":"CSRF token missing or mismatched"}',
                     status_code=403,
@@ -100,9 +98,12 @@ class CsrfMiddleware(BaseHTTPMiddleware):
         # the whole point is that our own page JS can echo it into a header.
         if not request.cookies.get(CSRF_COOKIE):
             response.set_cookie(
-                CSRF_COOKIE, _issue_token(),
-                max_age=60 * 60 * 24 * 30,   # 30 days
-                secure=True, httponly=False, samesite="lax",
+                CSRF_COOKIE,
+                _issue_token(),
+                max_age=60 * 60 * 24 * 30,  # 30 days
+                secure=True,
+                httponly=False,
+                samesite="lax",
                 path="/",
             )
         return response

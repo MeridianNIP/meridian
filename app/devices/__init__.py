@@ -9,5 +9,6 @@ Public surface:
                                backup_device for each; the celery job is a thin
                                wrapper around this
 """
+
 from app.devices.backup import backup_all, backup_device  # noqa: F401
 from app.devices.connection import DEVICE_COMMANDS, fetch_running_config  # noqa: F401

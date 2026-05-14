@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-from typing import Annotated
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session as OrmSession
 
 from app.audit.logger import record_in_scope as audit_async
 from app.auth.deps import client_ip, require_permission
-from app.db import session_scope
 from app.dns.dig import DigRequest, DigResult, run_dig
 from app.dns.propagation import PropagationReport, check_propagation
 from app.dns.trace import TraceReport, run_trace
 from app.models.user import User
-
 
 router = APIRouter(prefix="/dns", tags=["dns"])
 
@@ -32,29 +27,35 @@ async def dig(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> DigResult:
     try:
-        result = await run_dig(DigRequest(
-            target=body.target,
-            record_type=body.record_type,
-            resolver=body.resolver,
-            flags=tuple(body.flags),
-        ))
+        result = await run_dig(
+            DigRequest(
+                target=body.target,
+                record_type=body.record_type,
+                resolver=body.resolver,
+                flags=tuple(body.flags),
+            )
+        )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
-    audit_async(user_id=user.id, action="dns.dig",
-          target_type="domain", target_key=body.target,
-          payload={
-              "record_type": body.record_type,
-              "resolver": body.resolver,
-              "flags": body.flags,
-              "returncode": result.returncode,
-              "duration_ms": result.duration_ms,
-              "truncated": result.truncated,
-              "timed_out": result.timed_out,
-          },
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"),
-          outcome="ok" if result.returncode == 0 else "error")
+    audit_async(
+        user_id=user.id,
+        action="dns.dig",
+        target_type="domain",
+        target_key=body.target,
+        payload={
+            "record_type": body.record_type,
+            "resolver": body.resolver,
+            "flags": body.flags,
+            "returncode": result.returncode,
+            "duration_ms": result.duration_ms,
+            "truncated": result.truncated,
+            "timed_out": result.timed_out,
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        outcome="ok" if result.returncode == 0 else "error",
+    )
     return result
 
 
@@ -71,23 +72,27 @@ async def propagation(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> PropagationReport:
     try:
-        report = await check_propagation(body.target, body.record_type,
-                                         user_id=user.id,
-                                         group_tag=(body.group_tag or None))
+        report = await check_propagation(
+            body.target, body.record_type, user_id=user.id, group_tag=(body.group_tag or None)
+        )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
-    audit_async(user_id=user.id, action="dns.propagation",
-          target_type="domain", target_key=body.target,
-          payload={
-              "record_type": body.record_type,
-              "divergence": report.divergence,
-              "unique_answers": list(report.unique_answers),
-              "resolvers_ok": sum(1 for r in report.rows if r.ok),
-              "resolvers_total": len(report.rows),
-          },
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.propagation",
+        target_type="domain",
+        target_key=body.target,
+        payload={
+            "record_type": body.record_type,
+            "divergence": report.divergence,
+            "unique_answers": list(report.unique_answers),
+            "resolvers_ok": sum(1 for r in report.rows if r.ok),
+            "resolvers_total": len(report.rows),
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return report
 
 
@@ -96,7 +101,7 @@ class TraceInput(BaseModel):
     record_type: str = "A"
     include_external: bool = True
     group_tag: str | None = None
-    mode: str = "answer"   # "answer" | "dnssec"
+    mode: str = "answer"  # "answer" | "dnssec"
 
 
 @router.post("/trace", response_model=TraceReport)
@@ -114,25 +119,32 @@ async def dns_trace(
     produces a DNSSEC-aware diagnosis summary. See app/dns/trace.py."""
     mode = body.mode if body.mode in ("answer", "dnssec") else "answer"
     try:
-        report = await run_trace(body.target, body.record_type,
-                                 user_id=user.id,
-                                 include_external=body.include_external,
-                                 group_tag=(body.group_tag or None),
-                                 mode=mode)
+        report = await run_trace(
+            body.target,
+            body.record_type,
+            user_id=user.id,
+            include_external=body.include_external,
+            group_tag=(body.group_tag or None),
+            mode=mode,
+        )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    audit_async(user_id=user.id, action="dns.trace",
-          target_type="domain", target_key=body.target,
-          payload={
-              "record_type": body.record_type,
-              "mode": mode,
-              "resolvers_total": len(report.rows),
-              "divergence": report.divergence,
-              "point_of_divergence": report.point_of_divergence,
-              "summary_severity": report.summary.severity,
-          },
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.trace",
+        target_type="domain",
+        target_key=body.target,
+        payload={
+            "record_type": body.record_type,
+            "mode": mode,
+            "resolvers_total": len(report.rows),
+            "divergence": report.divergence,
+            "point_of_divergence": report.point_of_divergence,
+            "summary_severity": report.summary.severity,
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return report
 
 
@@ -147,14 +159,17 @@ async def zone_health(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.zone_health import check_zone
+
     report = await check_zone(body.target)
-    audit_async(user_id=user.id, action="dns.zone_health",
-          target_type="domain", target_key=body.target,
-          payload={"worst": report.worst,
-                   "ns_count": len(report.ns_records),
-                   "findings": len(report.findings)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.zone_health",
+        target_type="domain",
+        target_key=body.target,
+        payload={"worst": report.worst, "ns_count": len(report.ns_records), "findings": len(report.findings)},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {
         "domain": report.domain,
         "ns_records": report.ns_records,
@@ -174,21 +189,22 @@ async def axfr(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.axfr import axfr_audit
+
     report = await axfr_audit(body.target)
-    audit_async(user_id=user.id, action="dns.axfr_audit",
-          target_type="domain", target_key=body.target,
-          payload={"any_exposed": report.any_exposed,
-                   "nameservers": len(report.rows)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"),
-          outcome="warn" if report.any_exposed else "ok")
+    audit_async(
+        user_id=user.id,
+        action="dns.axfr_audit",
+        target_type="domain",
+        target_key=body.target,
+        payload={"any_exposed": report.any_exposed, "nameservers": len(report.rows)},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        outcome="warn" if report.any_exposed else "ok",
+    )
     return {
         "domain": report.domain,
         "any_exposed": report.any_exposed,
-        "rows": [
-            {"nameserver": r.nameserver, "exposed": r.exposed, "detail": r.detail}
-            for r in report.rows
-        ],
+        "rows": [{"nameserver": r.nameserver, "exposed": r.exposed, "detail": r.detail} for r in report.rows],
     }
 
 
@@ -203,21 +219,31 @@ async def dnssec(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.dnssec import walk_chain
+
     report = await walk_chain(body.target)
-    audit_async(user_id=user.id, action="dns.dnssec",
-          target_type="domain", target_key=body.target,
-          payload={"worst": report.worst, "ad_flag": report.ad_flag,
-                   "chain_len": len(report.chain)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"),
-          outcome="warn" if report.worst in ("warn", "fail") else "ok")
+    audit_async(
+        user_id=user.id,
+        action="dns.dnssec",
+        target_type="domain",
+        target_key=body.target,
+        payload={"worst": report.worst, "ad_flag": report.ad_flag, "chain_len": len(report.chain)},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        outcome="warn" if report.worst in ("warn", "fail") else "ok",
+    )
     return {
         "target": report.target,
         "ad_flag": report.ad_flag,
         "worst": report.worst,
         "chain": [
-            {"zone": s.zone or ".", "has_ds": s.has_ds, "has_dnskey": s.has_dnskey,
-             "algorithms": s.algorithms, "outcome": s.outcome, "message": s.message}
+            {
+                "zone": s.zone or ".",
+                "has_ds": s.has_ds,
+                "has_dnskey": s.has_dnskey,
+                "algorithms": s.algorithms,
+                "outcome": s.outcome,
+                "message": s.message,
+            }
             for s in report.chain
         ],
     }
@@ -235,15 +261,20 @@ async def reverse_dns(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.reverse import reverse_lookup
+
     try:
         result = await reverse_lookup(body.ip, resolver=body.resolver)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    audit_async(user_id=user.id, action="dns.reverse",
-          target_type="ip", target_key=body.ip,
-          payload={"records": len(result.records), "resolver": body.resolver},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.reverse",
+        target_type="ip",
+        target_key=body.ip,
+        payload={"records": len(result.records), "resolver": body.resolver},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {
         "ip": result.ip,
         "reverse_zone": result.reverse_zone,
@@ -266,32 +297,45 @@ async def crtsh(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.crtsh import query_crtsh
+
     try:
         result = await query_crtsh(
-            body.target, limit=body.limit,
+            body.target,
+            limit=body.limit,
             include_expired=body.include_expired,
             include_subdomains=body.include_subdomains,
         )
     except RuntimeError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e))
-    audit_async(user_id=user.id, action="dns.crtsh",
-          target_type="domain", target_key=body.target,
-          payload={"entries_total": result.entry_count,
-                   "entries_shown": len(result.entries),
-                   "unique_issuers": len(result.unique_issuers),
-                   "subdomains_seen": len(result.subdomains_seen)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.crtsh",
+        target_type="domain",
+        target_key=body.target,
+        payload={
+            "entries_total": result.entry_count,
+            "entries_shown": len(result.entries),
+            "unique_issuers": len(result.unique_issuers),
+            "subdomains_seen": len(result.subdomains_seen),
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {
         "target": result.target,
         "entry_count": result.entry_count,
         "unique_issuers": list(result.unique_issuers),
         "subdomains_seen": list(result.subdomains_seen),
         "entries": [
-            {"crt_sh_id": e.crt_sh_id, "issuer_name": e.issuer_name,
-             "common_name": e.common_name, "name_value": e.name_value,
-             "not_before": e.not_before, "not_after": e.not_after,
-             "entry_timestamp": e.entry_timestamp}
+            {
+                "crt_sh_id": e.crt_sh_id,
+                "issuer_name": e.issuer_name,
+                "common_name": e.common_name,
+                "name_value": e.name_value,
+                "not_before": e.not_before,
+                "not_after": e.not_after,
+                "entry_timestamp": e.entry_timestamp,
+            }
             for e in result.entries
         ],
     }
@@ -311,16 +355,20 @@ async def whois_single(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.whois_tool import whois_domain
+
     try:
         result = await whois_domain(body.target)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    audit_async(user_id=user.id, action="dns.whois", target_type="domain",
-                target_key=body.target,
-                payload={"registrar": (result["parsed"] or {}).get("registrar"),
-                         "rc": result["returncode"]},
-                ip=client_ip(request),
-                user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.whois",
+        target_type="domain",
+        target_key=body.target,
+        payload={"registrar": (result["parsed"] or {}).get("registrar"), "rc": result["returncode"]},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result
 
 
@@ -335,12 +383,17 @@ async def whois_bulk_route(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.whois_tool import whois_bulk
+
     result = await whois_bulk(body.targets)
-    audit_async(user_id=user.id, action="dns.whois_bulk", target_type="batch",
-                target_key=f"{len(body.targets)}-domains",
-                payload={"total": result["total"]},
-                ip=client_ip(request),
-                user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.whois_bulk",
+        target_type="batch",
+        target_key=f"{len(body.targets)}-domains",
+        payload={"total": result["total"]},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result
 
 
@@ -356,16 +409,20 @@ async def typosquat(
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.whois_tool import typosquat_scan
+
     try:
         result = await typosquat_scan(body.target, max_variants=body.max_variants)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    audit_async(user_id=user.id, action="dns.typosquat", target_type="domain",
-                target_key=body.target,
-                payload={"checked": result["variants_checked"],
-                         "hits": result["total_hits"]},
-                ip=client_ip(request),
-                user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.typosquat",
+        target_type="domain",
+        target_key=body.target,
+        payload={"checked": result["variants_checked"], "hits": result["total_hits"]},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result
 
 
@@ -383,15 +440,20 @@ async def rndc_flush_route(
     user: User = Depends(require_permission("admin.services.restart")),
 ) -> dict:
     from app.dns.rndc_tool import rndc_flush
+
     try:
         result = await rndc_flush(zone=body.zone, view=body.view)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    audit_async(user_id=user.id, action="dns.rndc_flush",
-                target_type="zone", target_key=body.zone or "ALL",
-                payload={"rc": result["returncode"], "view": body.view},
-                ip=client_ip(request),
-                user_agent=request.headers.get("user-agent"))
+    audit_async(
+        user_id=user.id,
+        action="dns.rndc_flush",
+        target_type="zone",
+        target_key=body.zone or "ALL",
+        payload={"rc": result["returncode"], "view": body.view},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return result
 
 
@@ -404,13 +466,15 @@ class _SpfInput(BaseModel):
 
 @router.post("/spf-validate")
 async def spf_validate(
-    request: Request, body: _SpfInput,
+    request: Request,
+    body: _SpfInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.mail_auth import validate_spf
+
     try:
         return await validate_spf(body.domain)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
 
 
@@ -421,25 +485,29 @@ class _DkimInput(BaseModel):
 
 @router.post("/dkim-validate")
 async def dkim_validate(
-    request: Request, body: _DkimInput,
+    request: Request,
+    body: _DkimInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.mail_auth import validate_dkim
+
     try:
         return await validate_dkim(body.domain, body.selector)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
 
 
 @router.post("/dmarc-validate")
 async def dmarc_validate(
-    request: Request, body: _SpfInput,
+    request: Request,
+    body: _SpfInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.mail_auth import validate_dmarc
+
     try:
         return await validate_dmarc(body.domain)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{type(e).__name__}: {e}")
 
 
@@ -450,26 +518,32 @@ class _LintInput(BaseModel):
 
 @router.post("/spf-lint")
 async def spf_lint(
-    request: Request, body: _LintInput,
+    request: Request,
+    body: _LintInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.mail_auth import _lint_spf_record
+
     return _lint_spf_record(body.raw_record.strip())
 
 
 @router.post("/dkim-lint")
 async def dkim_lint(
-    request: Request, body: _LintInput,
+    request: Request,
+    body: _LintInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.mail_auth import _lint_dkim_record
+
     return _lint_dkim_record(body.raw_record.strip())
 
 
 @router.post("/dmarc-lint")
 async def dmarc_lint(
-    request: Request, body: _LintInput,
+    request: Request,
+    body: _LintInput,
     user: User = Depends(require_permission("dns.sandbox")),
 ) -> dict:
     from app.dns.mail_auth import _lint_dmarc_record
+
     return _lint_dmarc_record(body.raw_record.strip())

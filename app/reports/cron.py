@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
-def cadence_to_cron(cadence: str, *, time_of_day: int = 7,
-                    day_of_week: int = 1, day_of_month: int = 1,
-                    custom: str | None = None) -> str:
+def cadence_to_cron(
+    cadence: str,
+    *,
+    time_of_day: int = 7,
+    day_of_week: int = 1,
+    day_of_month: int = 1,
+    custom: str | None = None,
+) -> str:
     """Translate the declarative cadence form from the UI into a 5-field
     cron expression. `time_of_day` is an hour 0-23; `day_of_week` is
     0=Sun..6=Sat; `day_of_month` is 1-28 (clamped to avoid Feb edge)."""
@@ -32,13 +37,13 @@ def next_fire_after(cron_expr: str, now: datetime | None = None) -> datetime | N
     — rich enough for the cadence macros + simple custom expressions.
     Returns UTC datetime or None on parse error."""
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
     fields = cron_expr.split()
     if len(fields) != 5:
         return None
     try:
-        m_set   = _parse_field(fields[0], 0, 59)
-        h_set   = _parse_field(fields[1], 0, 23)
+        m_set = _parse_field(fields[0], 0, 59)
+        h_set = _parse_field(fields[1], 0, 23)
         dom_set = _parse_field(fields[2], 1, 31)
         mon_set = _parse_field(fields[3], 1, 12)
         dow_set = _parse_field(fields[4], 0, 6)
@@ -48,8 +53,13 @@ def next_fire_after(cron_expr: str, now: datetime | None = None) -> datetime | N
     # Walk minute by minute up to ~366 days. That's enough for `0 0 1 1 *`.
     t = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
     for _ in range(60 * 24 * 366):
-        if (t.minute in m_set and t.hour in h_set and t.month in mon_set
-                and t.day in dom_set and (t.weekday() + 1) % 7 in dow_set):
+        if (
+            t.minute in m_set
+            and t.hour in h_set
+            and t.month in mon_set
+            and t.day in dom_set
+            and (t.weekday() + 1) % 7 in dow_set
+        ):
             return t
         t += timedelta(minutes=1)
     return None

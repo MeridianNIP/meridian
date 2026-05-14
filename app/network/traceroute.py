@@ -1,15 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import ipaddress
 import re
-from dataclasses import dataclass
 
 from app.sandbox.runner import run
 
-
-_HOP_LINE = re.compile(
-    r"^\s*(?P<ttl>\d+)\s+(?P<host>\S+)\s+\((?P<ip>[^)]+)\)\s+(?P<rtts>.+)$"
-)
+_HOP_LINE = re.compile(r"^\s*(?P<ttl>\d+)\s+(?P<host>\S+)\s+\((?P<ip>[^)]+)\)\s+(?P<rtts>.+)$")
 _RTT = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*ms")
 
 
@@ -80,9 +77,12 @@ async def run_traceroute(req: TraceRequest, *, scope: str | None = None) -> Trac
     _validate(req, scope=scope)
     args = [
         "-n" if False else "",  # keep hostname resolution; drop flag means show names
-        "-m", str(req.max_hops),
-        "-w", str(req.timeout_s),
-        "-q", str(req.per_hop_probes),
+        "-m",
+        str(req.max_hops),
+        "-w",
+        str(req.timeout_s),
+        "-q",
+        str(req.per_hop_probes),
     ]
     if req.use_icmp:
         args.append("-I")

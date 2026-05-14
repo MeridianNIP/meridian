@@ -1,13 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import ipaddress
 import re
 import statistics
-from dataclasses import dataclass
-from typing import Iterable
 
 from app.sandbox.runner import run
-
 
 _RTT_LINE = re.compile(r"time[=<]\s*(?P<rtt>\d+\.?\d*)\s*ms")
 _SUMMARY = re.compile(
@@ -96,9 +94,14 @@ def _parse(stdout: str) -> PingStats:
     jitter = rtt_mdev
     loss_pct = 0.0 if transmitted == 0 else round(100 * (transmitted - received) / transmitted, 2)
     return PingStats(
-        transmitted=transmitted, received=received, loss_pct=loss_pct,
-        rtt_min=rtt_min, rtt_avg=rtt_avg, rtt_max=rtt_max,
-        rtt_mdev=rtt_mdev, jitter=jitter,
+        transmitted=transmitted,
+        received=received,
+        loss_pct=loss_pct,
+        rtt_min=rtt_min,
+        rtt_avg=rtt_avg,
+        rtt_max=rtt_max,
+        rtt_mdev=rtt_mdev,
+        jitter=jitter,
     )
 
 
@@ -106,11 +109,15 @@ async def run_ping(req: PingRequest, *, scope: str | None = None) -> PingResult:
     _validate(req, scope=scope)
     binary = "ping6" if req.use_ipv6 else "ping"
     args = [
-        "-c", str(req.count),
-        "-i", str(req.interval_s),
-        "-W", str(int(req.timeout_s)),
-        "-s", str(req.packet_size),
-        "-n",            # numeric output, no reverse DNS
+        "-c",
+        str(req.count),
+        "-i",
+        str(req.interval_s),
+        "-W",
+        str(int(req.timeout_s)),
+        "-s",
+        str(req.packet_size),
+        "-n",  # numeric output, no reverse DNS
         req.target,
     ]
     result = await run(binary, args, timeout_s=req.count * req.interval_s + 5)

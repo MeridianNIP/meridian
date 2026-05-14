@@ -1,10 +1,10 @@
 """Scheduled Reports HTTP surface — list / create / edit / delete
 schedules, list runs, download artifact, trigger ad-hoc runs."""
+
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
-from typing import Any
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
@@ -21,16 +21,20 @@ from app.reports.cron import cadence_to_cron, next_fire_after
 from app.reports.generators import REPORT_REGISTRY
 from app.reports.runner import execute_report
 
-
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 def _ser_schedule(s: ReportSchedule) -> dict:
     return {
-        "id": str(s.id), "name": s.name, "report_type": s.report_type,
-        "cadence": s.cadence, "cron_expression": s.cron_expression,
-        "format": s.format, "delivery": s.delivery,
-        "email_to": s.email_to, "filters": s.filters or {},
+        "id": str(s.id),
+        "name": s.name,
+        "report_type": s.report_type,
+        "cadence": s.cadence,
+        "cron_expression": s.cron_expression,
+        "format": s.format,
+        "delivery": s.delivery,
+        "email_to": s.email_to,
+        "filters": s.filters or {},
         "enabled": s.enabled,
         "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
         "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
@@ -43,7 +47,8 @@ def _ser_run(r: ReportRun) -> dict:
     return {
         "id": r.id,
         "schedule_id": str(r.schedule_id) if r.schedule_id else None,
-        "report_type": r.report_type, "format": r.format,
+        "report_type": r.report_type,
+        "format": r.format,
         "started_at": r.started_at.isoformat() if r.started_at else None,
         "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         "status": r.status,
@@ -87,9 +92,13 @@ async def catalog(user: User = Depends(current_user)) -> dict:
     """Return the registry of available report types for the form."""
     return {
         "reports": [
-            {"key": k, "label": v["label"], "description": v["description"],
-             "default_filters": v["default_filters"],
-             "filter_schema": v["filter_schema"]}
+            {
+                "key": k,
+                "label": v["label"],
+                "description": v["description"],
+                "default_filters": v["default_filters"],
+                "filter_schema": v["filter_schema"],
+            }
             for k, v in REPORT_REGISTRY.items()
         ],
     }
@@ -106,47 +115,59 @@ async def list_schedules(
 
 @router.post("", status_code=201)
 async def create_schedule(
-    request: Request, body: ScheduleIn,
+    request: Request,
+    body: ScheduleIn,
     user: User = Depends(require_permission("reports.schedule")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     if body.report_type not in REPORT_REGISTRY:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"unknown report_type {body.report_type!r}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unknown report_type {body.report_type!r}")
     if body.delivery == "email" and not body.email_to:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "email_to is required when delivery=email")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "email_to is required when delivery=email")
     try:
         cron_expr = cadence_to_cron(
-            body.cadence, time_of_day=body.time_of_day,
-            day_of_week=body.day_of_week, day_of_month=body.day_of_month,
+            body.cadence,
+            time_of_day=body.time_of_day,
+            day_of_week=body.day_of_week,
+            day_of_month=body.day_of_month,
             custom=body.custom_cron,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
     s = ReportSchedule(
-        owner_id=user.id, name=body.name,
+        owner_id=user.id,
+        name=body.name,
         report_type=body.report_type,
-        cadence=body.cadence, cron_expression=cron_expr,
-        format=body.format, delivery=body.delivery,
-        email_to=body.email_to, filters=body.filters or {},
+        cadence=body.cadence,
+        cron_expression=cron_expr,
+        format=body.format,
+        delivery=body.delivery,
+        email_to=body.email_to,
+        filters=body.filters or {},
         enabled=body.enabled,
         next_run_at=next_fire_after(cron_expr),
     )
     db.add(s)
     db.flush()
-    audit(db, user_id=user.id, action="report.schedule.create",
-          target_type="report_schedule", target_key=s.name,
-          payload={"report_type": s.report_type, "cadence": s.cadence},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="report.schedule.create",
+        target_type="report_schedule",
+        target_key=s.name,
+        payload={"report_type": s.report_type, "cadence": s.cadence},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return _ser_schedule(s)
 
 
 @router.patch("/{sid}")
 async def update_schedule(
-    request: Request, sid: uuid.UUID, body: SchedulePatch,
+    request: Request,
+    sid: uuid.UUID,
+    body: SchedulePatch,
     user: User = Depends(require_permission("reports.schedule")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
@@ -160,8 +181,7 @@ async def update_schedule(
             setattr(s, f, data[f])
 
     # Re-derive cron expression if any cadence-related field was touched.
-    if any(k in data for k in ("cadence", "time_of_day", "day_of_week",
-                               "day_of_month", "custom_cron")):
+    if any(k in data for k in ("cadence", "time_of_day", "day_of_week", "day_of_month", "custom_cron")):
         cadence = data.get("cadence", s.cadence)
         try:
             cron_expr = cadence_to_cron(
@@ -178,20 +198,26 @@ async def update_schedule(
         s.next_run_at = next_fire_after(cron_expr)
 
     if s.delivery == "email" and not s.email_to:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "email_to is required when delivery=email")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "email_to is required when delivery=email")
 
     db.flush()
-    audit(db, user_id=user.id, action="report.schedule.update",
-          target_type="report_schedule", target_key=s.name,
-          payload=data, ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="report.schedule.update",
+        target_type="report_schedule",
+        target_key=s.name,
+        payload=data,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return _ser_schedule(s)
 
 
 @router.delete("/{sid}")
 async def delete_schedule(
-    request: Request, sid: uuid.UUID,
+    request: Request,
+    sid: uuid.UUID,
     user: User = Depends(require_permission("reports.schedule")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
@@ -200,10 +226,16 @@ async def delete_schedule(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "schedule not found")
     name = s.name
     db.delete(s)
-    audit(db, user_id=user.id, action="report.schedule.delete",
-          target_type="report_schedule", target_key=name,
-          payload={}, ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="report.schedule.delete",
+        target_type="report_schedule",
+        target_key=name,
+        payload={},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"ok": True}
 
 
@@ -216,29 +248,40 @@ class RunNowIn(BaseModel):
 
 @router.post("/run")
 async def run_now(
-    request: Request, body: RunNowIn,
+    request: Request,
+    body: RunNowIn,
     user: User = Depends(require_permission("reports.schedule")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     if body.report_type not in REPORT_REGISTRY:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"unknown report_type {body.report_type!r}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unknown report_type {body.report_type!r}")
     schedule = None
     if body.schedule_id is not None:
         schedule = db.get(ReportSchedule, body.schedule_id)
         if schedule is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "schedule not found")
     run = execute_report(
-        db, report_type=body.report_type, fmt=body.format,
-        filters=body.filters or {}, schedule=schedule, triggered_by=user.id,
+        db,
+        report_type=body.report_type,
+        fmt=body.format,
+        filters=body.filters or {},
+        schedule=schedule,
+        triggered_by=user.id,
     )
-    audit(db, user_id=user.id, action="report.run",
-          target_type="report_run",
-          target_key=body.report_type,
-          payload={"status": run.status, "row_count": run.row_count,
-                   "schedule_id": str(schedule.id) if schedule else None},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="report.run",
+        target_type="report_run",
+        target_key=body.report_type,
+        payload={
+            "status": run.status,
+            "row_count": run.row_count,
+            "schedule_id": str(schedule.id) if schedule else None,
+        },
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return _ser_run(run)
 
 

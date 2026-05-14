@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings, load_key
-
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None

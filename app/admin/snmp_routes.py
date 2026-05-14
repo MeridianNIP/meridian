@@ -4,13 +4,14 @@ plaintext in the DB — they are, by design, the credential. The
 `access` column splits RO (read monitoring stats) from RW (not yet
 used for anything Meridian writes; reserved for future toggles).
 """
+
 from __future__ import annotations
 
+from pathlib import Path
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
-from pathlib import Path
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -24,13 +25,18 @@ def _regenerate_snmpd() -> None:
     hiccup doesn't break the admin CRUD flow — they surface in audit
     but don't 500 the PATCH/POST."""
     import subprocess
+
     try:
         subprocess.run(
             ["sudo", "-n", "/opt/meridian/scripts/regenerate-snmpd.sh"],
-            capture_output=True, text=True, timeout=15, check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
+
 
 from app.audit.logger import record as audit
 from app.auth.deps import client_ip, require_permission
@@ -38,16 +44,18 @@ from app.db import fastapi_dep_db
 from app.models.snmp import SnmpCommunity
 from app.models.user import User
 
-
 router = APIRouter(prefix="/admin/snmp", tags=["admin-snmp"])
 
 
 def _ser(c: SnmpCommunity) -> dict:
     return {
-        "id": str(c.id), "name": c.name, "access": c.access,
+        "id": str(c.id),
+        "name": c.name,
+        "access": c.access,
         "community": c.community,
         "allowed_sources": list(c.allowed_sources or []),
-        "v3_user": c.v3_user, "enabled": c.enabled,
+        "v3_user": c.v3_user,
+        "enabled": c.enabled,
     }
 
 
@@ -74,37 +82,48 @@ async def list_communities(
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> list[dict]:
-    rows = db.execute(
-        select(SnmpCommunity).order_by(SnmpCommunity.access, SnmpCommunity.name)
-    ).scalars().all()
+    rows = (
+        db.execute(select(SnmpCommunity).order_by(SnmpCommunity.access, SnmpCommunity.name)).scalars().all()
+    )
     return [_ser(c) for c in rows]
 
 
 @router.post("/communities", status_code=201)
 async def create_community(
-    request: Request, body: CommIn,
+    request: Request,
+    body: CommIn,
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
     c = SnmpCommunity(
-        name=body.name, access=body.access, community=body.community,
+        name=body.name,
+        access=body.access,
+        community=body.community,
         allowed_sources=list(body.allowed_sources or []),
-        v3_user=body.v3_user, enabled=body.enabled,
+        v3_user=body.v3_user,
+        enabled=body.enabled,
     )
     db.add(c)
     db.flush()
-    audit(db, user_id=user.id, action="admin.snmp.create",
-          target_type="snmp_community", target_key=c.name,
-          payload={"access": c.access,
-                   "allowed_sources": c.allowed_sources},
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.snmp.create",
+        target_type="snmp_community",
+        target_key=c.name,
+        payload={"access": c.access, "allowed_sources": c.allowed_sources},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     _regenerate_snmpd()
     return {"id": str(c.id)}
 
 
 @router.patch("/communities/{community_id}")
 async def update_community(
-    request: Request, community_id: uuid.UUID, body: CommPatch,
+    request: Request,
+    community_id: uuid.UUID,
+    body: CommPatch,
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> dict:
@@ -120,10 +139,16 @@ async def update_community(
     if body.allowed_sources is not None:
         c.allowed_sources = list(body.allowed_sources)
         changed["allowed_sources"] = list(body.allowed_sources)
-    audit(db, user_id=user.id, action="admin.snmp.update",
-          target_type="snmp_community", target_key=c.name,
-          payload=changed,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.snmp.update",
+        target_type="snmp_community",
+        target_key=c.name,
+        payload=changed,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     _regenerate_snmpd()
     return {"ok": True, "changed": changed}
 
@@ -149,7 +174,8 @@ async def download_mib(
 
 @router.delete("/communities/{community_id}", status_code=204, response_model=None)
 async def delete_community(
-    request: Request, community_id: uuid.UUID,
+    request: Request,
+    community_id: uuid.UUID,
     user: User = Depends(require_permission("admin.integrations.manage")),
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> None:
@@ -158,7 +184,13 @@ async def delete_community(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "community not found")
     name = c.name
     db.delete(c)
-    audit(db, user_id=user.id, action="admin.snmp.delete",
-          target_type="snmp_community", target_key=name,
-          ip=client_ip(request), user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="admin.snmp.delete",
+        target_type="snmp_community",
+        target_key=name,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     _regenerate_snmpd()

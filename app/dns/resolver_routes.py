@@ -11,11 +11,12 @@ schema.sql / the installer. Admins can delete or re-tag those rows same
 as any other house entry; the in-code fallback in propagation.py only
 kicks in if the table is completely empty.
 """
+
 from __future__ import annotations
 
 import ipaddress
-import uuid
 from typing import Literal
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
@@ -27,7 +28,6 @@ from app.auth.deps import client_ip, current_user
 from app.db import fastapi_dep_db
 from app.models.resolver import Resolver
 from app.models.user import User
-
 
 router = APIRouter(prefix="/dns/resolvers", tags=["dns"])
 
@@ -72,7 +72,11 @@ class ResolverOut(BaseModel):
     @classmethod
     def from_row(cls, r: Resolver, caller_id: uuid.UUID) -> ResolverOut:
         return cls(
-            id=r.id, name=r.name, ip=str(r.ip), region=r.region, notes=r.notes,
+            id=r.id,
+            name=r.name,
+            ip=str(r.ip),
+            region=r.region,
+            notes=r.notes,
             is_propagation_default=r.is_propagation_default,
             group_tag=r.group_tag,
             scope="house" if r.owner_user_id is None else "mine",
@@ -87,13 +91,15 @@ def list_groups(
     """All distinct group_tag values visible to the caller. Used by the
     Dig / Propagation / Hop Trace "Limit to group" selectors."""
     from sqlalchemy import distinct, func
+
     if _is_admin(user):
         q = select(distinct(Resolver.group_tag)).where(Resolver.group_tag.is_not(None))
     else:
-        q = (select(distinct(Resolver.group_tag))
-             .where(Resolver.group_tag.is_not(None))
-             .where((Resolver.owner_user_id.is_(None)) |
-                    (Resolver.owner_user_id == user.id)))
+        q = (
+            select(distinct(Resolver.group_tag))
+            .where(Resolver.group_tag.is_not(None))
+            .where((Resolver.owner_user_id.is_(None)) | (Resolver.owner_user_id == user.id))
+        )
     rows = db.execute(q.order_by(func.lower(Resolver.group_tag))).scalars().all()
     return [r for r in rows if r]
 
@@ -106,15 +112,19 @@ def list_resolvers(
     """House resolvers + the caller's own. Admins see everyone's as well, so
     they can debug user-reported issues."""
     from sqlalchemy import func
+
     if _is_admin(user):
         rows = db.execute(select(Resolver).order_by(func.lower(Resolver.name))).scalars().all()
     else:
-        rows = db.execute(
-            select(Resolver)
-            .where((Resolver.owner_user_id.is_(None)) |
-                   (Resolver.owner_user_id == user.id))
-            .order_by(func.lower(Resolver.name))
-        ).scalars().all()
+        rows = (
+            db.execute(
+                select(Resolver)
+                .where((Resolver.owner_user_id.is_(None)) | (Resolver.owner_user_id == user.id))
+                .order_by(func.lower(Resolver.name))
+            )
+            .scalars()
+            .all()
+        )
     return [ResolverOut.from_row(r, user.id) for r in rows]
 
 
@@ -126,23 +136,22 @@ def create_resolver(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> ResolverOut:
     if body.scope == "house" and not _is_admin(user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "Only admins can create house resolvers.")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only admins can create house resolvers.")
     if body.is_propagation_default and not _is_admin(user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "Only admins can flag resolvers as propagation defaults.")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only admins can flag resolvers as propagation defaults."
+        )
     owner = None if body.scope == "house" else user.id
     # Normalize group_tag -- trim, collapse whitespace, and snap the
     # casing to any existing group whose lowercased form matches. This
     # keeps "Corp DNS" and "corp dns" from living as two separate groups
     # due to typo casing.
     from sqlalchemy import func as _func
+
     group_raw = " ".join((body.group_tag or "").split()) or None
     if group_raw:
         existing_casing = db.execute(
-            select(Resolver.group_tag)
-            .where(_func.lower(Resolver.group_tag) == group_raw.lower())
-            .limit(1)
+            select(Resolver.group_tag).where(_func.lower(Resolver.group_tag) == group_raw.lower()).limit(1)
         ).scalar_one_or_none()
         if existing_casing:
             group_raw = existing_casing  # use canonical casing
@@ -150,8 +159,7 @@ def create_resolver(
     # WITHOUT relying on a post-rollback query (after a failed flush the
     # session can be in an aborted state, making the second query
     # flakey). The uniqueness key is (owner, ip, group_tag).
-    owner_cond = (Resolver.owner_user_id.is_(None) if owner is None
-                  else Resolver.owner_user_id == owner)
+    owner_cond = Resolver.owner_user_id.is_(None) if owner is None else Resolver.owner_user_id == owner
     existing = db.execute(
         select(Resolver).where(
             owner_cond,
@@ -166,7 +174,7 @@ def create_resolver(
             f"Error 409 (record already exists): a {body.scope} resolver with "
             f"IP {body.ip}{where} already exists as '{existing.name}'. "
             "Delete the existing entry, pick a different IP, or put this one "
-            "in a different group."
+            "in a different group.",
         )
     row = Resolver(
         owner_user_id=owner,
@@ -187,13 +195,18 @@ def create_resolver(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Error 409 (conflict): could not create resolver. "
-            "Another request may have created a duplicate simultaneously."
+            "Another request may have created a duplicate simultaneously.",
         ) from e
-    audit(db, user_id=user.id, action="dns.resolver.create",
-          target_type="resolver", target_key=str(row.id),
-          payload={"name": row.name, "ip": str(row.ip), "scope": body.scope},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="dns.resolver.create",
+        target_type="resolver",
+        target_key=str(row.id),
+        payload={"name": row.name, "ip": str(row.ip), "scope": body.scope},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return ResolverOut.from_row(row, user.id)
 
 
@@ -211,15 +224,13 @@ def update_resolver(
     # Permission: owners edit their own; admins edit house + anyone's private.
     if row.owner_user_id is None:
         if not _is_admin(user):
-            raise HTTPException(status.HTTP_403_FORBIDDEN,
-                                "Only admins can edit house resolvers.")
-    else:
-        if row.owner_user_id != user.id and not _is_admin(user):
-            raise HTTPException(status.HTTP_403_FORBIDDEN,
-                                "You can only edit your own resolvers.")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only admins can edit house resolvers.")
+    elif row.owner_user_id != user.id and not _is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only edit your own resolvers.")
     if body.is_propagation_default and not _is_admin(user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "Only admins can flag resolvers as propagation defaults.")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only admins can flag resolvers as propagation defaults."
+        )
     # Scope changes are not supported via PUT (would require moving ownership).
     # Clients should delete + recreate if they want to change scope.
     row.name = body.name.strip()
@@ -230,6 +241,7 @@ def update_resolver(
     # Same canonical-casing snap as create: "Corp DNS" and "corp dns"
     # should not produce two separate groups.
     from sqlalchemy import func as _func
+
     g = " ".join((body.group_tag or "").split()) or None
     if g:
         existing_casing = db.execute(
@@ -249,18 +261,22 @@ def update_resolver(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"A resolver with IP {body.ip}{where} already exists in this scope. "
-            "Change the group, rename, or use a different IP."
+            "Change the group, rename, or use a different IP.",
         ) from e
-    audit(db, user_id=user.id, action="dns.resolver.update",
-          target_type="resolver", target_key=str(row.id),
-          payload={"name": row.name, "ip": str(row.ip)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+    audit(
+        db,
+        user_id=user.id,
+        action="dns.resolver.update",
+        target_type="resolver",
+        target_key=str(row.id),
+        payload={"name": row.name, "ip": str(row.ip)},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return ResolverOut.from_row(row, user.id)
 
 
-@router.delete("/{rid}", status_code=status.HTTP_204_NO_CONTENT,
-               response_class=Response)
+@router.delete("/{rid}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_resolver(
     request: Request,
     rid: uuid.UUID,
@@ -272,16 +288,18 @@ def delete_resolver(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Resolver not found.")
     if row.owner_user_id is None:
         if not _is_admin(user):
-            raise HTTPException(status.HTTP_403_FORBIDDEN,
-                                "Only admins can delete house resolvers.")
-    else:
-        if row.owner_user_id != user.id and not _is_admin(user):
-            raise HTTPException(status.HTTP_403_FORBIDDEN,
-                                "You can only delete your own resolvers.")
-    audit(db, user_id=user.id, action="dns.resolver.delete",
-          target_type="resolver", target_key=str(rid),
-          payload={"name": row.name, "ip": str(row.ip)},
-          ip=client_ip(request),
-          user_agent=request.headers.get("user-agent"))
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only admins can delete house resolvers.")
+    elif row.owner_user_id != user.id and not _is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only delete your own resolvers.")
+    audit(
+        db,
+        user_id=user.id,
+        action="dns.resolver.delete",
+        target_type="resolver",
+        target_key=str(rid),
+        payload={"name": row.name, "ip": str(row.ip)},
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     db.delete(row)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

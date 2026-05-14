@@ -2,17 +2,25 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 
 from app.approvals.engine import (
-    ApprovalError, cancel as eng_cancel, decide, list_mine, list_pending, request as eng_request,
+    ApprovalError,
+    decide,
+    list_mine,
+    list_pending,
+)
+from app.approvals.engine import (
+    cancel as eng_cancel,
+)
+from app.approvals.engine import (
+    request as eng_request,
 )
 from app.auth.deps import current_user, require_permission
 from app.db import fastapi_dep_db
 from app.models.user import User
-
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -33,11 +41,17 @@ class ApprovalOut(BaseModel):
     decision_note: str | None
 
     @classmethod
-    def from_row(cls, a) -> "ApprovalOut":
+    def from_row(cls, a) -> ApprovalOut:
         return cls(
-            id=a.id, requested_by=a.requested_by, approver_id=a.approver_id,
-            action=a.action, target_type=a.target_type, target_key=a.target_key,
-            payload=a.payload or {}, justification=a.justification, state=a.state,
+            id=a.id,
+            requested_by=a.requested_by,
+            approver_id=a.approver_id,
+            action=a.action,
+            target_type=a.target_type,
+            target_key=a.target_key,
+            payload=a.payload or {},
+            justification=a.justification,
+            state=a.state,
             requested_at=a.requested_at.isoformat(),
             decided_at=a.decided_at.isoformat() if a.decided_at else None,
             expires_at=a.expires_at.isoformat(),
@@ -62,9 +76,13 @@ async def request_approval(
 ) -> ApprovalOut:
     try:
         a = eng_request(
-            db, requester=user,
-            action=body.action, target_type=body.target_type, target_key=body.target_key,
-            payload=body.payload, justification=body.justification,
+            db,
+            requester=user,
+            action=body.action,
+            target_type=body.target_type,
+            target_key=body.target_key,
+            payload=body.payload,
+            justification=body.justification,
             expires_hours=body.expires_hours,
         )
     except ApprovalError as e:
@@ -85,8 +103,9 @@ async def approve(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> ApprovalOut:
     try:
-        a = decide(db, approval_id=approval_id, approver=user,
-                   decision="approved", decision_note=body.decision_note)
+        a = decide(
+            db, approval_id=approval_id, approver=user, decision="approved", decision_note=body.decision_note
+        )
     except ApprovalError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     return ApprovalOut.from_row(a)
@@ -100,8 +119,9 @@ async def deny(
     db: OrmSession = Depends(fastapi_dep_db),
 ) -> ApprovalOut:
     try:
-        a = decide(db, approval_id=approval_id, approver=user,
-                   decision="denied", decision_note=body.decision_note)
+        a = decide(
+            db, approval_id=approval_id, approver=user, decision="denied", decision_note=body.decision_note
+        )
     except ApprovalError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     return ApprovalOut.from_row(a)

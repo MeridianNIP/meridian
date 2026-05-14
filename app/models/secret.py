@@ -8,10 +8,11 @@ resolve inside SQLAlchemy's metadata at write time; without it any
 INSERT that references `secrets(id)` can raise
 `NoReferencedTableError` on first use.
 """
+
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import BYTEA, UUID
@@ -25,7 +26,7 @@ class Secret(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[str] = mapped_column(Text, nullable=False)   # secret_category enum
+    category: Mapped[str] = mapped_column(Text, nullable=False)  # secret_category enum
     description: Mapped[str | None] = mapped_column(Text)
     ciphertext: Mapped[bytes] = mapped_column(BYTEA, nullable=False)
     nonce: Mapped[bytes] = mapped_column(BYTEA, nullable=False)

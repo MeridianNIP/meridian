@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
+import uuid
 
 from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -24,7 +24,7 @@ class AcmeAccount(Base, TimestampMixin):
 class Certificate(Base, TimestampMixin):
     __tablename__ = "certificates"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cert_type: Mapped[str] = mapped_column(Text, nullable=False)   # cert_type enum
+    cert_type: Mapped[str] = mapped_column(Text, nullable=False)  # cert_type enum
     common_name: Mapped[str] = mapped_column(Text, nullable=False)
     sans: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     issuer: Mapped[str | None] = mapped_column(Text)
@@ -40,7 +40,9 @@ class Certificate(Base, TimestampMixin):
     private_key_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     auto_renew: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     managed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    acme_account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("acme_accounts.id"))
+    acme_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("acme_accounts.id")
+    )
     challenge: Mapped[str | None] = mapped_column(Text)
     renew_before_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     deploy_target: Mapped[str | None] = mapped_column(Text)
@@ -49,7 +51,9 @@ class Certificate(Base, TimestampMixin):
     ocsp_stapled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ct_logged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     hsts_policy: Mapped[str | None] = mapped_column(Text)
-    notify_channels: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
+    notify_channels: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=False, default=list
+    )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoke_reason: Mapped[str | None] = mapped_column(Text)
 
@@ -64,14 +68,18 @@ class CsrRequest(Base, TimestampMixin):
     csr_pem: Mapped[str] = mapped_column(Text, nullable=False)
     state: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     submitted_ca: Mapped[str | None] = mapped_column(Text)
-    signed_cert_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("certificates.id"))
+    signed_cert_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("certificates.id")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
 
 
 class CertEvent(Base):
     __tablename__ = "cert_events"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    cert_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("certificates.id", ondelete="CASCADE"), nullable=False)
+    cert_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("certificates.id", ondelete="CASCADE"), nullable=False
+    )
     event: Mapped[str] = mapped_column(Text, nullable=False)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
