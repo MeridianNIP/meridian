@@ -947,7 +947,9 @@ install_meridian_app() {
   sudo -u "$SVC_USER" "$INSTALL_ROOT/venv/bin/pip" install --upgrade pip wheel \
     2>&1 | tee -a "$INSTALL_LOG"
 
-  # Offline path when wheels/ is staged (release tarballs); online path otherwise.
+  # Offline path when wheels/ is staged; online path otherwise.
+  # The wheels/ directory ships only when scripts/build-release.sh has
+  # been run on a connected host to pre-download every Python dep.
   if [[ -d "$INSTALL_ROOT/wheels" ]] && compgen -G "$INSTALL_ROOT/wheels/*.whl" >/dev/null; then
     info "Installing Python deps from bundled wheels (--no-index)"
     sudo -u "$SVC_USER" "$INSTALL_ROOT/venv/bin/pip" install \
@@ -956,9 +958,9 @@ install_meridian_app() {
       2>&1 | tee -a "$INSTALL_LOG"
   else
     if (( AIRGAPPED )); then
-      die "Airgapped install but no bundled wheels found · use a release tarball built by scripts/build-release.sh"
+      die "Airgapped install but no bundled wheels found. Pre-download wheels on a connected host with 'scripts/build-release.sh' (it stages a wheels/ directory next to requirements.txt), then rerun this install."
     fi
-    info "Installing Python deps from PyPI (dev path)"
+    info "Installing Python deps from PyPI"
     sudo -u "$SVC_USER" "$INSTALL_ROOT/venv/bin/pip" install \
       -r "$INSTALL_ROOT/requirements.txt" \
       2>&1 | tee -a "$INSTALL_LOG"
@@ -1018,7 +1020,7 @@ stage_package() {
   fi
 
   for d in app db scripts config docs; do
-    [[ -d "$SCRIPT_DIR/$d" ]] || die "package missing directory: $d (run install.sh from the extracted Meridian tarball)"
+    [[ -d "$SCRIPT_DIR/$d" ]] || die "package missing directory: $d (run install.sh from the cloned/extracted Meridian source)"
     install -d -m 0755 "$INSTALL_ROOT/$d"
     cp -a "$SCRIPT_DIR/$d/." "$INSTALL_ROOT/$d/"
     # Source tree may have come from a 077-umask location (e.g. /root/...).
@@ -1030,9 +1032,12 @@ stage_package() {
   [[ -r "$SCRIPT_DIR/requirements.txt" ]] || die "package missing requirements.txt"
   install -m 0644 "$SCRIPT_DIR/requirements.txt" "$INSTALL_ROOT/requirements.txt"
 
-  # Bundled wheels · present in release tarballs built by scripts/build-release.sh.
-  # When the directory exists we pip install from it with --no-index (offline path).
-  # When it doesn't (dev clones), install_meridian_app falls back to PyPI.
+  # Bundled wheels · populated by scripts/build-release.sh on a host
+  # with network access (it pre-downloads every requirements.txt entry).
+  # When the directory exists we pip install from it with --no-index
+  # (offline path). When it doesn't, install_meridian_app falls back
+  # to PyPI — which is the normal path for online installs from a
+  # git clone or the release source archive.
   if [[ -d "$SCRIPT_DIR/wheels" ]]; then
     if [[ "$SCRIPT_DIR" != "$INSTALL_ROOT" ]]; then
       install -d -m 0755 "$INSTALL_ROOT/wheels"
@@ -1042,8 +1047,8 @@ stage_package() {
     count=$(find "$INSTALL_ROOT/wheels" -maxdepth 1 -name '*.whl' 2>/dev/null | wc -l)
     ok "Staged $count Python wheels (offline install path)"
   else
-    warn "No wheels/ directory found; install_meridian_app will pip from PyPI."
-    warn "For a signed release bundle, run scripts/build-release.sh on the vendor host."
+    # Most installs land here — wheels/ only ships in airgap bundles.
+    info "No wheels/ directory found; install_meridian_app will pip from PyPI (the normal online path)."
   fi
 
   chmod +x "$INSTALL_ROOT/scripts"/*.sh "$INSTALL_ROOT/scripts/meridian-nip" 2>/dev/null || true

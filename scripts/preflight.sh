@@ -377,7 +377,7 @@ if (( MODE_EGRESS )); then
     fi
   }
 
-  probe "https://meridiannip.com/manifest"          "meridiannip.com (license server)"
+  probe "https://meridiannip.com/"                   "meridiannip.com (project home)"
   probe "https://api.osv.dev/v1/query"              "OSV.dev (vuln scanner backend)"
   probe "https://crt.sh"                             "crt.sh (CT log search)"
   probe "https://acme-v02.api.letsencrypt.org/directory" "Let's Encrypt ACME"

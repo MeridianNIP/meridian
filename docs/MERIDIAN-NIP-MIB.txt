@@ -52,12 +52,8 @@ meridianActiveSessions OBJECT-TYPE
     DESCRIPTION "Active (non-revoked, non-expired) user sessions."
     ::= { meridianCore 3 }
 
-meridianLicensed OBJECT-TYPE
-    SYNTAX      Integer32
-    MAX-ACCESS  read-only
-    STATUS      current
-    DESCRIPTION "1 = license present + valid. 0 = unlicensed / expired."
-    ::= { meridianCore 4 }
+-- (meridianCore 4 was meridianLicensed in pre-1.0 builds. Apache 2.0 since
+-- 1.0; no license OID. OID number reserved — do not reuse.)
 
 -- =========================================================================
 -- 2. Managed service states (0=active, 1=inactive, 2=failed, 3=unknown)

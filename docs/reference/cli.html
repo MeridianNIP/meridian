@@ -70,7 +70,7 @@
 <h2>Top-level</h2>
 <pre><code>meridian-nip --help
 meridian-nip version              # release + fingerprint + install uuid
-meridian-nip doctor               # pre-flight check (DB, keys, license, logs)</code></pre>
+meridian-nip doctor               # pre-flight check (DB, keys, logs)</code></pre>
 
 <h2>Users</h2>
 <pre><code>meridian-nip users create \
@@ -85,15 +85,6 @@ meridian-nip users disable --username &lt;name&gt;
 meridian-nip users enable  --username &lt;name&gt;
 meridian-nip users reset-password --username &lt;name&gt;  # prints new temp pw
 meridian-nip users set-concurrent-sessions --username &lt;name&gt; --max &lt;N&gt;</code></pre>
-
-<h2>License</h2>
-<pre><code>meridian-nip license state         # current tier, expiry, bindings
-meridian-nip license install --key &lt;blob&gt; --domain &lt;fqdn&gt;
-meridian-nip license request-demo --email &lt;addr&gt; --domain &lt;fqdn&gt;
-meridian-nip license verify        # one-shot online verification
-meridian-nip license apply-claim &lt;file&gt;   # offline/airgapped refresh
-meridian-nip license fingerprint   # print this host's hw fingerprint
-meridian-nip license revoke-local  # drop local activation (testing only)</code></pre>
 
 <h2>Jobs</h2>
 <pre><code>meridian-nip jobs list

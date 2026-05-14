@@ -23,7 +23,6 @@ user) recovers. Print this and put it next to the console.
 | Disabled account | ✗ | `/ui/admin/users` → row → "Enable" | User edited their own profile or admin disabled |
 | Session expired / idle timeout | ✓ Re-login | n/a | Default idle 30 min; per-user override at `/ui/settings#sessions` |
 | Fail2ban IP ban (sshd, nginx, login jails) | ✗ | OS console: `fail2ban-client unban <ip>` (**gap** — no portal action) | All four jails use `nftables[type=allports]`; one trip blocks all ports |
-| License expired (paid tier lapse) | n/a | Admin installs renewed key at `/ui/admin/branding#license` | Portal remains operational during grace period (default 14d) |
 | Lost recovery email (e.g. dead mailbox) | ✗ | Admin sets a temp password via reset, hands it to user out-of-band | Force-change-at-login flag flips on |
 | Admin themselves locked out | ✗ | Console fallback above; reset their own row in `users` table | Avoid by always keeping at least 2 super_admin accounts |
 

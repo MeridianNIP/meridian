@@ -1,86 +1,86 @@
 # Distribution roadmap
 
-Planning note (not yet implemented). Describes the tiered distribution strategy
-for Meridian and the caveats specific to each format. Update as formats ship.
+Current state of the distribution channels Meridian can ship over.
+Each entry says whether it's live today or planned, and what the
+shape of the artifact is.
 
-## Tier 0 — Source tarball + install.sh (shipped)
+## Tier 0 — Source clone + install.sh (shipped)
 
-What ships today: a `tar.zst` of the project tree, extracted and invoked with
-`sudo ./install.sh` on a Debian 12 or 13 host the admin provides. Supports
-unattended mode via `--unattended --config answers.env`.
+What ships today: the GitHub repo. Tagged releases at
+`https://github.com/MeridianNIP/meridian/releases`. Users either
+`git clone --branch vX.Y.Z` or download the source-code archive
+from the release page, then run `sudo ./install.sh` on a Debian
+13 (or 12) host.
+
+Supports unattended mode (`--unattended --config answers.env`) for
+CI / fleet rollouts. Online installs pull Python deps from PyPI
+against the hash-pinned `requirements.txt`. Offline installs use the
+`wheels/` directory (built by `scripts/build-release.sh` on a
+connected host) via `pip install --no-index --find-links wheels/`.
 
 Audience: admins comfortable with Debian, staged rollouts, CI pipelines.
 
-## Tier 1 — Prebuilt VM appliance (planned)
+## Tier 1 — Preseed-injected ISO (shipped at v1.0.0)
 
-One signed VHDX (Hyper-V), one OVA (VMware / VirtualBox), one qcow2 (Proxmox /
-libvirt). First-boot cloud-init pulls hostname, static IP, admin email, license
-key from the hypervisor's cloud-init datasource or a cidata ISO. Portal reachable
-in ~5 minutes from import.
+What ships today: the same release page attaches
+`debian-13.4.0-amd64-meridian-unattended.iso` (~940 MB, UEFI-bootable
+hybrid) plus a `SHA256SUMS` file. Boots hands-off in Hyper-V Gen 2,
+VMware Workstation / Fusion / ESXi, VirtualBox (EFI enabled). After
+~10 minutes of unattended Debian install, the operator rsyncs the
+source tree and runs `install.sh`.
 
-Seed source: export the `meridian-vm` Hyper-V VM once it is healthy at
-`meridiannip.meridian.local`, scrub instance-specific secrets, re-seal with
-`cloud-init clean`, and publish the VHDX. Remaining formats derive from the
-same VHDX via `qemu-img convert`.
+Source: `scripts/repack-preseed-iso.sh` (in this repo) wraps the
+upstream Debian netinst with `scripts/preseed/meridian.preseed.cfg`
+and the boot-config patches. Anyone can rebuild it locally and bake
+their own SSH key in via `MERIDIAN_AUTHORIZED_KEY_FILE=...`.
 
-Audience: evaluators, SMB deployments, anyone who wants zero-Debian-exposure.
+Audience: evaluators who want to skip the Debian-install step,
+admins onboarding fresh hardware or VMs.
 
-## Tier 2 — Bootable Debian ISO (later)
+## Tier 2 — Prebuilt VM appliance (planned)
 
-Custom ISO built with `xorriso` that combines Debian netinst + a preseed file
-+ the Meridian tarball staged for post-install. Admin boots from USB, answers
-one wizard, walks away.
+One signed VHDX (Hyper-V), one OVA (VMware / VirtualBox), one qcow2
+(Proxmox / libvirt) — each containing a Meridian install ready for
+first-boot cloud-init to set hostname, static IP, admin email. Portal
+reachable in ~5 minutes from import.
 
-Audience: bare-metal installs, airgapped datacentre rollouts.
+Seed source: export the production `meridian-vm` Hyper-V VM once it
+is healthy, scrub instance-specific secrets, re-seal with
+`cloud-init clean`, and publish the VHDX. Remaining formats derive
+from the same VHDX via `qemu-img convert`.
 
-## Tier 3 — Cloud marketplace images (later)
+Audience: evaluators, SMB deployments, anyone who wants zero-Debian
+exposure.
 
-Same VHDX, uploaded to AWS / Azure / GCP / DigitalOcean marketplaces. Mostly
-a paperwork exercise once Tier 1 exists; billing integration is the hard part.
+## Tier 3 — Apt repo (planned)
 
-## WSL distro — niche, documented caveats
+Custom apt repo at `apt.meridiannip.com` serving a `meridian-nip`
+debian package. `sudo apt install meridian-nip` on any Debian 12/13
+host pulls the latest release; `sudo apt upgrade` ships subsequent
+versions. Signed `Release` files; package files hosted on Cloudflare
+R2 (cheap, no egress fees).
 
-WSL2 is a real option for **single-instance** deployers who want to evaluate
-Meridian on a Windows host without standing up a hypervisor. Ships as a
-`.tar.zst` rootfs that the user imports with `wsl --import`.
+Audience: admins who already manage a fleet via apt; pairs with
+unattended-upgrades for hands-off security patches.
 
-Do not offer to multi-WSL users as a primary deployment path — the caveats
-below apply to every WSL install and are architectural, not fixable.
+## Tier 4 — Cloud marketplace images (later)
 
-**Caveats**
+Same VHDX/qcow2 from Tier 2, uploaded to AWS / Azure / GCP /
+DigitalOcean marketplaces. Mostly a paperwork exercise once Tier 2
+exists; billing integration is the hard part, and since Meridian is
+free under Apache 2.0 there's nothing to bill — the marketplaces
+become a *distribution* channel, not a revenue channel.
 
-- **One IP for the whole Windows host.** All WSL2 distros share a single
-  utility VM, a single kernel, and a single eth0 with a single MAC, so they
-  also share one LAN DHCP lease. Running Meridian alongside other WSL distros
-  on the same machine means sharing port 22 / 80 / 443 on the host's IP,
-  which usually breaks at least one service. Single-distro hosts are fine.
-- **Static IP support is inert.** The static-IP code in `install.sh` writes a
-  `systemd-networkd` profile that WSL ignores — networking is managed by the
-  Windows host. Leave `STATIC_IP` blank. Pin the host's address via router
-  DHCP reservation instead.
-- **LUKS is not available.** WSL2 has no real block devices; the layered
-  disk encryption story (`install.sh` LUKS volume) cannot run. Rely on
-  Windows BitLocker at the host level if disk encryption matters.
-- **AppArmor is kernel-dependent.** The stock WSL kernel may not enforce
-  AppArmor profiles. Install attempts to load them and warns on failure;
-  Meridian still runs, it just loses one layer of confinement.
-- **systemd must be enabled.** Add `[boot]\nsystemd=true` to `/etc/wsl.conf`
-  before running `install.sh` so service units actually start.
-- **Services die on WSL shutdown.** If the Windows host reboots or the user
-  runs `wsl --shutdown`, the portal goes with it until a WSL shell is opened
-  again. Set `[boot]\ncommand` in `wsl.conf` to re-enable the units, or start
-  a small keep-alive process at login.
-- **Port 80 ACME challenge will not work** behind NAT without Windows-side
-  port forwarding — use `cloudflare`, `self-signed`, or DNS-01 ACME instead.
+Audience: cloud-first deployments where the operator never touches a
+Debian shell.
 
-Audience: Windows-native evaluators, demo / POC installs, devs who want a
-laptop-local instance. Not recommended for production.
+## What's NOT planned
 
-## What we will never ship
-
-- **Docker Compose** — Meridian owns nginx, BIND, PostgreSQL, fail2ban, and
-  AppArmor at the system level; containerizing fights the design. Admins who
-  want containerized DNS/IPAM should look elsewhere.
-- **Windows-native binary** — the product is a Debian appliance. A native
-  Windows build would triple the maintenance surface for no real gain; WSL
-  covers the Windows-host story.
+- **Docker / OCI image** — Meridian binds to host networking, runs
+  several long-lived daemons (PostgreSQL, BIND, valkey, nginx,
+  fail2ban), and uses AppArmor profiles tightly. Pretending it's a
+  twelve-factor app inside a container doesn't help operators. A
+  proper appliance VM is the right shape.
+- **Windows-native installer** — Meridian's stack is Linux only.
+  WSL2 works in a niche way but isn't supported as a production
+  surface.

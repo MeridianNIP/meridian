@@ -1,5 +1,13 @@
 # Portal walkthrough — findings log
 
+> **STATUS: CLOSED — kept as history.** This document is the scratch pad from
+> the pre-1.0 walkthrough that drove the gap-closing work landed in v1.0.0.
+> The status column does **not** reflect current state — most entries shipped
+> as features in 1.0.0; commercial-model references (FSL-1.1, paid tiers,
+> license tokens) are historical context superseded by the 2026-05-13
+> Apache 2.0 decision. Don't act on entries here without checking the
+> current code first.
+
 Running log of gaps, bugs, and enhancement ideas found while walking through
 the live Meridian portal page by page. Not a spec; not a backlog ticket
 board. This is the scratch pad between "I noticed X" and "someone writes

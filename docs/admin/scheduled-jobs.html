@@ -90,8 +90,6 @@
 <tr><td><code>stale-ad-report</code></td><td>Weekly report of AD accounts inactive &gt; 90 days</td><td><code>0 7 * * 1</code></td></tr>
 <tr><td><code>dhcp-utilization</code></td><td>Hourly scope-utilization snapshot for trend graphs</td><td><code>15 * * * *</code></td></tr>
 <tr><td><code>ipam-conflict-scan</code></td><td>Compare live subnet sweep against IPAM records</td><td><code>0 5 * * *</code></td></tr>
-<tr><td><code>license-expiry-notify</code></td><td>Daily expiry check; escalating warnings at 30/14/7/3/1 days</td><td><code>0 7 * * *</code></td></tr>
-<tr><td><code>license-verify</code></td><td>Hourly phone-home; CRL fetch; revocation within 24h</td><td><code>0 * * * *</code></td></tr>
 <tr><td><code>oss-component-scan</code></td><td>Refresh <code>oss_components</code>; regenerate SBOM; alert on new copyleft</td><td><code>0 4 * * *</code></td></tr>
 <tr><td><code>pre-update-snapshot</code></td><td>Fires before any auto-update; enables rollback</td><td>on-event</td></tr>
 <tr><td><code>feature-health-ping</code></td><td>Hourly ping of each enabled integration</td><td><code>30 * * * *</code></td></tr>
