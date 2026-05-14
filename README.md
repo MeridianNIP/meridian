@@ -76,7 +76,7 @@ enabled, admin PowerShell, a Hyper-V vSwitch on your LAN (default
 
 ```powershell
 # 1. Clone or copy the source
-git clone https://github.com/<you>/meridian.git
+git clone https://github.com/MeridianNIP/meridian.git
 cd meridian
 
 # 2. Build the unattended preseed ISO (one-time)
@@ -150,7 +150,7 @@ Minimum 4 GB RAM, 20 GB disk free, internet access for apt.
 # the running operator via $SUDO_USER and wires them into ddi-ssh).
 
 # 1. Clone the source onto the box
-git clone https://github.com/<you>/meridian.git /tmp/meridian-src
+git clone https://github.com/MeridianNIP/meridian.git /tmp/meridian-src
 sudo mkdir -p /opt/meridian
 sudo cp -a /tmp/meridian-src/. /opt/meridian/
 sudo chown -R root:root /opt/meridian
