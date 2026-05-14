@@ -6,8 +6,19 @@ semantic versioning.
 
 ## [Unreleased]
 
-Nothing pending — next tagged release to be assigned when the first
-field bug forces a 1.0.1.
+Queued for v1.0.1 (next tagged release):
+
+### Fixed
+- `install.sh` `install_os_packages` racing with dpkg lock when invoked
+  by the meridian-nip .deb's postinst (i.e. `apt install meridian-nip`).
+  The .deb's Depends: line already enumerates every OS package
+  install.sh would install, so when running under dpkg the stage is
+  now a documented no-op (detect via `DPKG_MAINTSCRIPT_PACKAGE` env).
+- `install.sh` `setup_postgresql` re-running `schema.sql` on every
+  invocation, which failed `--upgrade` paths with "type already exists"
+  because the CREATE TYPE statements in schema.sql aren't IF-NOT-EXISTS
+  guarded. Now skipped automatically when the public schema already
+  has tables — migrate.sh handles reconciliation in that case.
 
 ## [1.0.0] — 2026-05-14
 

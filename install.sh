@@ -708,6 +708,16 @@ setup_luks_volume() {
 install_os_packages() {
   section "Installing OS packages (Debian ${OS_MAJOR})"
 
+  # When this script is invoked from an apt/dpkg postinst hook (e.g. the
+  # meridian-nip .deb), dpkg already holds the lock and every OS package
+  # we'd install here is already declared in the .deb's Depends: line, so
+  # they're guaranteed present. Skip outright rather than racing for the
+  # lock and aborting the whole install.
+  if [[ -n "${DPKG_MAINTSCRIPT_PACKAGE:-}" ]]; then
+    info "Running under dpkg ($DPKG_MAINTSCRIPT_PACKAGE) — OS packages already installed via .deb Depends; skipping"
+    return 0
+  fi
+
   export DEBIAN_FRONTEND=noninteractive
 
   local -a packages=(
@@ -828,14 +838,22 @@ setup_postgresql() {
       WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname='${DB_NAME}')\gexec
 SQL
 
-  # Load schema (fresh install only — migrate.sh below handles existing DBs
-  # by being a no-op on pristine tables thanks to IF NOT EXISTS / ON CONFLICT).
-  if [[ -f "$INSTALL_ROOT/db/schema.sql" ]]; then
-    sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" \
-      -f "$INSTALL_ROOT/db/schema.sql" 2>&1 | tee -a "$INSTALL_LOG"
-    ok "Schema loaded into $DB_NAME"
+  # Load schema only on a fresh DB. Re-running schema.sql on an existing
+  # DB fails on the bare `CREATE TYPE` statements (no IF NOT EXISTS for
+  # enums) — surfaced on 2026-05-14 during the apt-upgrade-of-prod test.
+  # Existing DBs get reconciled by migrate.sh below.
+  local table_count
+  table_count=$(sudo -u postgres psql -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public'" "$DB_NAME" 2>/dev/null || echo "0")
+  if [[ "$table_count" -eq 0 ]]; then
+    if [[ -f "$INSTALL_ROOT/db/schema.sql" ]]; then
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME" \
+        -f "$INSTALL_ROOT/db/schema.sql" 2>&1 | tee -a "$INSTALL_LOG"
+      ok "Schema loaded into $DB_NAME"
+    else
+      die "schema.sql not found at $INSTALL_ROOT/db/schema.sql"
+    fi
   else
-    die "schema.sql not found at $INSTALL_ROOT/db/schema.sql"
+    info "Schema already exists ($table_count public tables) — skipping schema.sql load; migrate.sh will reconcile"
   fi
 
   # Hand ownership of all schema objects to the meridian role. schema.sql is
