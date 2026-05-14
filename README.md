@@ -9,6 +9,15 @@
   <a href="https://meridiannip.com">meridiannip.com</a>
 </p>
 
+<p align="center">
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="https://github.com/MeridianNIP/meridian/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/MeridianNIP/meridian?display_name=tag&sort=semver"></a>
+  <a href="https://github.com/MeridianNIP/meridian/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/MeridianNIP/meridian/total"></a>
+  <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-Debian_12%2F13-success">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue">
+  <a href="https://meridiannip.com/apt"><img alt="apt repo" src="https://img.shields.io/badge/apt-meridiannip.com%2Fapt-blue"></a>
+</p>
+
 ---
 
 Copyright © 2026 MeridianNIP. The **"MeridianNIP"** name and logo are
